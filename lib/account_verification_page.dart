@@ -11,37 +11,29 @@ class AccountVerificationScreen extends StatefulWidget {
   State<AccountVerificationScreen> createState() => _AccountVerificationScreenState();
 }
 
-class _AccountVerificationScreenState extends State<AccountVerificationScreen>
-    with TickerProviderStateMixin {
+class _AccountVerificationScreenState extends State<AccountVerificationScreen> {
   bool _isCheckingStatus = false;
-  late AnimationController _pulseController;
-  late Animation<double> _pulseAnimation;
 
   @override
   void initState() {
     super.initState();
-    _setupAnimations();
+    _checkIfVerificationNeeded();
   }
 
-  void _setupAnimations() {
-    _pulseController = AnimationController(
-      duration: const Duration(seconds: 2),
-      vsync: this,
-    );
-    _pulseAnimation = Tween<double>(
-      begin: 0.8,
-      end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _pulseController,
-      curve: Curves.easeInOut,
-    ));
-    _pulseController.repeat(reverse: true);
-  }
-
-  @override
-  void dispose() {
-    _pulseController.dispose();
-    super.dispose();
+  Future<void> _checkIfVerificationNeeded() async {
+    // If user doesn't need account verification, redirect to dashboard
+    if (!AuthService.needsAccountVerification()) {
+      print('✅ User does not need account verification, redirecting to dashboard');
+      if (mounted) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (context) => UserDashboard()),
+        );
+      }
+      return;
+    }
+    
+    // If user needs verification, check current status
+    await _checkAccountStatus();
   }
 
   Future<void> _checkAccountStatus() async {
@@ -50,46 +42,44 @@ class _AccountVerificationScreenState extends State<AccountVerificationScreen>
     });
 
     try {
-      // Refresh user data from server
-      final success = await AuthService.refreshUserData();
+      if (!AuthService.needsAccountVerification()) {
+        print('✅ User no longer needs verification, navigating to dashboard');
+        if (mounted) {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(builder: (context) => UserDashboard()),
+          );
+        }
+        return;
+      }
+
+      // Force refresh user data from server
+      print('🔄 Checking account status from server...');
+      final accountStatus = await AuthService.checkAccountStatusFromServer();
       
-      if (success) {
-        final user = AuthService.getCurrentUser();
-        final accountStatus = user?['account_status'] ?? 'pending';
-        
-        if (accountStatus == 'approved') {
-          // Account approved, navigate to dashboard
-          if (mounted) {
-            Navigator.of(context).pushReplacement(
-              MaterialPageRoute(builder: (context) => UserDashboard()),
-            );
-          }
-        } else if (accountStatus == 'rejected') {
-          // Account rejected, show dialog and logout
-          if (mounted) {
-            _showRejectedDialog();
-          }
-        } else {
-          // Still pending
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: const Text('Your account is still pending verification'),
-                backgroundColor: Colors.orange,
-                behavior: SnackBarBehavior.floating,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-            );
-          }
+      print('📊 Current account status: $accountStatus');
+      
+      if (accountStatus == 'approved') {
+        // Account approved, navigate to dashboard
+        if (mounted) {
+          print('✅ Account approved, navigating to dashboard');
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(builder: (context) => UserDashboard()),
+          );
+        }
+      } else if (accountStatus == 'rejected') {
+        // Account rejected, show dialog and logout
+        if (mounted) {
+          print('❌ Account rejected, showing dialog');
+          _showRejectedDialog();
         }
       } else {
+        // Still pending
         if (mounted) {
+          print('⏳ Account still pending');
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: const Text('Failed to check account status. Please try again.'),
-              backgroundColor: Colors.red,
+              content: const Text('Your account is still pending verification'),
+              backgroundColor: Colors.orange,
               behavior: SnackBarBehavior.floating,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(10),
@@ -99,7 +89,7 @@ class _AccountVerificationScreenState extends State<AccountVerificationScreen>
         }
       }
     } catch (e) {
-      print('Error checking account status: $e');
+      print('❌ Error checking account status: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -226,42 +216,6 @@ class _AccountVerificationScreenState extends State<AccountVerificationScreen>
               ),
               
               const SizedBox(height: 60),
-              
-              // Animated verification icon
-              AnimatedBuilder(
-                animation: _pulseAnimation,
-                builder: (context, child) {
-                  return Transform.scale(
-                    scale: _pulseAnimation.value,
-                    child: Container(
-                      width: 120,
-                      height: 120,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: LinearGradient(
-                          colors: [
-                            const Color(0xFFFF6B00).withOpacity(0.2),
-                            const Color(0xFFFF6B00).withOpacity(0.1),
-                          ],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                        border: Border.all(
-                          color: const Color(0xFFFF6B00),
-                          width: 2,
-                        ),
-                      ),
-                      child: const Icon(
-                        Icons.pending_actions,
-                        size: 60,
-                        color: Color(0xFFFF6B00),
-                      ),
-                    ),
-                  );
-                },
-              ),
-              
-              const SizedBox(height: 40),
               
               // Welcome message
               Text(

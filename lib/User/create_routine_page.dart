@@ -22,7 +22,6 @@ class CreateRoutinePage extends StatefulWidget {
 
 class _CreateRoutinePageState extends State<CreateRoutinePage> {
   final TextEditingController nameController = TextEditingController();
-  final TextEditingController durationController = TextEditingController();
   final TextEditingController notesController = TextEditingController();
     
   String selectedGoal = "General Fitness";
@@ -127,13 +126,6 @@ class _CreateRoutinePageState extends State<CreateRoutinePage> {
             'Routine Name *',
             nameController,
             'Enter routine name',
-          ),
-          SizedBox(height: 16),
-                    
-          _buildInputField(
-            'Duration *',
-            durationController,
-            'e.g., 45 minutes',
           ),
           SizedBox(height: 16),
                     
@@ -283,23 +275,6 @@ class _CreateRoutinePageState extends State<CreateRoutinePage> {
                         fontSize: 14,
                       ),
                     ),
-                    if (exercise.targetMuscle.isNotEmpty)
-                      Container(
-                        margin: EdgeInsets.only(top: 4),
-                        padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: exerciseColor.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          exercise.targetMuscle,
-                          style: GoogleFonts.poppins(
-                            color: exerciseColor,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ),
                   ],
                 ),
               ),
@@ -629,10 +604,6 @@ class _CreateRoutinePageState extends State<CreateRoutinePage> {
       _showError('Please enter a routine name');
       return;
     }
-    if (durationController.text.trim().isEmpty) {
-      _showError('Please enter a duration');
-      return;
-    }
     if (exercises.isEmpty) {
       _showError('Please add at least one exercise');
       return;
@@ -644,7 +615,7 @@ class _CreateRoutinePageState extends State<CreateRoutinePage> {
         id: DateTime.now().millisecondsSinceEpoch.toString(),
         name: nameController.text.trim(),
         exercises: exercises.length,
-        duration: durationController.text.trim(),
+        duration: '', // Duration removed
         difficulty: selectedDifficulty,
         createdBy: 'user',
         exerciseList: exercises.map((e) => e.name).join(', '),

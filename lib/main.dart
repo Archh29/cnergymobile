@@ -15,6 +15,7 @@ import 'account_verification_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
@@ -124,7 +125,7 @@ class MyApp extends StatelessWidget {
           hintStyle: const TextStyle(color: Colors.black54),
         ),
       ),
-      home: const InitialScreenLoader(), // CHANGED: Use async loader
+      home: AuthWrapper(), // CHANGED: Use AuthWrapper for better account status handling
       routes: {
         '/login': (context) => const LoginScreen(),
         '/userDashboard': (context) => UserDashboard(),
@@ -137,143 +138,196 @@ class MyApp extends StatelessWidget {
   }
 }
 
-// NEW: Async screen loader to handle profile completion check
-class InitialScreenLoader extends StatefulWidget {
-  const InitialScreenLoader({super.key});
-
+// NEW: AuthWrapper to handle authentication and account status
+class AuthWrapper extends StatefulWidget {
   @override
-  State<InitialScreenLoader> createState() => _InitialScreenLoaderState();
+  _AuthWrapperState createState() => _AuthWrapperState();
 }
 
-class _InitialScreenLoaderState extends State<InitialScreenLoader> {
+class _AuthWrapperState extends State<AuthWrapper> {
+  bool _isChecking = true;
+
   @override
   void initState() {
     super.initState();
-    _determineInitialScreen();
+    _checkAuthStatus();
   }
 
-  Future<void> _determineInitialScreen() async {
-    print('🔍 Determining initial screen...');
-    
-    // Check if user is logged in
-    if (!AuthService.isLoggedIn()) {
-      print('❌ User not logged in, going to LoginScreen');
-      _navigateToScreen(const LoginScreen());
-      return;
-    }
-
-    final user = AuthService.getCurrentUser();
-    if (user == null) {
-      print('❌ No user data, going to LoginScreen');
-      _navigateToScreen(const LoginScreen());
-      return;
-    }
-
-    final userId = AuthService.getCurrentUserId()!;
-    print('✅ User logged in - ID: $userId, Type: ${AuthService.getUserType()}');
-
-    // Only customers (user_type_id = 4) need account verification and profile setup
-    if (AuthService.isCustomer()) {
-      print('👤 User is customer, checking account status...');
+  Future<void> _checkAuthStatus() async {
+    try {
+      print('🔍 AuthWrapper: Checking authentication status...');
       
-      // First check account verification status
-      final accountStatus = user['account_status'] ?? 'pending';
-      print('🔐 Account status: $accountStatus');
-      
-      if (accountStatus == 'pending') {
-        print('⏳ Account pending verification, going to AccountVerificationScreen');
-        _navigateToScreen(const AccountVerificationScreen());
-        return;
-      } else if (accountStatus == 'rejected') {
-        print('❌ Account rejected, logging out and going to LoginScreen');
-        await AuthService.logout();
-        _navigateToScreen(const LoginScreen());
-        return;
-      } else if (accountStatus == 'approved') {
-        print('✅ Account approved, checking profile completion...');
-        
-        // FIXED: Use async profile completion check
-        final profileCompleted = await AuthService.isProfileCompleted();
-        print('📋 Profile completed: $profileCompleted');
-        
-        if (!profileCompleted) {
-          print('🔧 Customer needs profile setup, going to FirstTimeSetupScreen');
-          _navigateToScreen(FirstTimeSetupScreen(userId: userId));
-          return;
-        } else {
-          print('✅ Customer profile completed, going to UserDashboard');
-          _navigateToScreen(UserDashboard());
-          return;
-        }
+      // Ensure AuthService is initialized
+      if (!AuthService.isInitialized) {
+        print('🔄 AuthService not initialized, initializing...');
+        await AuthService.initialize();
       }
-    }
-
-    // User is logged in and profile is complete (or not a customer)
-    print('🏠 Going to appropriate dashboard...');
-    _navigateToScreen(_getHomeScreen());
-  }
-
-  void _navigateToScreen(Widget screen) {
-    // Use a slight delay to ensure the widget tree is built
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+      
+      // If user is logged in, refresh their data from server
+      if (AuthService.isLoggedIn()) {
+        print('✅ User is logged in, refreshing data from server...');
+        await AuthService.refreshUserData();
+      }
+    } catch (e) {
+      print('❌ Error checking auth status: $e');
+    } finally {
       if (mounted) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (context) => screen),
-        );
+        setState(() {
+          _isChecking = false;
+        });
       }
-    });
-  }
-
-  Widget _getHomeScreen() {
-    print('🏠 Determining home screen for user type: ${AuthService.getUserType()}');
-    
-    if (AuthService.isCustomer()) {
-      return UserDashboard();
-    } else if (AuthService.isCoach()) {
-      return CoachDashboard();
-    } else if (AuthService.isAdmin()) {
-      return UserDashboard(); // or AdminDashboard()
-    } else if (AuthService.isStaff()) {
-      return UserDashboard(); // or StaffDashboard()
-    } else {
-      print('⚠️ Unknown user type, redirecting to login');
-      return const LoginScreen();
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    // Show loading screen while determining initial screen
+    if (_isChecking) {
+      return _buildLoadingScreen();
+    }
+
+    // Check if user is logged in
+    if (!AuthService.isLoggedIn()) {
+      print('❌ User not logged in, showing LoginScreen');
+      return const LoginScreen();
+    }
+
+    final user = AuthService.getCurrentUser();
+    if (user == null) {
+      print('❌ No user data, showing LoginScreen');
+      return const LoginScreen();
+    }
+
+    final userId = AuthService.getCurrentUserId()!;
+    print('✅ User logged in - ID: $userId, Type: ${AuthService.getUserType()}');
+
+    // Check user type first and route accordingly
+    if (AuthService.isCoach()) {
+      print('👨‍🏫 User is coach, showing CoachDashboard');
+      return CoachDashboard();
+    } else if (AuthService.isAdmin()) {
+      print('👑 User is admin, showing UserDashboard (or AdminDashboard)');
+      return UserDashboard(); // or AdminDashboard()
+    } else if (AuthService.isStaff()) {
+      print('👷 User is staff, showing UserDashboard (or StaffDashboard)');
+      return UserDashboard(); // or StaffDashboard()
+    } else if (AuthService.isCustomer()) {
+      print('👤 User is customer, checking account status...');
+      
+      // Check account verification status
+      final accountStatus = AuthService.getAccountStatus();
+      print('🔐 Account status: $accountStatus');
+      
+      if (accountStatus == 'pending') {
+        print('⏳ Account pending verification, showing AccountVerificationScreen');
+        return const AccountVerificationScreen();
+      } else if (accountStatus == 'rejected') {
+        print('❌ Account rejected, logging out and showing LoginScreen');
+        // Schedule logout for next frame to avoid state changes during build
+        WidgetsBinding.instance.addPostFrameCallback((_) async {
+          await AuthService.logout();
+          Get.snackbar(
+            "Account Rejected",
+            "Your account has been rejected. Please contact support.",
+            snackPosition: SnackPosition.BOTTOM,
+            backgroundColor: Colors.red,
+            colorText: Colors.white,
+          );
+        });
+        return const LoginScreen();
+      } else if (accountStatus == 'approved') {
+        print('✅ Account approved, checking profile completion...');
+        
+        // Use FutureBuilder for async profile completion check
+        return FutureBuilder<bool>(
+          future: AuthService.isProfileCompleted(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return _buildLoadingScreen();
+            }
+            
+            final profileCompleted = snapshot.data ?? false;
+            print('📋 Profile completed: $profileCompleted');
+            
+            if (!profileCompleted) {
+              print('🔧 Customer needs profile setup, showing FirstTimeSetupScreen');
+              return FirstTimeSetupScreen(userId: userId);
+            } else {
+              print('✅ Customer profile completed, showing UserDashboard');
+              return UserDashboard();
+            }
+          },
+        );
+      }
+    }
+
+    // Fallback - if user type is unknown, show login
+    print('⚠️ Unknown user type, redirecting to login');
+    return const LoginScreen();
+  }
+
+  Widget _buildLoadingScreen() {
     return Scaffold(
       backgroundColor: const Color(0xFF0F0F0F),
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
+            // App logo
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1A1A1A),
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.3),
+                    blurRadius: 15,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: Image.asset(
+                'assets/images/gym.logo.png',
+                height: 80,
+                errorBuilder: (context, error, stackTrace) {
+                  return Icon(
+                    Icons.fitness_center,
+                    size: 80,
+                    color: const Color(0xFFFF6B35),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 32),
+            
             // Loading animation
             Container(
               width: 60,
               height: 60,
               child: CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF4ECDC4)),
+                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFFF6B35)),
                 strokeWidth: 3,
               ),
             ),
             const SizedBox(height: 24),
+            
             Text(
-              'Loading...',
-              style: TextStyle(
+              'CYNERGY GYM',
+              style: GoogleFonts.poppins(
                 color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 2,
               ),
             ),
             const SizedBox(height: 8),
+            
             Text(
-              'Setting up your experience',
-              style: TextStyle(
+              'Loading your experience...',
+              style: GoogleFonts.poppins(
                 color: Colors.white.withOpacity(0.7),
-                fontSize: 14,
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
               ),
             ),
           ],
@@ -281,9 +335,30 @@ class _InitialScreenLoaderState extends State<InitialScreenLoader> {
       ),
     );
   }
+
+  Widget _getHomeScreen() {
+    print('🏠 Determining home screen for user type: ${AuthService.getUserType()}');
+    
+    if (AuthService.isCoach()) {
+      print('👨‍🏫 Routing coach to CoachDashboard');
+      return CoachDashboard();
+    } else if (AuthService.isCustomer()) {
+      print('👤 Routing customer to UserDashboard');
+      return UserDashboard();
+    } else if (AuthService.isAdmin()) {
+      print('👑 Routing admin to UserDashboard');
+      return UserDashboard(); // or AdminDashboard()
+    } else if (AuthService.isStaff()) {
+      print('👷 Routing staff to UserDashboard');
+      return UserDashboard(); // or StaffDashboard()
+    } else {
+      print('⚠️ Unknown user type, redirecting to login');
+      return const LoginScreen();
+    }
+  }
 }
 
-// NEW: Route wrapper for FirstTimeSetupScreen
+// Route wrapper for FirstTimeSetupScreen
 class FirstTimeSetupScreenRoute extends StatelessWidget {
   const FirstTimeSetupScreenRoute({super.key});
 

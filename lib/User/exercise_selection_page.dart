@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import './models/exercise_selection_model.dart';
-import './services/routine_services.dart';
-import 'exercise_configuration_page.dart';
+import 'models/exercise_selection_model.dart'; // Corrected import
+import 'services/routine_services.dart'; // Corrected import
+import 'services/exercises_selection_service.dart'; // Corrected import: changed 'exercises_selection_service.dart' to 'exercise_selection_service.dart'
+import 'exercise_configuration_page.dart'; // Corrected import
 
 class ExerciseSelectionPage extends StatefulWidget {
   final MuscleGroupModel muscleGroup;
   final Color selectedColor;
-  final List<SelectedExerciseWithConfig> currentSelections;
+  final List<SelectedExerciseWithConfig> currentSelections; // This should be the GLOBAL list of selected exercises
 
   const ExerciseSelectionPage({
     Key? key,
@@ -21,15 +22,15 @@ class ExerciseSelectionPage extends StatefulWidget {
 }
 
 class _ExerciseSelectionPageState extends State<ExerciseSelectionPage> {
-  List<ExerciseSelectionModel> exercises = [];
-  List<ExerciseSelectionModel> selectedExercises = [];
+  List<ExerciseSelectionModel> exercises = []; // Exercises for the current muscle group being displayed
+  List<ExerciseSelectionModel> selectedExercises = []; // This must hold ALL selected exercises for the entire routine
   bool isLoading = true;
   String searchQuery = '';
 
   @override
   void initState() {
     super.initState();
-    // Initialize selected exercises from current selections
+    // Initialize selectedExercises from the GLOBAL list passed via widget.currentSelections
     selectedExercises = widget.currentSelections
         .map((config) => config.exercise)
         .toList();
@@ -39,9 +40,9 @@ class _ExerciseSelectionPageState extends State<ExerciseSelectionPage> {
   Future<void> _loadExercises() async {
     try {
       setState(() => isLoading = true);
-      
+
       final exerciseModels = await RoutineService.fetchExercisesByMuscle(widget.muscleGroup.id);
-      
+
       setState(() {
         exercises = exerciseModels.map((exercise) => ExerciseSelectionModel(
           id: exercise.id ?? 0,
@@ -51,6 +52,7 @@ class _ExerciseSelectionPageState extends State<ExerciseSelectionPage> {
           targetMuscle: exercise.targetMuscle,
           category: exercise.category,
           difficulty: exercise.difficulty,
+          // Check if this exercise is in the GLOBAL selectedExercises list
           isSelected: selectedExercises.any((selected) => selected.id == exercise.id),
         )).toList();
         isLoading = false;
@@ -85,14 +87,40 @@ class _ExerciseSelectionPageState extends State<ExerciseSelectionPage> {
       } else {
         selectedExercises.add(exercise);
       }
-      
-      // Update the exercises list to reflect selection state
-      exercises = exercises.map((ex) => 
-          ex.id == exercise.id 
+      // Update the 'exercises' list (which is the source for filteredExercises)
+      // to reflect the selection state for the UI checkmark.
+      exercises = exercises.map((ex) =>
+          ex.id == exercise.id
               ? ex.copyWith(isSelected: !ex.isSelected)
               : ex
       ).toList();
     });
+  }
+
+  // This method correctly calculates percentages based on the content of 'selectedExercises'
+  String _getMuscleGroupPercentages() {
+    if (selectedExercises.isEmpty) {
+      return '0 selected';
+    }
+
+    // Convert ExerciseSelectionModel list to SelectedExerciseWithConfig list for the service method
+    // We only need the exercise property for targetMuscle, so default config values are fine.
+    final List<SelectedExerciseWithConfig> allSelectedConfigs = selectedExercises.map((exerciseModel) {
+      return SelectedExerciseWithConfig(exercise: exerciseModel);
+    }).toList();
+
+    final Map<String, int> counts = ExerciseSelectionService.getExerciseCountByMuscle(allSelectedConfigs);
+
+    final int totalSelected = selectedExercises.length; // This is the total count of ALL selected exercises
+    if (totalSelected == 0) return '0 selected';
+
+    final List<String> percentageStrings = [];
+    counts.forEach((muscle, count) {
+      final double percentage = (count / totalSelected) * 100; // Percentage is calculated against totalSelected
+      percentageStrings.add('${muscle}: ${percentage.toStringAsFixed(0)}%');
+    });
+
+    return '${percentageStrings.join(', ')} (${totalSelected} selected)';
   }
 
   @override
@@ -104,7 +132,8 @@ class _ExerciseSelectionPageState extends State<ExerciseSelectionPage> {
         elevation: 0,
         leading: IconButton(
           icon: Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => Navigator.pop(context),
+          // IMPORTANT: Return the updated GLOBAL list when going back
+          onPressed: () => Navigator.pop(context, selectedExercises.map((e) => SelectedExerciseWithConfig(exercise: e)).toList()),
         ),
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -118,7 +147,7 @@ class _ExerciseSelectionPageState extends State<ExerciseSelectionPage> {
               ),
             ),
             Text(
-              '${selectedExercises.length} selected',
+              _getMuscleGroupPercentages(), // This will now show global percentages
               style: GoogleFonts.poppins(
                 fontSize: 12,
                 color: widget.selectedColor,
@@ -167,44 +196,44 @@ class _ExerciseSelectionPageState extends State<ExerciseSelectionPage> {
               },
             ),
           ),
-          
+
           // Exercise list
           Expanded(
             child: isLoading
                 ? Center(
-                    child: CircularProgressIndicator(
-                      valueColor: AlwaysStoppedAnimation<Color>(widget.selectedColor),
-                    ),
-                  )
+              child: CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(widget.selectedColor),
+              ),
+            )
                 : filteredExercises.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.fitness_center,
-                              color: Colors.grey[600],
-                              size: 48,
-                            ),
-                            SizedBox(height: 16),
-                            Text(
-                              'No exercises found',
-                              style: GoogleFonts.poppins(
-                                color: Colors.grey[400],
-                                fontSize: 16,
-                              ),
-                            ),
-                          ],
-                        ),
-                      )
-                    : ListView.builder(
-                        padding: EdgeInsets.symmetric(horizontal: 20),
-                        itemCount: filteredExercises.length,
-                        itemBuilder: (context, index) {
-                          final exercise = filteredExercises[index];
-                          return _buildExerciseCard(exercise);
-                        },
-                      ),
+                ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.fitness_center,
+                    color: Colors.grey[600],
+                    size: 48,
+                  ),
+                  SizedBox(height: 16),
+                  Text(
+                    'No exercises found',
+                    style: GoogleFonts.poppins(
+                      color: Colors.grey[400],
+                      fontSize: 16,
+                    ),
+                  ),
+                ],
+              ),
+            )
+                : ListView.builder(
+              padding: EdgeInsets.symmetric(horizontal: 20),
+              itemCount: filteredExercises.length,
+              itemBuilder: (context, index) {
+                final exercise = filteredExercises[index];
+                return _buildExerciseCard(exercise);
+              },
+            ),
           ),
         ],
       ),
@@ -213,13 +242,13 @@ class _ExerciseSelectionPageState extends State<ExerciseSelectionPage> {
 
   Widget _buildExerciseCard(ExerciseSelectionModel exercise) {
     final isSelected = selectedExercises.any((selected) => selected.id == exercise.id);
-    
+
     return Container(
       margin: EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: Color(0xFF1A1A1A),
         borderRadius: BorderRadius.circular(16),
-        border: isSelected 
+        border: isSelected
             ? Border.all(color: widget.selectedColor, width: 2)
             : Border.all(color: Colors.grey[800]!, width: 1),
       ),
@@ -232,7 +261,7 @@ class _ExerciseSelectionPageState extends State<ExerciseSelectionPage> {
             padding: EdgeInsets.all(16),
             child: Row(
               children: [
-                // Exercise image
+                // Exercise image with improved handling
                 Container(
                   width: 60,
                   height: 60,
@@ -240,29 +269,10 @@ class _ExerciseSelectionPageState extends State<ExerciseSelectionPage> {
                     color: Color(0xFF2A2A2A),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: exercise.imageUrl.isNotEmpty
-                      ? ClipRRect(
-                          borderRadius: BorderRadius.circular(12),
-                          child: Image.network(
-                            exercise.imageUrl,
-                            fit: BoxFit.cover,
-                            errorBuilder: (context, error, stackTrace) {
-                              return Icon(
-                                Icons.fitness_center,
-                                color: widget.selectedColor,
-                                size: 24,
-                              );
-                            },
-                          ),
-                        )
-                      : Icon(
-                          Icons.fitness_center,
-                          color: widget.selectedColor,
-                          size: 24,
-                        ),
+                  child: _buildExerciseImage(exercise),
                 ),
                 SizedBox(width: 16),
-                
+
                 // Exercise details
                 Expanded(
                   child: Column(
@@ -318,6 +328,7 @@ class _ExerciseSelectionPageState extends State<ExerciseSelectionPage> {
                               style: GoogleFonts.poppins(
                                 color: Colors.grey[400],
                                 fontSize: 10,
+                                fontWeight: FontWeight.w500,
                               ),
                             ),
                           ),
@@ -326,7 +337,7 @@ class _ExerciseSelectionPageState extends State<ExerciseSelectionPage> {
                     ],
                   ),
                 ),
-                
+
                 // Selection indicator
                 Container(
                   width: 24,
@@ -341,10 +352,10 @@ class _ExerciseSelectionPageState extends State<ExerciseSelectionPage> {
                   ),
                   child: isSelected
                       ? Icon(
-                          Icons.check,
-                          color: Colors.white,
-                          size: 16,
-                        )
+                    Icons.check,
+                    color: Colors.white,
+                    size: 16,
+                  )
                       : null,
                 ),
               ],
@@ -355,16 +366,72 @@ class _ExerciseSelectionPageState extends State<ExerciseSelectionPage> {
     );
   }
 
+  // New method to handle image display logic
+  Widget _buildExerciseImage(ExerciseSelectionModel exercise) {
+    // Check if image URL exists and is not empty
+    if (exercise.imageUrl == null ||
+        exercise.imageUrl!.isEmpty ||
+        exercise.imageUrl!.trim().isEmpty) {
+      // No image URL - show stock icon
+      return _buildStockIcon();
+    }
+
+    // Image URL exists - try to load it
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: Image.network(
+        exercise.imageUrl!,
+        fit: BoxFit.cover,
+        loadingBuilder: (context, child, loadingProgress) {
+          if (loadingProgress == null) {
+            // Image loaded successfully
+            return child;
+          }
+          // Show loading indicator
+          return Center(
+            child: SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(
+                value: loadingProgress.expectedTotalBytes != null
+                    ? loadingProgress.cumulativeBytesLoaded /
+                    loadingProgress.expectedTotalBytes!
+                    : null,
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation<Color>(widget.selectedColor),
+              ),
+            ),
+          );
+        },
+        errorBuilder: (context, error, stackTrace) {
+          // Image failed to load (CORS, 404, etc.) - show stock icon
+          print('❌ Failed to load image for ${exercise.name}: $error');
+          return _buildStockIcon();
+        },
+      ),
+    );
+  }
+
+  // Stock icon widget
+  Widget _buildStockIcon() {
+    return Center(
+      child: Icon(
+        Icons.fitness_center,
+        color: widget.selectedColor,
+        size: 24,
+      ),
+    );
+  }
+
   Future<void> _proceedToConfiguration() async {
     if (selectedExercises.isEmpty) return;
-
     // Convert to SelectedExerciseWithConfig with default values
     final exercisesWithConfig = selectedExercises.map((exercise) {
       // Check if we already have configuration for this exercise
       final existingConfig = widget.currentSelections
           .where((config) => config.exercise.id == exercise.id)
           .firstOrNull;
-      
+
       return existingConfig ?? SelectedExerciseWithConfig(exercise: exercise);
     }).toList();
 
@@ -379,7 +446,20 @@ class _ExerciseSelectionPageState extends State<ExerciseSelectionPage> {
     );
 
     if (result != null) {
-      Navigator.pop(context, result);
+      // Merge the newly configured exercises with existing exercises from other muscle groups
+      final existingExercisesFromOtherMuscles = widget.currentSelections
+          .where((config) => config.exercise.targetMuscle.toLowerCase() != widget.muscleGroup.name.toLowerCase())
+          .toList();
+      
+      final mergedExercises = [...existingExercisesFromOtherMuscles, ...result];
+      
+      print('Merging exercises: ${existingExercisesFromOtherMuscles.length} existing + ${result.length} new = ${mergedExercises.length} total');
+      for (var exercise in mergedExercises) {
+        print('Merged exercise: ${exercise.exercise.name} - Target Muscle: "${exercise.exercise.targetMuscle}"');
+      }
+      
+      // When returning from configuration, update the global list and pop back
+      Navigator.pop(context, mergedExercises);
     }
   }
 }

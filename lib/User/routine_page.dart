@@ -13,6 +13,8 @@ class RoutinePage extends StatefulWidget {
 
 class _RoutinePageState extends State<RoutinePage> with SingleTickerProviderStateMixin {
   List<RoutineModel> myRoutines = [];
+  List<RoutineModel> coachAssignedRoutines = [];
+  List<RoutineModel> templateRoutines = [];
   List<WorkoutSession> workoutHistory = [];
   late TabController _tabController;
   bool _showFab = true;
@@ -59,7 +61,11 @@ class _RoutinePageState extends State<RoutinePage> with SingleTickerProviderStat
       if (!mounted) return;
       
       setState(() {
-        myRoutines = routineResponse.routines;
+        myRoutines = routineResponse.myRoutines.isNotEmpty
+            ? routineResponse.myRoutines
+            : routineResponse.routines;
+        coachAssignedRoutines = routineResponse.coachAssigned;
+        templateRoutines = routineResponse.templateRoutines;
         workoutHistory = history;
         isProMember = routineResponse.isPremium;
         _totalRoutines = routineResponse.totalRoutines;
@@ -1016,336 +1022,356 @@ class _RoutinePageState extends State<RoutinePage> with SingleTickerProviderStat
               itemCount: displayRoutines.length,
               itemBuilder: (context, index) {
                 final routine = displayRoutines[index];
-                final routineColor = _getColorFromString(routine.color);
-                
-                return Container(
-                  margin: EdgeInsets.only(bottom: 20),
-                  decoration: BoxDecoration(
-                    color: Color(0xFF1A1A1A),
-                    borderRadius: BorderRadius.circular(24),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.3),
-                        blurRadius: 12,
-                        offset: Offset(0, 6),
-                      ),
-                    ],
-                  ),
-                  child: Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Modern Header
-                        Row(
-                          children: [
-                            Container(
-                              padding: EdgeInsets.all(16),
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: [routineColor, routineColor.withOpacity(0.7)],
-                                ),
-                                borderRadius: BorderRadius.circular(16),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: routineColor.withOpacity(0.3),
-                                    blurRadius: 8,
-                                    offset: Offset(0, 4),
-                                  ),
-                                ],
-                              ),
-                              child: Icon(
-                                Icons.fitness_center_rounded,
-                                color: Colors.white,
-                                size: 24,
-                              ),
-                            ),
-                            SizedBox(width: 16),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    routine.name,
-                                    style: GoogleFonts.poppins(
-                                      color: Colors.white,
-                                      fontSize: 20,
-                                      fontWeight: FontWeight.bold,
-                                      letterSpacing: -0.3,
-                                    ),
-                                  ),
-                                  SizedBox(height: 4),
-                                  Text(
-                                    "Created by ${routine.createdBy} • v${routine.version}",
-                                    style: GoogleFonts.poppins(
-                                      color: Colors.grey[400],
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            PopupMenuButton<String>(
-                              icon: Icon(Icons.more_vert_rounded, color: Colors.grey[400]),
-                              color: Color(0xFF2A2A2A),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                              onSelected: (value) => _handleRoutineAction(value, routine),
-                              itemBuilder: (context) => [
-                                PopupMenuItem(
-                                  value: 'edit',
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.edit_rounded, color: Color(0xFF4ECDC4), size: 20),
-                                      SizedBox(width: 12),
-                                      Text('Edit', style: GoogleFonts.poppins(color: Colors.white)),
-                                    ],
-                                  ),
-                                ),
-                                PopupMenuItem(
-                                  value: 'duplicate',
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.copy_rounded, color: Color(0xFF96CEB4), size: 20),
-                                      SizedBox(width: 12),
-                                      Text('Duplicate', style: GoogleFonts.poppins(color: Colors.white)),
-                                    ],
-                                  ),
-                                ),
-                                PopupMenuItem(
-                                  value: 'share',
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.share_rounded, color: Color(0xFFFF6B35), size: 20),
-                                      SizedBox(width: 12),
-                                      Text('Share', style: GoogleFonts.poppins(color: Colors.white)),
-                                    ],
-                                  ),
-                                ),
-                                PopupMenuItem(
-                                  value: 'delete',
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.delete_rounded, color: Colors.red, size: 20),
-                                      SizedBox(width: 12),
-                                      Text('Delete', style: GoogleFonts.poppins(color: Colors.white)),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                        
-                        SizedBox(height: 20),
-                        
-                        // Tags
-                        if (routine.tags.isNotEmpty)
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: routine.tags.map<Widget>((tag) => Container(
-                              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                              decoration: BoxDecoration(
-                                color: routineColor.withOpacity(0.15),
-                                borderRadius: BorderRadius.circular(20),
-                                border: Border.all(color: routineColor.withOpacity(0.3)),
-                              ),
-                              child: Text(
-                                tag,
-                                style: GoogleFonts.poppins(
-                                  color: routineColor,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            )).toList(),
-                          ),
-                        
-                        if (routine.tags.isNotEmpty) SizedBox(height: 16),
-                        
-                        // Info chips
-                        Wrap(
-                          spacing: 10,
-                          runSpacing: 10,
-                          children: [
-                            _buildInfoChip(Icons.timer_rounded, routine.duration, routineColor),
-                            _buildInfoChip(Icons.format_list_numbered_rounded, "${routine.exercises} exercises", routineColor),
-                            _buildInfoChip(Icons.trending_up_rounded, routine.difficulty, routineColor),
-                            _buildInfoChip(Icons.flag_rounded, routine.goal, routineColor),
-                          ],
-                        ),
-                        
-                        // Progress Section
-                        _buildProgressSection(routine),
-                        
-                        SizedBox(height: 20),
-                        
-                        // Exercise List
-                        Text(
-                          routine.exerciseList.isEmpty ? "No exercises listed" : routine.exerciseList,
-                          style: GoogleFonts.poppins(
-                            color: Colors.grey[300],
-                            fontSize: 14,
-                            height: 1.5,
-                          ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        
-                        SizedBox(height: 24),
-                        
-                        // Start Workout Button
-                        Container(
-                          width: double.infinity,
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [routineColor, routineColor.withOpacity(0.8)],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
-                            borderRadius: BorderRadius.circular(16),
-                            boxShadow: [
-                              BoxShadow(
-                                color: routineColor.withOpacity(0.3),
-                                blurRadius: 8,
-                                offset: Offset(0, 4),
-                              ),
-                            ],
-                          ),
-                          child: ElevatedButton.icon(
-                            onPressed: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => StartWorkoutPreviewPage(routine: routine),
-                                ),
-                              );
-                            },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.transparent,
-                              foregroundColor: Colors.white,
-                              elevation: 0,
-                              padding: EdgeInsets.symmetric(vertical: 16),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                            ),
-                            icon: Icon(Icons.play_arrow_rounded, size: 24),
-                            label: Text(
-                              "Start Workout",
-                              style: GoogleFonts.poppins(
-                                fontWeight: FontWeight.w600,
-                                fontSize: 16,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
+                return _buildRoutineCard(routine, showActions: true);
               },
             ),
           );
   }
 
   Widget _buildCoachRoutinesTab() {
-    return Center(
-      child: Container(
-        margin: EdgeInsets.all(20),
-        padding: EdgeInsets.all(32),
-        decoration: BoxDecoration(
-          color: Color(0xFF1A1A1A),
-          borderRadius: BorderRadius.circular(24),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.2),
-              blurRadius: 8,
-              offset: Offset(0, 4),
-            ),
-          ],
+    if (_isLoading) return _buildLoadingState();
+    if (_errorMessage != null) return _buildErrorState();
+
+    final list = coachAssignedRoutines;
+    if (list.isEmpty) {
+      return Center(
+        child: Container(
+          margin: EdgeInsets.all(20),
+          padding: EdgeInsets.all(32),
+          decoration: BoxDecoration(
+            color: Color(0xFF1A1A1A),
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.2),
+                blurRadius: 8,
+                offset: Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: Color(0xFF4ECDC4).withOpacity(0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.school_rounded, color: Color(0xFF4ECDC4), size: 48),
+              ),
+              SizedBox(height: 20),
+              Text(
+                'Coach Routines',
+                style: GoogleFonts.poppins(
+                  color: Colors.white,
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              SizedBox(height: 12),
+              Text(
+                'No coach-assigned routines yet. Your coach will assign personalized routines here.',
+                style: GoogleFonts.poppins(
+                  color: Colors.grey[400],
+                  fontSize: 14,
+                  height: 1.5,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              padding: EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Color(0xFF4ECDC4).withOpacity(0.1),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(Icons.school_rounded, color: Color(0xFF4ECDC4), size: 48),
-            ),
-            SizedBox(height: 20),
-            Text(
-              'Coach Routines',
-              style: GoogleFonts.poppins(
-                color: Colors.white,
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            SizedBox(height: 12),
-            Text(
-              'No coach-assigned routines yet. Your coach will assign personalized routines here.',
-              style: GoogleFonts.poppins(
-                color: Colors.grey[400],
-                fontSize: 14,
-                height: 1.5,
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _loadData,
+      color: Color(0xFF4ECDC4),
+      backgroundColor: Color(0xFF1A1A1A),
+      child: ListView.builder(
+        padding: EdgeInsets.all(20),
+        itemCount: list.length,
+        itemBuilder: (context, index) {
+          final routine = list[index];
+          return _buildRoutineCard(routine, showActions: false);
+        },
       ),
     );
   }
 
   Widget _buildTemplatesTab() {
-    return Center(
-      child: Container(
-        margin: EdgeInsets.all(20),
-        padding: EdgeInsets.all(32),
-        decoration: BoxDecoration(
-          color: Color(0xFF1A1A1A),
-          borderRadius: BorderRadius.circular(24),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.2),
-              blurRadius: 8,
-              offset: Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              padding: EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Color(0xFF96CEB4).withOpacity(0.1),
-                shape: BoxShape.circle,
+    if (_isLoading) return _buildLoadingState();
+    if (_errorMessage != null) return _buildErrorState();
+
+    final list = templateRoutines;
+    if (list.isEmpty) {
+      return Center(
+        child: Container(
+          margin: EdgeInsets.all(20),
+          padding: EdgeInsets.all(32),
+          decoration: BoxDecoration(
+            color: Color(0xFF1A1A1A),
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.2),
+                blurRadius: 8,
+                offset: Offset(0, 4),
               ),
-              child: Icon(Icons.library_books_rounded, color: Color(0xFF96CEB4), size: 48),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: Color(0xFF96CEB4).withOpacity(0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.library_books_rounded, color: Color(0xFF96CEB4), size: 48),
+              ),
+              SizedBox(height: 20),
+              Text(
+                'Routine Templates',
+                style: GoogleFonts.poppins(
+                  color: Colors.white,
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              SizedBox(height: 12),
+              Text(
+                'No templates yet. Templates created by admins will appear here.',
+                style: GoogleFonts.poppins(
+                  color: Colors.grey[400],
+                  fontSize: 14,
+                  height: 1.5,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _loadData,
+      color: Color(0xFF96CEB4),
+      backgroundColor: Color(0xFF1A1A1A),
+      child: ListView.builder(
+        padding: EdgeInsets.all(20),
+        itemCount: list.length,
+        itemBuilder: (context, index) {
+          final routine = list[index];
+          return _buildRoutineCard(routine, showActions: false);
+        },
+      ),
+    );
+  }
+
+  Widget _buildRoutineCard(RoutineModel routine, {bool showActions = true}) {
+    final routineColor = _getColorFromString(routine.color);
+    return Container(
+      margin: EdgeInsets.only(bottom: 20),
+      decoration: BoxDecoration(
+        color: Color(0xFF1A1A1A),
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.3),
+            blurRadius: 12,
+            offset: Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [routineColor, routineColor.withOpacity(0.7)],
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: routineColor.withOpacity(0.3),
+                        blurRadius: 8,
+                        offset: Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Icon(
+                    Icons.fitness_center_rounded,
+                    color: Colors.white,
+                    size: 24,
+                  ),
+                ),
+                SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        routine.name,
+                        style: GoogleFonts.poppins(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: -0.3,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (showActions)
+                  PopupMenuButton<String>(
+                    icon: Icon(Icons.more_vert_rounded, color: Colors.grey[400]),
+                    color: Color(0xFF2A2A2A),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    onSelected: (value) => _handleRoutineAction(value, routine),
+                    itemBuilder: (context) => [
+                      PopupMenuItem(
+                        value: 'edit',
+                        child: Row(
+                          children: [
+                            Icon(Icons.edit_rounded, color: Color(0xFF4ECDC4), size: 20),
+                            SizedBox(width: 12),
+                            Text('Edit', style: GoogleFonts.poppins(color: Colors.white)),
+                          ],
+                        ),
+                      ),
+                      PopupMenuItem(
+                        value: 'duplicate',
+                        child: Row(
+                          children: [
+                            Icon(Icons.copy_rounded, color: Color(0xFF96CEB4), size: 20),
+                            SizedBox(width: 12),
+                            Text('Duplicate', style: GoogleFonts.poppins(color: Colors.white)),
+                          ],
+                        ),
+                      ),
+                      PopupMenuItem(
+                        value: 'share',
+                        child: Row(
+                          children: [
+                            Icon(Icons.share_rounded, color: Color(0xFFFF6B35), size: 20),
+                            SizedBox(width: 12),
+                            Text('Share', style: GoogleFonts.poppins(color: Colors.white)),
+                          ],
+                        ),
+                      ),
+                      PopupMenuItem(
+                        value: 'delete',
+                        child: Row(
+                          children: [
+                            Icon(Icons.delete_rounded, color: Colors.red, size: 20),
+                            SizedBox(width: 12),
+                            Text('Delete', style: GoogleFonts.poppins(color: Colors.white)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+            SizedBox(height: 20),
+            if (routine.tags.isNotEmpty)
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: routine.tags.map<Widget>((tag) => Container(
+                  padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: routineColor.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: routineColor.withOpacity(0.3)),
+                  ),
+                  child: Text(
+                    tag,
+                    style: GoogleFonts.poppins(
+                      color: routineColor,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                )).toList(),
+              ),
+            if (routine.tags.isNotEmpty) SizedBox(height: 16),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                _buildInfoChip(Icons.timer_rounded, routine.duration, routineColor),
+                _buildInfoChip(Icons.format_list_numbered_rounded, "${routine.exercises} exercises", routineColor),
+                _buildInfoChip(Icons.trending_up_rounded, routine.difficulty, routineColor),
+                _buildInfoChip(Icons.flag_rounded, routine.goal, routineColor),
+              ],
             ),
             SizedBox(height: 20),
             Text(
-              'Routine Templates',
+              routine.exerciseList.isEmpty ? "No exercises listed" : routine.exerciseList,
               style: GoogleFonts.poppins(
-                color: Colors.white,
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            SizedBox(height: 12),
-            Text(
-              'Browse and use pre-made routine templates. Coming soon!',
-              style: GoogleFonts.poppins(
-                color: Colors.grey[400],
+                color: Colors.grey[300],
                 fontSize: 14,
                 height: 1.5,
               ),
-              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            SizedBox(height: 24),
+            Container(
+              width: double.infinity,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [routineColor, routineColor.withOpacity(0.8)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: routineColor.withOpacity(0.3),
+                    blurRadius: 8,
+                    offset: Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => StartWorkoutPreviewPage(routine: routine),
+                    ),
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.transparent,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  padding: EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+                icon: Icon(Icons.play_arrow_rounded, size: 24),
+                label: Text(
+                  "Start Workout",
+                  style: GoogleFonts.poppins(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 16,
+                  ),
+                ),
+              ),
             ),
           ],
         ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../User/services/auth_service.dart';
+import '../User/services/home_service.dart';
 
 class HomePage extends StatefulWidget {
   @override
@@ -13,87 +14,13 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   late PageController _merchPageController;
   int _currentMerchIndex = 0;
 
-  final List<AnnouncementItem> announcements = [
-    AnnouncementItem(
-      title: "New Equipment Arrival!",
-      description: "Check out our latest cardio machines on the second floor.",
-      icon: Icons.fitness_center,
-      color: Color(0xFFFF6B35),
-      isImportant: true,
-    ),
-    AnnouncementItem(
-      title: "Holiday Schedule",
-      description: "Modified hours during the holiday season. Check the schedule.",
-      icon: Icons.schedule,
-      color: Color(0xFF4ECDC4),
-      isImportant: false,
-    ),
-    AnnouncementItem(
-      title: "Group Classes",
-      description: "New yoga and pilates classes starting next week!",
-      icon: Icons.group,
-      color: Color(0xFF96CEB4),
-      isImportant: false,
-    ),
-  ];
-
-  final List<MerchItem> merchItems = [
-    MerchItem(
-      name: "CNERGY Protein Powder",
-      price: "₱49.99",
-      description: "Premium whey protein for muscle building",
-      color: Color(0xFFFF6B35),
-      icon: Icons.local_drink,
-    ),
-    MerchItem(
-      name: "Gym Water Bottle",
-      price: "₱19.99",
-      description: "Stay hydrated with our premium bottle",
-      color: Color(0xFF4ECDC4),
-      icon: Icons.water_drop,
-    ),
-    MerchItem(
-      name: "CNERGY T-Shirt",
-      price: "₱24.99",
-      description: "Comfortable workout apparel",
-      color: Color(0xFF96CEB4),
-      icon: Icons.checkroom,
-    ),
-    MerchItem(
-      name: "Resistance Bands Set",
-      price: "₱34.99",
-      description: "Complete set for home workouts",
-      color: Color(0xFF45B7D1),
-      icon: Icons.fitness_center,
-    ),
-  ];
-
-  final List<PromotionItem> promotions = [
-    PromotionItem(
-      title: "New Year Special",
-      description: "50% off first month membership",
-      discount: "50% OFF",
-      validUntil: "Valid until Jan 31st",
-      color: Color(0xFFFF6B35),
-      icon: Icons.local_fire_department,
-    ),
-    PromotionItem(
-      title: "Student Discount",
-      description: "Special rates for students with valid ID",
-      discount: "25% OFF",
-      validUntil: "Ongoing offer",
-      color: Color(0xFF4ECDC4),
-      icon: Icons.school,
-    ),
-    PromotionItem(
-      title: "Refer a Friend",
-      description: "Get a free month when you refer someone",
-      discount: "FREE MONTH",
-      validUntil: "No expiry",
-      color: Color(0xFF96CEB4),
-      icon: Icons.people,
-    ),
-  ];
+  // Data lists that will be populated from API
+  List<AnnouncementItem> announcements = [];
+  List<MerchItem> merchItems = [];
+  List<PromotionItem> promotions = [];
+  
+  // Loading state
+  bool _isLoading = true;
 
   @override
   void initState() {
@@ -108,8 +35,34 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     _merchPageController = PageController(viewportFraction: 0.8);
     _animationController.forward();
     
-    // Auto-scroll merchandise
-    _startAutoScroll();
+    // Load data from API
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    try {
+      final data = await HomeService.getHomeData();
+      if (mounted) {
+        setState(() {
+          announcements = data['announcements'];
+          merchItems = data['merchandise'];
+          promotions = data['promotions'];
+          _isLoading = false;
+        });
+        
+        // Start auto-scroll after data is loaded
+        if (merchItems.isNotEmpty) {
+          _startAutoScroll();
+        }
+      }
+    } catch (e) {
+      print('Error loading home data: $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
   }
 
   void _startAutoScroll() {
@@ -269,6 +222,72 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  // Helper method to convert hex string to Color
+  Color _hexToColor(String hex) {
+    hex = hex.replaceAll('#', '');
+    if (hex.length == 6) {
+      hex = 'FF$hex'; // Add alpha if not present
+    }
+    return Color(int.parse(hex, radix: 16));
+  }
+
+  // Helper method to get IconData from string
+  IconData _getIconData(String iconName) {
+    switch (iconName) {
+      case 'fitness_center': return Icons.fitness_center;
+      case 'schedule': return Icons.schedule;
+      case 'group': return Icons.group;
+      case 'local_drink': return Icons.local_drink;
+      case 'water_drop': return Icons.water_drop;
+      case 'checkroom': return Icons.checkroom;
+      case 'sports_handball': return Icons.sports_handball;
+      case 'sports_basketball': return Icons.sports_basketball;
+      case 'local_fire_department': return Icons.local_fire_department;
+      case 'school': return Icons.school;
+      case 'people': return Icons.people;
+      case 'star': return Icons.star;
+      case 'gift': return Icons.card_giftcard;
+      case 'celebration': return Icons.celebration;
+      default: return Icons.info;
+    }
+  }
+
+  // Loading card widget
+  Widget _buildLoadingCard(bool isSmallScreen, bool isThinScreen) {
+    return Container(
+      padding: EdgeInsets.all(isSmallScreen ? 12 : 16),
+      decoration: BoxDecoration(
+        color: Color(0xFF1A1A1A),
+        borderRadius: BorderRadius.circular(isSmallScreen ? 12 : 16),
+      ),
+      child: Center(
+        child: CircularProgressIndicator(
+          valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF4ECDC4)),
+        ),
+      ),
+    );
+  }
+
+  // Empty state card widget
+  Widget _buildEmptyCard(String message, bool isSmallScreen, bool isThinScreen) {
+    return Container(
+      padding: EdgeInsets.all(isSmallScreen ? 12 : 16),
+      decoration: BoxDecoration(
+        color: Color(0xFF1A1A1A),
+        borderRadius: BorderRadius.circular(isSmallScreen ? 12 : 16),
+      ),
+      child: Center(
+        child: Text(
+          message,
+          style: GoogleFonts.poppins(
+            fontSize: isSmallScreen ? 14 : 16,
+            color: Colors.grey[400],
+          ),
+        ),
       ),
     );
   }
@@ -488,12 +507,20 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           ),
         ),
         SizedBox(height: isSmallScreen ? 12 : 16),
-        ...announcements.map((announcement) => _buildAnnouncementCard(announcement, isSmallScreen, isThinScreen)),
+        if (_isLoading)
+          _buildLoadingCard(isSmallScreen, isThinScreen)
+        else if (announcements.isEmpty)
+          _buildEmptyCard('No announcements available', isSmallScreen, isThinScreen)
+        else
+          ...announcements.map((announcement) => _buildAnnouncementCard(announcement, isSmallScreen, isThinScreen)),
       ],
     );
   }
 
   Widget _buildAnnouncementCard(AnnouncementItem announcement, bool isSmallScreen, bool isThinScreen) {
+    // Convert hex color string to Color
+    Color announcementColor = _hexToColor(announcement.color);
+    
     return Container(
       margin: EdgeInsets.only(bottom: isSmallScreen ? 8 : 12),
       padding: EdgeInsets.all(isSmallScreen ? 12 : 16),
@@ -501,7 +528,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         color: Color(0xFF1A1A1A),
         borderRadius: BorderRadius.circular(isSmallScreen ? 12 : 16),
         border: announcement.isImportant 
-            ? Border.all(color: announcement.color.withOpacity(0.5), width: 2)
+            ? Border.all(color: announcementColor.withOpacity(0.5), width: 2)
             : null,
       ),
       child: Row(
@@ -510,12 +537,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           Container(
             padding: EdgeInsets.all(isSmallScreen ? 8 : 12),
             decoration: BoxDecoration(
-              color: announcement.color.withOpacity(0.1),
+              color: announcementColor.withOpacity(0.1),
               borderRadius: BorderRadius.circular(isSmallScreen ? 8 : 12),
             ),
             child: Icon(
-              announcement.icon,
-              color: announcement.color,
+              _getIconData(announcement.icon),
+              color: announcementColor,
               size: isSmallScreen ? 20 : 24,
             ),
           ),
@@ -545,7 +572,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                           vertical: 2
                         ),
                         decoration: BoxDecoration(
-                          color: announcement.color.withOpacity(0.2),
+                          color: announcementColor.withOpacity(0.2),
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: Text(
@@ -553,7 +580,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                           style: GoogleFonts.poppins(
                             fontSize: isThinScreen ? 8 : (isSmallScreen ? 9 : 10),
                             fontWeight: FontWeight.bold,
-                            color: announcement.color,
+                            color: announcementColor,
                           ),
                         ),
                       ),
@@ -590,49 +617,61 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           ),
         ),
         SizedBox(height: isSmallScreen ? 12 : 16),
-        Container(
-          height: isSmallScreen ? 160 : 200,
-          child: PageView.builder(
-            controller: _merchPageController,
-            onPageChanged: (index) {
-              setState(() {
-                _currentMerchIndex = index;
-              });
-            },
-            itemCount: merchItems.length,
-            itemBuilder: (context, index) {
-              return _buildMerchCard(merchItems[index], isSmallScreen, isThinScreen);
-            },
+        if (_isLoading)
+          Container(
+            height: isSmallScreen ? 160 : 200,
+            child: _buildLoadingCard(isSmallScreen, isThinScreen),
+          )
+        else if (merchItems.isEmpty)
+          _buildEmptyCard('No merchandise available', isSmallScreen, isThinScreen)
+        else ...[
+          Container(
+            height: isSmallScreen ? 160 : 200,
+            child: PageView.builder(
+              controller: _merchPageController,
+              onPageChanged: (index) {
+                setState(() {
+                  _currentMerchIndex = index;
+                });
+              },
+              itemCount: merchItems.length,
+              itemBuilder: (context, index) {
+                return _buildMerchCard(merchItems[index], isSmallScreen, isThinScreen);
+              },
+            ),
           ),
-        ),
-        SizedBox(height: isSmallScreen ? 8 : 12),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: merchItems.asMap().entries.map((entry) {
-            return Container(
-              width: isSmallScreen ? 6 : 8,
-              height: isSmallScreen ? 6 : 8,
-              margin: EdgeInsets.symmetric(horizontal: isSmallScreen ? 3 : 4),
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: _currentMerchIndex == entry.key
-                    ? Color(0xFF4ECDC4)
-                    : Colors.grey[600],
-              ),
-            );
-          }).toList(),
-        ),
+          SizedBox(height: isSmallScreen ? 8 : 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: merchItems.asMap().entries.map((entry) {
+              return Container(
+                width: isSmallScreen ? 6 : 8,
+                height: isSmallScreen ? 6 : 8,
+                margin: EdgeInsets.symmetric(horizontal: isSmallScreen ? 3 : 4),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: _currentMerchIndex == entry.key
+                      ? Color(0xFF4ECDC4)
+                      : Colors.grey[600],
+                ),
+              );
+            }).toList(),
+          ),
+        ],
       ],
     );
   }
 
   Widget _buildMerchCard(MerchItem item, bool isSmallScreen, bool isThinScreen) {
+    // Convert hex color string to Color
+    Color itemColor = _hexToColor(item.color);
+    
     return Container(
       margin: EdgeInsets.symmetric(horizontal: isSmallScreen ? 6 : 8),
       decoration: BoxDecoration(
         color: Color(0xFF1A1A1A),
         borderRadius: BorderRadius.circular(isSmallScreen ? 12 : 16),
-        border: Border.all(color: item.color.withOpacity(0.3)),
+        border: Border.all(color: itemColor.withOpacity(0.3)),
       ),
       child: Column(
         children: [
@@ -640,16 +679,16 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             flex: 3,
             child: Container(
               decoration: BoxDecoration(
-                color: item.color.withOpacity(0.1),
+                color: itemColor.withOpacity(0.1),
                 borderRadius: BorderRadius.vertical(
                   top: Radius.circular(isSmallScreen ? 12 : 16)
                 ),
               ),
               child: Center(
                 child: Icon(
-                  item.icon,
+                  _getIconData(item.icon),
                   size: isSmallScreen ? 36 : 48,
-                  color: item.color,
+                  color: itemColor,
                 ),
               ),
             ),
@@ -678,7 +717,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                     style: GoogleFonts.poppins(
                       fontSize: isSmallScreen ? 14 : 16,
                       fontWeight: FontWeight.bold,
-                      color: item.color,
+                      color: itemColor,
                     ),
                   ),
                 ],
@@ -703,26 +742,34 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           ),
         ),
         SizedBox(height: isSmallScreen ? 12 : 16),
-        ...promotions.map((promotion) => _buildPromotionCard(promotion, isSmallScreen, isThinScreen)),
+        if (_isLoading)
+          _buildLoadingCard(isSmallScreen, isThinScreen)
+        else if (promotions.isEmpty)
+          _buildEmptyCard('No promotions available', isSmallScreen, isThinScreen)
+        else
+          ...promotions.map((promotion) => _buildPromotionCard(promotion, isSmallScreen, isThinScreen)),
       ],
     );
   }
 
   Widget _buildPromotionCard(PromotionItem promotion, bool isSmallScreen, bool isThinScreen) {
+    // Convert hex color string to Color
+    Color promotionColor = _hexToColor(promotion.color);
+    
     return Container(
       margin: EdgeInsets.only(bottom: isSmallScreen ? 8 : 12),
       padding: EdgeInsets.all(isSmallScreen ? 12 : 16),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
-            promotion.color.withOpacity(0.1),
-            promotion.color.withOpacity(0.05),
+            promotionColor.withOpacity(0.1),
+            promotionColor.withOpacity(0.05),
           ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(isSmallScreen ? 12 : 16),
-        border: Border.all(color: promotion.color.withOpacity(0.3)),
+        border: Border.all(color: promotionColor.withOpacity(0.3)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -730,12 +777,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           Container(
             padding: EdgeInsets.all(isSmallScreen ? 8 : 12),
             decoration: BoxDecoration(
-              color: promotion.color.withOpacity(0.2),
+              color: promotionColor.withOpacity(0.2),
               borderRadius: BorderRadius.circular(isSmallScreen ? 8 : 12),
             ),
             child: Icon(
-              promotion.icon,
-              color: promotion.color,
+              _getIconData(promotion.icon),
+              color: promotionColor,
               size: isSmallScreen ? 20 : 24,
             ),
           ),
@@ -778,7 +825,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
               vertical: isSmallScreen ? 4 : 6
             ),
             decoration: BoxDecoration(
-              color: promotion.color,
+              color: promotionColor,
               borderRadius: BorderRadius.circular(6),
             ),
             child: Text(
@@ -794,54 +841,4 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       ),
     );
   }
-}
-
-class AnnouncementItem {
-  final String title;
-  final String description;
-  final IconData icon;
-  final Color color;
-  final bool isImportant;
-
-  AnnouncementItem({
-    required this.title,
-    required this.description,
-    required this.icon,
-    required this.color,
-    required this.isImportant,
-  });
-}
-
-class MerchItem {
-  final String name;
-  final String price;
-  final String description;
-  final Color color;
-  final IconData icon;
-
-  MerchItem({
-    required this.name,
-    required this.price,
-    required this.description,
-    required this.color,
-    required this.icon,
-  });
-}
-
-class PromotionItem {
-  final String title;
-  final String description;
-  final String discount;
-  final String validUntil;
-  final Color color;
-  final IconData icon;
-
-  PromotionItem({
-    required this.title,
-    required this.description,
-    required this.discount,
-    required this.validUntil,
-    required this.color,
-    required this.icon,
-  });
 }

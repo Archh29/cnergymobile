@@ -21,6 +21,8 @@ class _CoachProgressPageState extends State<CoachProgressPage>
   List<GoalModel> memberGoals = [];
   List<WorkoutSessionModel> recentSessions = [];
   bool isLoading = true;
+  List<MemberModel> assignedMembers = [];
+  MemberModel? currentMember;
 
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
@@ -29,7 +31,8 @@ class _CoachProgressPageState extends State<CoachProgressPage>
   void initState() {
     super.initState();
     _initializeAnimations();
-    _loadMemberProgress();
+    currentMember = widget.selectedMember;
+    _loadAssignedMembersAndProgress();
   }
 
   void _initializeAnimations() {
@@ -48,21 +51,27 @@ class _CoachProgressPageState extends State<CoachProgressPage>
     super.dispose();
   }
 
-  Future<void> _loadMemberProgress() async {
+  Future<void> _loadAssignedMembersAndProgress() async {
     setState(() => isLoading = true);
 
     try {
       final futures = await Future.wait([
-        CoachService.getMemberProgress(widget.selectedMember.id),
-        CoachService.getMemberGoals(widget.selectedMember.id),
-        CoachService.getMemberWorkoutSessions(widget.selectedMember.id),
+        CoachService.getAssignedMembers(),
+        CoachService.getMemberProgress(currentMember!.id),
+        CoachService.getMemberGoals(currentMember!.id),
+        CoachService.getMemberWorkoutSessions(currentMember!.id),
       ]);
 
       if (mounted) {
         setState(() {
-          memberProgress = futures[0] as Map<String, dynamic>;
-          memberGoals = (futures[1] as List<GoalModel>).take(5).toList();
-          recentSessions = (futures[2] as List<WorkoutSessionModel>).take(10).toList();
+          assignedMembers = futures[0] as List<MemberModel>;
+          // Ensure currentMember is present in list; if not, prepend it
+          if (assignedMembers.indexWhere((m) => m.id == currentMember!.id) == -1) {
+            assignedMembers = [currentMember!, ...assignedMembers];
+          }
+          memberProgress = futures[1] as Map<String, dynamic>;
+          memberGoals = (futures[2] as List<GoalModel>).take(5).toList();
+          recentSessions = (futures[3] as List<WorkoutSessionModel>).take(10).toList();
           isLoading = false;
         });
         _animationController.forward();
@@ -85,7 +94,7 @@ class _CoachProgressPageState extends State<CoachProgressPage>
             : FadeTransition(
                 opacity: _fadeAnimation,
                 child: RefreshIndicator(
-                  onRefresh: _loadMemberProgress,
+                  onRefresh: _loadAssignedMembersAndProgress,
                   color: Color(0xFF4ECDC4),
                   child: SingleChildScrollView(
                     physics: AlwaysScrollableScrollPhysics(),
@@ -93,6 +102,8 @@ class _CoachProgressPageState extends State<CoachProgressPage>
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        _buildMemberSelector(),
+                        SizedBox(height: 12),
                         _buildMemberHeader(),
                         SizedBox(height: 20),
                         _buildProgressOverview(),
@@ -111,6 +122,64 @@ class _CoachProgressPageState extends State<CoachProgressPage>
                   ),
                 ),
               ),
+      ),
+    );
+  }
+
+  Widget _buildMemberSelector() {
+    if (assignedMembers.isEmpty) return SizedBox.shrink();
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: Color(0xFF1A1A1A),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.group, color: Color(0xFF4ECDC4), size: 18),
+          SizedBox(width: 12),
+          Expanded(
+            child: DropdownButton<MemberModel>(
+              value: currentMember,
+              dropdownColor: Color(0xFF1A1A1A),
+              isExpanded: true,
+              underline: SizedBox.shrink(),
+              iconEnabledColor: Colors.white,
+              style: GoogleFonts.poppins(color: Colors.white),
+              items: assignedMembers.map((m) => DropdownMenuItem<MemberModel>(
+                value: m,
+                child: Text(m.fullName, style: GoogleFonts.poppins(color: Colors.white)),
+              )).toList(),
+              onChanged: (member) async {
+                if (member == null) return;
+                setState(() {
+                  currentMember = member;
+                  isLoading = true;
+                });
+                try {
+                  final futures = await Future.wait([
+                    CoachService.getMemberProgress(member.id),
+                    CoachService.getMemberGoals(member.id),
+                    CoachService.getMemberWorkoutSessions(member.id),
+                  ]);
+                  if (!mounted) return;
+                  setState(() {
+                    memberProgress = futures[0] as Map<String, dynamic>;
+                    memberGoals = (futures[1] as List<GoalModel>).take(5).toList();
+                    recentSessions = (futures[2] as List<WorkoutSessionModel>).take(10).toList();
+                    isLoading = false;
+                  });
+                } catch (e) {
+                  if (!mounted) return;
+                  setState(() { isLoading = false; });
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Failed to load member data'), backgroundColor: Colors.red),
+                  );
+                }
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -180,7 +249,7 @@ class _CoachProgressPageState extends State<CoachProgressPage>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '${widget.selectedMember.fullName}\'s Progress',
+                      '${(currentMember ?? widget.selectedMember).fullName}\'s Progress',
                       style: GoogleFonts.poppins(
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
@@ -196,16 +265,16 @@ class _CoachProgressPageState extends State<CoachProgressPage>
                     ),
                     SizedBox(height: 4),
                     Text(
-                      'Member since ${widget.selectedMember.createdAt.year}',
+                      'Member since ${(currentMember ?? widget.selectedMember).createdAt.year}',
                       style: GoogleFonts.poppins(
                         fontSize: 12,
                         color: Colors.white.withOpacity(0.8),
                       ),
                     ),
-                    if (widget.selectedMember.subscriptionStatus != null) ...[
+                    if ((currentMember ?? widget.selectedMember).subscriptionStatus != null) ...[
                       SizedBox(height: 2),
                       Text(
-                        'Plan: ${widget.selectedMember.planName ?? 'Basic'}',
+                        'Plan: ${(currentMember ?? widget.selectedMember).planName ?? 'Basic'}',
                         style: GoogleFonts.poppins(
                           fontSize: 12,
                           color: Colors.white.withOpacity(0.8),
@@ -1190,7 +1259,7 @@ class _CoachProgressPageState extends State<CoachProgressPage>
                                 backgroundColor: Color(0xFF96CEB4),
                               ),
                             );
-                            _loadMemberProgress();
+                            _loadAssignedMembersAndProgress();
                           }
                         },
                         style: ElevatedButton.styleFrom(

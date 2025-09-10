@@ -7,10 +7,14 @@ import './models/attendance_model.dart';
 import './models/progress_model.dart';
 import './workout_heatmap_page.dart';
 import './measurements_page.dart';
-import './schedule_page.dart';
 import './personal_records_page.dart';
 import './goals_page.dart';
 import './models/personal_record_model.dart';
+import './models/muscle_analytics_model.dart';
+import './services/muscle_analytics_service.dart';
+import './services/profile_service.dart';
+import './services/gym_utils_service.dart';
+import './muscle_analytics_page.dart';
 
 class ComprehensiveDashboard extends StatefulWidget {
   @override
@@ -23,14 +27,18 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
   Map<String, dynamic> stats = {};
   List<GoalModel> goals = [];
   List<WorkoutSessionModel> recentSessions = [];
+  List<WorkoutSessionModel> allSessions = [];
   List<AttendanceModel> recentAttendance = [];
   List<ProgressModel> progressData = [];
   Map<DateTime, int> workoutHeatmapData = {};
-  String? nextScheduledWorkout;
-  DateTime? nextWorkoutDate;
+  int selectedYear = DateTime.now().year;
+  int selectedMonth = DateTime.now().month;
   Map<String, double> latestMeasurements = {};
   bool isLoading = true;
   List<PersonalRecordModel> personalRecords = [];
+  MuscleAnalyticsData? muscleAnalytics;
+  double? userHeight;
+  double? userWeight;
     
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
@@ -65,26 +73,28 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
         EnhancedProgressService.fetchAttendanceHistory(),
         EnhancedProgressService.fetchUserProgress(),
         EnhancedProgressService.fetchPersonalRecords(),
+        MuscleAnalyticsService.getWeeklyStats(),
+        _loadUserHeight(),
       ]);
 
       if (mounted) {
         setState(() {
           stats = futures[0] as Map<String, dynamic>;
           goals = (futures[1] as List<GoalModel>).take(3).toList();
-          recentSessions = (futures[2] as List<WorkoutSessionModel>).take(5).toList();
+          allSessions = (futures[2] as List<WorkoutSessionModel>);
+          recentSessions = allSessions.take(5).toList();
           recentAttendance = (futures[3] as List<AttendanceModel>).take(7).toList();
           progressData = futures[4] as List<ProgressModel>;
           
-          // Generate heatmap from actual workout sessions
-          workoutHeatmapData = _generateWorkoutHeatmapFromSessions(recentSessions);
+          // Generate heatmap from all workout sessions
+          workoutHeatmapData = _generateWorkoutHeatmapFromSessions(allSessions);
           
-          // Get next scheduled workout from sessions
-          nextScheduledWorkout = _getNextScheduledWorkoutFromSessions();
           
           // Get latest measurements from progress data
           latestMeasurements = _getLatestMeasurementsFromProgress();
           
           personalRecords = (futures[5] as List<PersonalRecordModel>).take(3).toList();
+          muscleAnalytics = futures[6] as MuscleAnalyticsData;
           
           isLoading = false;
         });
@@ -100,14 +110,6 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
 
   Map<DateTime, int> _generateWorkoutHeatmapFromSessions(List<WorkoutSessionModel> sessions) {
     final Map<DateTime, int> heatmapData = {};
-    final now = DateTime.now();
-    
-    // Initialize last 90 days with 0
-    for (int i = 0; i < 90; i++) {
-      final date = now.subtract(Duration(days: i));
-      final dateKey = DateTime(date.year, date.month, date.day);
-      heatmapData[dateKey] = 0;
-    }
     
     // Mark days with workouts
     for (final session in sessions) {
@@ -117,38 +119,46 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
         session.sessionDate.day,
       );
       
-      if (heatmapData.containsKey(dateKey)) {
-        // Intensity based on completion status
-        heatmapData[dateKey] = session.completed ? 3 : 1;
-      }
+      // Intensity based on completion status
+      heatmapData[dateKey] = session.completed ? 3 : 1;
     }
     
     return heatmapData;
   }
 
-  String? _getNextScheduledWorkoutFromSessions() {
-    final now = DateTime.now();
-    final upcomingSessions = recentSessions
-        .where((session) => session.sessionDate.isAfter(now) && !session.completed)
-        .toList();
-    
-    if (upcomingSessions.isNotEmpty) {
-      upcomingSessions.sort((a, b) => a.sessionDate.compareTo(b.sessionDate));
-      final nextSession = upcomingSessions.first;
-      nextWorkoutDate = nextSession.sessionDate;
-      return nextSession.programName ?? 'Workout Session';
+
+  Future<void> _loadUserHeight() async {
+    try {
+      final profileData = await ProfileService.getProfile();
+      if (profileData != null) {
+        if (profileData['height_cm'] != null) {
+          userHeight = double.tryParse(profileData['height_cm'].toString());
+        }
+        if (profileData['weight_kg'] != null) {
+          userWeight = double.tryParse(profileData['weight_kg'].toString());
+        }
+      }
+    } catch (e) {
+      print('Error loading user profile data: $e');
     }
-    
-    return null;
   }
 
   Map<String, double> _getLatestMeasurementsFromProgress() {
     if (progressData.isEmpty) {
+      // If no progress data, try to get BMI from profile data
+      double? profileBMI;
+      if (userHeight != null && userHeight! > 0 && userWeight != null && userWeight! > 0) {
+        profileBMI = GymUtilsService.calculateBMI(userWeight!, userHeight!);
+      }
+      
       return {
-        'weight': 0.0,
-        'body_fat': 0.0,
-        'muscle_mass': 0.0,
-        'height': 0.0,
+        'weight': userWeight ?? 0.0,
+        'bmi': profileBMI ?? 0.0,
+        'chest': 0.0,
+        'waist': 0.0,
+        'hips': 0.0,
+        'arms': 0.0,
+        'thighs': 0.0,
       };
     }
     
@@ -156,15 +166,22 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
     progressData.sort((a, b) => b.dateRecorded.compareTo(a.dateRecorded));
     final latest = progressData.first;
     
+    // Calculate BMI if not available in progress data
+    double? calculatedBMI = latest.bmi;
+    if ((calculatedBMI == null || calculatedBMI == 0.0) && 
+        latest.weight != null && latest.weight! > 0 && 
+        userHeight != null && userHeight! > 0) {
+      calculatedBMI = GymUtilsService.calculateBMI(latest.weight!, userHeight!);
+    }
+    
     return {
       'weight': latest.weight ?? 0.0,
-      'body_fat': 0.0, // Not available in your DB
-      'muscle_mass': 0.0, // Calculate from other measurements if needed
-      'height': 175.0, // Default or get from user profile
-      'bmi': latest.bmi ?? 0.0,
+      'bmi': calculatedBMI ?? 0.0,
       'chest': latest.chestCm ?? 0.0,
       'waist': latest.waistCm ?? 0.0,
       'hips': latest.hipsCm ?? 0.0,
+      'arms': latest.armsCm ?? 0.0,
+      'thighs': latest.thighsCm ?? 0.0,
     };
   }
 
@@ -192,9 +209,9 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
                         SizedBox(height: 24),
                         _buildWorkoutHeatmapSection(),
                         SizedBox(height: 24),
-                        _buildNextWorkoutSection(),
-                        SizedBox(height: 24),
                         _buildMeasurementsSection(),
+                        SizedBox(height: 24),
+                        _buildMuscleAnalyticsSection(),
                         SizedBox(height: 24),
                         _buildPersonalRecordsSection(),
                         SizedBox(height: 24),
@@ -278,7 +295,7 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
           MaterialPageRoute(
             builder: (context) => WorkoutHeatmapPage(
               heatmapData: workoutHeatmapData,
-              workoutSessions: recentSessions,
+              workoutSessions: allSessions,
             ),
           ),
         );
@@ -323,7 +340,7 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
                         ),
                       ),
                       Text(
-                        'Last 90 days activity',
+                        '${_monthName(selectedMonth)} $selectedYear',
                         style: GoogleFonts.poppins(
                           color: Colors.grey[400],
                           fontSize: 14,
@@ -332,60 +349,107 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
                     ],
                   ),
                 ),
-                Icon(Icons.arrow_forward_ios_rounded, color: Colors.grey[400], size: 16),
+                // Month selector
+                PopupMenuButton<int>(
+                  icon: Icon(Icons.calendar_view_month_rounded, color: Colors.white),
+                  color: Color(0xFF2A2A2A),
+                  onSelected: (m) {
+                    setState(() {
+                      selectedMonth = m;
+                    });
+                  },
+                  itemBuilder: (context) => List.generate(12, (i) => i + 1)
+                      .map((m) => PopupMenuItem(
+                            value: m,
+                            child: Text(_monthName(m), style: GoogleFonts.poppins(color: Colors.white)),
+                          ))
+                      .toList(),
+                ),
+                SizedBox(width: 8),
+                // Year selector
+                PopupMenuButton<int>(
+                  icon: Icon(Icons.calendar_today_rounded, color: Colors.white),
+                  color: Color(0xFF2A2A2A),
+                  onSelected: (y) {
+                    setState(() {
+                      selectedYear = y;
+                    });
+                  },
+                  itemBuilder: (context) => [
+                    PopupMenuItem(value: DateTime.now().year, child: Text('${DateTime.now().year}', style: GoogleFonts.poppins(color: Colors.white))),
+                    PopupMenuItem(value: DateTime.now().year - 1, child: Text('${DateTime.now().year - 1}', style: GoogleFonts.poppins(color: Colors.white))),
+                    PopupMenuItem(value: DateTime.now().year - 2, child: Text('${DateTime.now().year - 2}', style: GoogleFonts.poppins(color: Colors.white))),
+                  ],
+                ),
               ],
             ),
             SizedBox(height: 20),
-            _buildMiniHeatmap(),
+            _buildMonthGrid(selectedYear, selectedMonth),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildMiniHeatmap() {
-    final now = DateTime.now();
-    final startDate = now.subtract(Duration(days: 20));
-        
+  Widget _buildMonthGrid(int year, int month) {
+    final int days = _daysInMonth(year, month);
+    final DateTime firstDay = DateTime(year, month, 1);
+    final int startWeekday = firstDay.weekday; // 1=Mon..7=Sun
+    final int leadingBlanks = (startWeekday - 1);
+    final totalCells = leadingBlanks + days;
+    final int rows = (totalCells / 7).ceil();
+
     return Column(
       children: [
         Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: ['S', 'M', 'T', 'W', 'T', 'F', 'S']
-              .map((day) => Text(
-                    day,
-                    style: GoogleFonts.poppins(
-                      color: Colors.grey[500],
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: ['M', 'T', 'W', 'T', 'F', 'S', 'S']
+              .map((day) => Expanded(
+                    child: Center(
+                      child: Text(
+                        day,
+                        style: GoogleFonts.poppins(
+                          color: Colors.grey[500],
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
                     ),
                   ))
               .toList(),
         ),
         SizedBox(height: 12),
-        Container(
-          height: 80,
-          child: GridView.builder(
-            physics: NeverScrollableScrollPhysics(),
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 7,
-              mainAxisSpacing: 4,
-              crossAxisSpacing: 4,
-            ),
-            itemCount: 21,
-            itemBuilder: (context, index) {
-              final date = startDate.add(Duration(days: index));
-              final dateKey = DateTime(date.year, date.month, date.day);
-              final intensity = workoutHeatmapData[dateKey] ?? 0;
-                            
+        GridView.builder(
+          physics: NeverScrollableScrollPhysics(),
+          shrinkWrap: true,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 7,
+            mainAxisSpacing: 4,
+            crossAxisSpacing: 4,
+          ),
+          itemCount: rows * 7,
+          itemBuilder: (context, index) {
+            final int dayNumber = index - leadingBlanks + 1;
+            if (dayNumber < 1 || dayNumber > days) {
               return Container(
+                height: 20,
                 decoration: BoxDecoration(
-                  color: _getHeatmapColor(intensity),
+                  color: Colors.transparent,
                   borderRadius: BorderRadius.circular(4),
                 ),
               );
-            },
-          ),
+            }
+            final date = DateTime(year, month, dayNumber);
+            final dateKey = DateTime(date.year, date.month, date.day);
+            final int intensity = workoutHeatmapData[dateKey] ?? 0;
+            return Container(
+              height: 20,
+              decoration: BoxDecoration(
+                color: _getHeatmapColor(intensity),
+                borderRadius: BorderRadius.circular(4),
+              ),
+            );
+          },
         ),
         SizedBox(height: 12),
         Row(
@@ -400,7 +464,7 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
             ),
             Row(
               children: List.generate(5, (index) => Container(
-                margin: EdgeInsets.only(left: 2),
+                margin: EdgeInsets.only(left: 4),
                 width: 12,
                 height: 12,
                 decoration: BoxDecoration(
@@ -422,6 +486,20 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
     );
   }
 
+  int _daysInMonth(int year, int month) {
+    final beginningNextMonth = (month == 12) ? DateTime(year + 1, 1, 1) : DateTime(year, month + 1, 1);
+    final lastDayOfMonth = beginningNextMonth.subtract(Duration(days: 1));
+    return lastDayOfMonth.day;
+  }
+
+  String _monthName(int m) {
+    const names = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+    return names[m - 1];
+  }
+
   Color _getHeatmapColor(int intensity) {
     switch (intensity) {
       case 0:
@@ -439,95 +517,207 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
     }
   }
 
-  Widget _buildNextWorkoutSection() {
+  Widget _buildMuscleAnalyticsSection() {
     return GestureDetector(
       onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => SchedulePage(workoutSessions: recentSessions),
-          ),
-        );
+        if (muscleAnalytics != null) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => MuscleAnalyticsPage(
+                initialData: muscleAnalytics!,
+              ),
+            ),
+          );
+        }
       },
       child: Container(
         padding: EdgeInsets.all(24),
         decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Color(0xFF96CEB4), Color(0xFF7FB069)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
+          color: Color(0xFF1A1A1A),
           borderRadius: BorderRadius.circular(24),
           boxShadow: [
             BoxShadow(
-              color: Color(0xFF96CEB4).withOpacity(0.3),
-              blurRadius: 15,
-              offset: Offset(0, 8),
+              color: Colors.black.withOpacity(0.3),
+              blurRadius: 12,
+              offset: Offset(0, 6),
             ),
           ],
         ),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              padding: EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Icon(Icons.schedule_rounded, color: Colors.white, size: 28),
+            Row(
+              children: [
+                Container(
+                  padding: EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Color(0xFFFF6B35).withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Icon(Icons.fitness_center, color: Color(0xFFFF6B35), size: 24),
+                ),
+                SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Muscle Group Analytics',
+                        style: GoogleFonts.poppins(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Text(
+                        'This Week',
+                        style: GoogleFonts.poppins(
+                          color: Colors.grey[400],
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(Icons.arrow_forward_ios_rounded, color: Colors.grey[400], size: 16),
+              ],
             ),
-            SizedBox(width: 20),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Next Workout',
-                    style: GoogleFonts.poppins(
-                      fontSize: 16,
-                      color: Colors.white.withOpacity(0.9),
-                      fontWeight: FontWeight.w500,
-                    ),
+            SizedBox(height: 20),
+            if (muscleAnalytics != null && muscleAnalytics!.muscleGroups.isNotEmpty) ...[
+              Text(
+                'Top ${muscleAnalytics!.muscleGroups.length > 3 ? 3 : muscleAnalytics!.muscleGroups.length} Muscle Groups',
+                style: GoogleFonts.poppins(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              SizedBox(height: 16),
+              ...muscleAnalytics!.muscleGroups.take(3).map((muscle) => 
+                _buildMuscleGroupPreview(muscle)
+              ).toList(),
+              if (muscleAnalytics!.muscleGroups.length > 3) ...[
+                SizedBox(height: 12),
+                Text(
+                  '+${muscleAnalytics!.muscleGroups.length - 3} more muscle groups',
+                  style: GoogleFonts.poppins(
+                    color: Color(0xFFFF6B35),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
                   ),
-                  Text(
-                    nextScheduledWorkout ?? 'No workout scheduled',
-                    style: GoogleFonts.poppins(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
-                  if (nextWorkoutDate != null)
-                    Text(
-                      _formatNextWorkoutDate(nextWorkoutDate!),
-                      style: GoogleFonts.poppins(
-                        fontSize: 14,
-                        color: Colors.white.withOpacity(0.8),
+                ),
+              ],
+            ] else ...[
+              Container(
+                padding: EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: Colors.grey[800]?.withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline, color: Colors.grey[400], size: 20),
+                    SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'No workout data available for this week',
+                        style: GoogleFonts.poppins(
+                          color: Colors.grey[400],
+                          fontSize: 14,
+                        ),
                       ),
                     ),
-                ],
+                  ],
+                ),
               ),
-            ),
-            Icon(Icons.arrow_forward_ios_rounded, color: Colors.white, size: 20),
+            ],
           ],
         ),
       ),
     );
   }
 
-  String _formatNextWorkoutDate(DateTime date) {
-    final now = DateTime.now();
-    final difference = date.difference(now).inDays;
-        
-    if (difference == 0) return 'Today';
-    if (difference == 1) return 'Tomorrow';
-    return 'In $difference days';
+  Widget _buildMuscleGroupPreview(MuscleGroupStats muscle) {
+    final color = Color(MuscleAnalyticsService.getMuscleGroupColor(muscle.muscleGroup));
+    final icon = MuscleAnalyticsService.getMuscleGroupIcon(muscle.muscleGroup);
+    
+    return Container(
+      margin: EdgeInsets.only(bottom: 12),
+      padding: EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.3), width: 1),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Center(
+              child: Text(
+                icon,
+                style: TextStyle(fontSize: 20),
+              ),
+            ),
+          ),
+          SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  muscle.muscleGroup,
+                  style: GoogleFonts.poppins(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                Text(
+                  '${muscle.exerciseCount} exercises • ${muscle.workoutSessions} sessions',
+                  style: GoogleFonts.poppins(
+                    color: Colors.grey[400],
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                '${muscle.totalReps}',
+                style: GoogleFonts.poppins(
+                  color: color,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              Text(
+                'reps',
+                style: GoogleFonts.poppins(
+                  color: Colors.grey[400],
+                  fontSize: 10,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildMeasurementsSection() {
     return GestureDetector(
-      onTap: () {
-        Navigator.push(
+      onTap: () async {
+        final result = await Navigator.push(
           context,
           MaterialPageRoute(
             builder: (context) => MeasurementsPage(
@@ -536,6 +726,11 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
             ),
           ),
         );
+        
+        // If measurements were updated, refresh the data
+        if (result == true) {
+          await _loadDashboardData();
+        }
       },
       child: Container(
         padding: EdgeInsets.all(24),

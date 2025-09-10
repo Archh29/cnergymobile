@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import './models/user_model.dart';
 import './services/user_service.dart';
 import  './services/auth_service.dart';// Import AuthService
+import './services/membership_service.dart';
 import 'achievements_page.dart';
 import 'manage_profile_page.dart';
 import 'manage_notification_page.dart';
@@ -23,9 +24,8 @@ class _ProfilePageState extends State<ProfilePage> with TickerProviderStateMixin
   bool isLoading = true;
   String? errorMessage;
   
-  // Since these fields don't exist in your database, we'll use hardcoded values or SharedPreferences
-  int workoutsCompleted = 0;
-  int streakDays = 0;
+  // Membership information
+  Map<String, dynamic>? membershipInfo;
   
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
@@ -36,7 +36,7 @@ class _ProfilePageState extends State<ProfilePage> with TickerProviderStateMixin
     super.initState();
     _initializeAnimations();
     _loadUserData();
-    _loadLocalData();
+    _loadMembershipData();
   }
 
   void _initializeAnimations() {
@@ -108,14 +108,20 @@ class _ProfilePageState extends State<ProfilePage> with TickerProviderStateMixin
     }
   }
 
-  Future<void> _loadLocalData() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      // Load local data that doesn't exist in database
-      workoutsCompleted = prefs.getInt('workouts_completed') ?? 47;
-      streakDays = prefs.getInt('streak_days') ?? 12;
-    });
+  Future<void> _loadMembershipData() async {
+    try {
+      print('🔍 Loading membership data...');
+      final membership = await MembershipService.getMembershipInfo();
+      setState(() {
+        membershipInfo = membership;
+      });
+      print('✅ Membership loaded: ${membership['has_membership']}');
+    } catch (e) {
+      print('❌ Error loading membership data: $e');
+      // Don't set error state for membership, just log it
+    }
   }
+
 
   Future<void> _updateUserData(Map<String, dynamic> updates) async {
     if (currentUser == null) return;
@@ -181,16 +187,137 @@ class _ProfilePageState extends State<ProfilePage> with TickerProviderStateMixin
     }
   }
 
-  // Enhanced Premium Badge Widget
-  Widget _buildPremiumBadge() {
+  // Enhanced Premium Badge Widget with Membership Info
+  Widget _buildPremiumBadgeWithMembership() {
+    return Column(
+      children: [
+        // Premium Badge
+        Container(
+          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                Color(0xFFFFD700), // Gold
+                Color(0xFFFFA500), // Orange
+                Color(0xFFFF8C00), // Dark Orange
+              ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: Color(0xFFFFD700).withOpacity(0.4),
+                blurRadius: 12,
+                offset: Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.workspace_premium,
+                color: Colors.white,
+                size: 18,
+              ),
+              SizedBox(width: 6),
+              Text(
+                'Premium Member',
+                style: GoogleFonts.poppins(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ],
+          ),
+        ),
+        // Membership Information (centered)
+        if (membershipInfo != null && membershipInfo!['has_membership']) ...[
+          SizedBox(height: 12),
+          Center(child: _buildMembershipInfo()),
+        ] else if (membershipInfo != null && !membershipInfo!['has_membership']) ...[
+          SizedBox(height: 12),
+          Center(child: _buildNoMembershipInfo()),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildMembershipInfo() {
+    final membership = membershipInfo!;
+    final isExpired = membership['is_expired'] ?? false;
+    final isExpiringSoon = membership['is_expiring_soon'] ?? false;
+    final daysRemaining = membership['days_remaining'] ?? 0;
+    final membershipType = membership['membership_type'] ?? 'Monthly';
+    final endDate = membership['end_date'] ?? '';
+
+    // Determine badge colors and text based on status
+    List<Color> badgeColors;
+    String statusText;
+    
+    if (isExpired) {
+      badgeColors = [Color(0xFFFF6B6B), Color(0xFFFF5252), Color(0xFFE53935)];
+      statusText = 'Monthly Plan - Expired';
+    } else if (isExpiringSoon) {
+      badgeColors = [Color(0xFFFFB74D), Color(0xFFFF9800), Color(0xFFF57C00)];
+      statusText = 'Monthly Plan - Expires in $daysRemaining days';
+    } else {
+      badgeColors = [Color(0xFF4ECDC4), Color(0xFF26A69A), Color(0xFF00695C)];
+      statusText = 'Monthly Plan - Active';
+    }
+
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: badgeColors,
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: badgeColors[0].withOpacity(0.4),
+            blurRadius: 8,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.schedule,
+            color: Colors.white,
+            size: 16,
+          ),
+          SizedBox(width: 4),
+          Text(
+            statusText,
+            style: GoogleFonts.poppins(
+              color: Colors.white,
+              fontWeight: FontWeight.w600,
+              fontSize: 12,
+              letterSpacing: 0.3,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNoMembershipInfo() {
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
-            Color(0xFFFFD700), // Gold
-            Color(0xFFFFA500), // Orange
-            Color(0xFFFF8C00), // Dark Orange
+            Color(0xFF9E9E9E),
+            Color(0xFF757575),
+            Color(0xFF424242),
           ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
@@ -198,7 +325,7 @@ class _ProfilePageState extends State<ProfilePage> with TickerProviderStateMixin
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Color(0xFFFFD700).withOpacity(0.4),
+            color: Color(0xFF9E9E9E).withOpacity(0.4),
             blurRadius: 12,
             offset: Offset(0, 4),
           ),
@@ -208,13 +335,13 @@ class _ProfilePageState extends State<ProfilePage> with TickerProviderStateMixin
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(
-            Icons.workspace_premium,
+            Icons.info_outline,
             color: Colors.white,
             size: 18,
           ),
           SizedBox(width: 6),
           Text(
-            'Premium Member',
+            'No active membership',
             style: GoogleFonts.poppins(
               color: Colors.white,
               fontWeight: FontWeight.w700,
@@ -448,51 +575,7 @@ class _ProfilePageState extends State<ProfilePage> with TickerProviderStateMixin
             ),
             child: Column(
               children: [
-                Stack(
-                  children: [
-                    Hero(
-                      tag: 'profile-picture',
-                      child: Container(
-                        padding: EdgeInsets.all(4),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.2),
-                          shape: BoxShape.circle,
-                        ),
-                        child: CircleAvatar(
-                          radius: 50,
-                          backgroundColor: Colors.white.withOpacity(0.1),
-                          child: Icon(Icons.person, size: 50, color: Colors.white),
-                        ),
-                      ),
-                    ),
-                    Positioned(
-                      bottom: 0,
-                      right: 0,
-                      child: GestureDetector(
-                        onTap: _showEditProfileDialog,
-                        child: Container(
-                          padding: EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            shape: BoxShape.circle,
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.2),
-                                blurRadius: 8,
-                                offset: Offset(0, 2),
-                              ),
-                            ],
-                          ),
-                          child: Icon(
-                            Icons.edit,
-                            color: Color(0xFFFF6B35),
-                            size: 16,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+                // Profile picture and edit button removed per request
                 SizedBox(height: 16),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -518,53 +601,13 @@ class _ProfilePageState extends State<ProfilePage> with TickerProviderStateMixin
                     ],
                   ],
                 ),
-                SizedBox(height: 4),
-                Text(
-                  currentUser!.email,
-                  style: GoogleFonts.poppins(
-                    color: Colors.white.withOpacity(0.8),
-                    fontSize: 14,
-                  ),
-                ),
-                SizedBox(height: 8),
-                Text(
-                  'Birthday: ${currentUser!.bday.toIso8601String().split('T')[0]}',
-                  style: GoogleFonts.poppins(
-                    color: Colors.white.withOpacity(0.7),
-                    fontSize: 12,
-                  ),
-                ),
-                // Premium Badge - Now using backend data
+                // Premium Badge with Membership Info - Now using backend data
                 if (currentUser!.isPremium) ...[
                   SizedBox(height: 16),
-                  _buildPremiumBadge(),
+                  _buildPremiumBadgeWithMembership(),
                 ],
               ],
             ),
-          ),
-          SizedBox(height: 24),
-          
-          // Stats row (using local data since not in database)
-          Row(
-            children: [
-              Expanded(
-                child: _buildStatCard(
-                  'Workouts',
-                  workoutsCompleted.toString(),
-                  Icons.fitness_center,
-                  Color(0xFF4ECDC4),
-                ),
-              ),
-              SizedBox(width: 16),
-              Expanded(
-                child: _buildStatCard(
-                  'Streak',
-                  '$streakDays days',
-                  Icons.local_fire_department,
-                  Color(0xFFFF6B35),
-                ),
-              ),
-            ],
           ),
           SizedBox(height: 24),
           
@@ -753,51 +796,6 @@ class _ProfilePageState extends State<ProfilePage> with TickerProviderStateMixin
     );
   }
 
-  Widget _buildStatCard(String label, String value, IconData icon, Color color) {
-    return Container(
-      padding: EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Color(0xFF1A1A1A),
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.2),
-            blurRadius: 8,
-            offset: Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          Container(
-            padding: EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(icon, color: color, size: 24),
-          ),
-          SizedBox(height: 12),
-          Text(
-            value,
-            style: GoogleFonts.poppins(
-              color: Colors.white,
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          SizedBox(height: 4),
-          Text(
-            label,
-            style: GoogleFonts.poppins(
-              color: Colors.grey[400],
-              fontSize: 12,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _buildMenuSection(String title, List<Widget> items) {
     return Column(

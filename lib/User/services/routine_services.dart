@@ -95,6 +95,14 @@ class RoutineService {
         if (responseData['success'] == true) {
           final List<dynamic> exercisesData = responseData['exercises'] ?? [];
           
+          print('📋 Fetched ${exercisesData.length} exercises');
+          for (var exercise in exercisesData) {
+            print('Exercise: ${exercise['name']}');
+            print('  - target_muscle field: "${exercise['target_muscle']}"');
+            print('  - targetMuscle field: "${exercise['targetMuscle']}"');
+            print('  - All keys: ${exercise.keys.toList()}');
+          }
+          
           return exercisesData.map((exercise) => ExerciseModel.fromJson(exercise)).toList();
         } else {
           throw Exception(responseData['error'] ?? 'Failed to fetch exercises');
@@ -133,6 +141,9 @@ class RoutineService {
           return RoutineResponse(
             success: false,
             routines: [],
+            myRoutines: const [],
+            coachAssigned: const [],
+            templateRoutines: const [],
             totalRoutines: 0,
             isPremium: false,
             error: responseData['error'],
@@ -164,7 +175,10 @@ class RoutineService {
       final cachedMembership = await _getCachedMembershipStatus();
       return RoutineResponse(
         success: false,
-        routines: [],
+        routines: const [],
+        myRoutines: const [],
+        coachAssigned: const [],
+        templateRoutines: const [],
         totalRoutines: 0,
         isPremium: cachedMembership['is_premium'] ?? false,
         error: e.toString(),

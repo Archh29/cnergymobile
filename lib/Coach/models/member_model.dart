@@ -1,234 +1,263 @@
-import 'dart:convert';
+import 'package:flutter/material.dart';
 
 class MemberModel {
   final int id;
-  final String fname;
-  final String mname;
-  final String lname;
+  final String firstName;
+  final String lastName;
   final String email;
-  final DateTime bday;
-  final DateTime createdAt;
-  final int? genderId;
-  final String? genderName;
-  
-  // Coach-Member Connection Fields (from coach_member_list table)
-  final int? coachId;
-  final String? coachApproval;      // pending, approved, rejected
-  final String? staffApproval;      // pending, approved, rejected
-  final String? status;             // pending, approved, rejected
-  final DateTime? requestedAt;
-  final DateTime? coachApprovedAt;
-  final DateTime? staffApprovedAt;
-  final int? handledByCoach;
-  final int? handledByStaff;
+  final String? profileImage;
+  final DateTime? joinDate;
+  final String status;
+  final Map<String, dynamic> fitnessGoals;
+  final Map<String, dynamic> preferences;
   final int? requestId;
-  
-  // Subscription info (from subscription table)
-  final String? subscriptionStatus;
+  final String? phone;
+  final DateTime? birthDate;
+  final String? gender;
+  final double? height;
+  final double? weight;
+  final String? fitnessLevel;
+  final List<String> medicalConditions;
+  final Map<String, dynamic> progressData;
+  final DateTime? requestedAt;
+  final String? genderName;
   final String? planName;
-  final DateTime? subscriptionStart;
-  final DateTime? subscriptionEnd;
+  final int age;
 
   MemberModel({
     required this.id,
-    required this.fname,
-    required this.mname,
-    required this.lname,
+    required this.firstName,
+    required this.lastName,
     required this.email,
-    required this.bday,
-    required this.createdAt,
-    this.genderId,
-    this.genderName,
-    this.coachId,
-    this.coachApproval,
-    this.staffApproval,
-    this.status,
-    this.requestedAt,
-    this.coachApprovedAt,
-    this.staffApprovedAt,
-    this.handledByCoach,
-    this.handledByStaff,
+    this.profileImage,
+    this.joinDate,
+    this.status = 'active',
+    this.fitnessGoals = const {},
+    this.preferences = const {},
     this.requestId,
-    this.subscriptionStatus,
+    this.phone,
+    this.birthDate,
+    this.gender,
+    this.height,
+    this.weight,
+    this.fitnessLevel,
+    this.medicalConditions = const [],
+    this.progressData = const {},
+    this.requestedAt,
+    this.genderName,
     this.planName,
-    this.subscriptionStart,
-    this.subscriptionEnd,
+    this.age = 0,
   });
 
-  String get fullName => '$fname $mname $lname'.trim().replaceAll(RegExp(r'\s+'), ' ');
+  String get fullName => '$firstName $lastName';
+  
+  String get fname => firstName;
+  
+  String? get subscriptionStatus => status;
+  
+  DateTime get createdAt => joinDate ?? DateTime.now();
   
   String get initials {
-    String first = fname.isNotEmpty ? fname[0] : '';
-    String last = lname.isNotEmpty ? lname[0] : '';
-    return '$first$last'.toUpperCase();
+    return '${firstName.isNotEmpty ? firstName[0] : ''}${lastName.isNotEmpty ? lastName[0] : ''}'.toUpperCase();
   }
 
-  int get age {
+  String get formattedJoinDate {
+    if (joinDate == null) return 'Unknown';
     final now = DateTime.now();
-    int age = now.year - bday.year;
-    if (now.month < bday.month || (now.month == bday.month && now.day < bday.day)) {
+    final difference = now.difference(joinDate!).inDays;
+    
+    if (difference < 30) {
+      return '$difference days ago';
+    } else if (difference < 365) {
+      final months = (difference / 30).floor();
+      return '$months month${months > 1 ? 's' : ''} ago';
+    } else {
+      final years = (difference / 365).floor();
+      return '$years year${years > 1 ? 's' : ''} ago';
+    }
+  }
+
+  Color get statusColor {
+    switch (status.toLowerCase()) {
+      case 'active':
+        return Color(0xFF2ECC71);
+      case 'inactive':
+        return Color(0xFFE74C3C);
+      case 'pending':
+        return Color(0xFFF39C12);
+      case 'suspended':
+        return Color(0xFF95A5A6);
+      default:
+        return Color(0xFF95A5A6);
+    }
+  }
+
+  IconData get statusIcon {
+    switch (status.toLowerCase()) {
+      case 'active':
+        return Icons.check_circle;
+      case 'inactive':
+        return Icons.cancel;
+      case 'pending':
+        return Icons.access_time;
+      case 'suspended':
+        return Icons.pause_circle;
+      default:
+        return Icons.help;
+    }
+  }
+
+  bool get hasActiveSubscription => status.toLowerCase() == 'active';
+  bool get hasPaidPlan => planName != null && planName!.isNotEmpty;
+  bool get isNewMember {
+    if (joinDate == null) return false;
+    final daysSinceJoin = DateTime.now().difference(joinDate!).inDays;
+    return daysSinceJoin <= 30;
+  }
+  bool get isFullyApproved => status.toLowerCase() == 'approved';
+  bool get isPendingCoachApproval => status.toLowerCase() == 'pending_coach';
+  bool get isPendingStaffApproval => status.toLowerCase() == 'pending_staff';
+  bool get isRejected => status.toLowerCase() == 'rejected';
+  
+  String get approvalStatusMessage {
+    if (isFullyApproved) return 'Fully approved and active';
+    if (isPendingStaffApproval) return 'Pending staff approval';
+    if (isPendingCoachApproval) return 'Pending coach approval';
+    if (isRejected) return 'Application rejected';
+    return 'Status unknown';
+  }
+
+  factory MemberModel.fromJson(Map<String, dynamic> json) {
+    return MemberModel(
+      id: json['id'] ?? json['user_id'] ?? 0,
+      firstName: json['first_name'] ?? json['fname'] ?? '',
+      lastName: json['last_name'] ?? json['lname'] ?? '',
+      email: json['email'] ?? '',
+      profileImage: json['profile_image'] ?? json['profile_picture'],
+      joinDate: json['join_date'] != null ? DateTime.tryParse(json['join_date']) : null,
+      status: json['status'] ?? 'active',
+      fitnessGoals: json['fitness_goals'] is Map ? Map<String, dynamic>.from(json['fitness_goals']) : {},
+      preferences: json['preferences'] is Map ? Map<String, dynamic>.from(json['preferences']) : {},
+      requestId: json['request_id'],
+      phone: json['phone'],
+      birthDate: json['birth_date'] != null ? DateTime.tryParse(json['birth_date']) : null,
+      gender: json['gender'],
+      height: json['height']?.toDouble(),
+      weight: json['weight']?.toDouble(),
+      fitnessLevel: json['fitness_level'],
+      medicalConditions: json['medical_conditions'] is List 
+          ? List<String>.from(json['medical_conditions']) 
+          : [],
+      progressData: json['progress_data'] is Map 
+          ? Map<String, dynamic>.from(json['progress_data']) 
+          : {},
+      requestedAt: json['requested_at'] != null ? DateTime.tryParse(json['requested_at']) : null,
+      genderName: json['gender_name'] ?? json['gender'],
+      planName: json['plan_name'],
+      age: json['age'] ?? _calculateAge(json['birth_date']),
+    );
+  }
+
+  static int _calculateAge(String? birthDateString) {
+    if (birthDateString == null) return 0;
+    final birthDate = DateTime.tryParse(birthDateString);
+    if (birthDate == null) return 0;
+    final now = DateTime.now();
+    int age = now.year - birthDate.year;
+    if (now.month < birthDate.month || (now.month == birthDate.month && now.day < birthDate.day)) {
       age--;
     }
     return age;
   }
 
-  // Based on subscription status
-  bool get hasActiveSubscription => subscriptionStatus == 'approved' && 
-      subscriptionEnd != null && subscriptionEnd!.isAfter(DateTime.now());
-
-  // Based on subscription plan
-  bool get hasPaidPlan => planName != null && planName != 'Member Fee';
-
-  // Approval status helpers based on coach_member_list table
-  bool get isPendingCoachApproval => coachApproval == 'pending';
-  bool get isPendingStaffApproval => coachApproval == 'approved' && staffApproval == 'pending';
-  bool get isFullyApproved => coachApproval == 'approved' && staffApproval == 'approved';
-  bool get isRejected => coachApproval == 'rejected' || staffApproval == 'rejected';
-
-  // Check if member is new (joined within 30 days)
-  bool get isNewMember => DateTime.now().difference(createdAt).inDays <= 30;
-
-  String get currentApprovalStep {
-    if (coachApproval == 'pending') {
-      return 'coach_review';
-    } else if (coachApproval == 'approved' && staffApproval == 'pending') {
-      return 'staff_review';
-    } else if (staffApproval == 'approved') {
-      return 'completed';
-    } else if (coachApproval == 'rejected' || staffApproval == 'rejected') {
-      return 'rejected';
-    }
-    return 'unknown';
-  }
-
-  String get approvalStatusMessage {
-    switch (currentApprovalStep) {
-      case 'coach_review':
-        return 'Waiting for coach approval';
-      case 'staff_review':
-        return 'Waiting for staff approval';
-      case 'completed':
-        return 'Fully approved';
-      case 'rejected':
-        return 'Request rejected';
-      default:
-        return 'Status unknown';
-    }
-  }
-
-  // ENHANCED: Helper method to safely parse values with better string handling
-  static int? _parseIntSafely(dynamic value) {
-    if (value == null) return null;
-    if (value is int) return value;
-    if (value is double) return value.toInt();
-    if (value is String) {
-      if (value.isEmpty) return null;
-      // Remove surrounding quotes and whitespace
-      final cleanValue = value.replaceAll(RegExp(r'^"|"$'), '').trim();
-      if (cleanValue.isEmpty) return null;
-      return int.tryParse(cleanValue);
-    }
-    return null;
-  }
-
-  static DateTime? _parseDateTimeSafely(dynamic value) {
-    if (value == null) return null;
-    if (value is DateTime) return value;
-    if (value is String) {
-      if (value.isEmpty) return null;
-      // Remove surrounding quotes and whitespace
-      final cleanValue = value.replaceAll(RegExp(r'^"|"$'), '').trim();
-      if (cleanValue.isEmpty) return null;
-      return DateTime.tryParse(cleanValue);
-    }
-    return null;
-  }
-
-  static String _parseStringSafely(dynamic value, {String defaultValue = ''}) {
-    if (value == null) return defaultValue;
-    if (value is String) {
-      // Remove surrounding quotes and return trimmed value
-      final cleanValue = value.replaceAll(RegExp(r'^"|"$'), '').trim();
-      return cleanValue.isEmpty ? defaultValue : cleanValue;
-    }
-    return value.toString();
-  }
-
-  factory MemberModel.fromJson(Map<String, dynamic> json) {
-    try {
-      return MemberModel(
-        id: _parseIntSafely(json['id']) ?? 0,
-        fname: _parseStringSafely(json['fname']),
-        mname: _parseStringSafely(json['mname']),
-        lname: _parseStringSafely(json['lname']),
-        email: _parseStringSafely(json['email']),
-        bday: _parseDateTimeSafely(json['bday']) ?? DateTime.now().subtract(Duration(days: 365 * 25)),
-        createdAt: _parseDateTimeSafely(json['created_at']) ?? DateTime.now(),
-        genderId: _parseIntSafely(json['gender_id']),
-        genderName: _parseStringSafely(json['gender_name']).isEmpty ? null : _parseStringSafely(json['gender_name']),
-        coachId: _parseIntSafely(json['coach_id']),
-        coachApproval: _parseStringSafely(json['coach_approval']).isEmpty ? null : _parseStringSafely(json['coach_approval']),
-        staffApproval: _parseStringSafely(json['staff_approval']).isEmpty ? null : _parseStringSafely(json['staff_approval']),
-        status: _parseStringSafely(json['status']).isEmpty ? null : _parseStringSafely(json['status']),
-        requestedAt: _parseDateTimeSafely(json['requested_at']),
-        coachApprovedAt: _parseDateTimeSafely(json['coach_approved_at']),
-        staffApprovedAt: _parseDateTimeSafely(json['staff_approved_at']),
-        handledByCoach: _parseIntSafely(json['handled_by_coach']),
-        handledByStaff: _parseIntSafely(json['handled_by_staff']),
-        requestId: _parseIntSafely(json['request_id']),
-        subscriptionStatus: _parseStringSafely(json['subscription_status']).isEmpty ? null : _parseStringSafely(json['subscription_status']),
-        planName: _parseStringSafely(json['plan_name']).isEmpty ? null : _parseStringSafely(json['plan_name']),
-        subscriptionStart: _parseDateTimeSafely(json['subscription_start']),
-        subscriptionEnd: _parseDateTimeSafely(json['subscription_end']),
-      );
-    } catch (e, stackTrace) {
-      print('Error in MemberModel.fromJson: $e');
-      print('Stack trace: $stackTrace');
-      print('Problematic JSON: $json');
-      rethrow;
-    }
-  }
-
   Map<String, dynamic> toJson() {
     return {
       'id': id,
-      'fname': fname,
-      'mname': mname,
-      'lname': lname,
+      'first_name': firstName,
+      'last_name': lastName,
       'email': email,
-      'bday': bday.toIso8601String(),
-      'created_at': createdAt.toIso8601String(),
-      'gender_id': genderId,
-      'gender_name': genderName,
-      'coach_id': coachId,
-      'coach_approval': coachApproval,
-      'staff_approval': staffApproval,
+      'profile_image': profileImage,
+      'join_date': joinDate?.toIso8601String(),
       'status': status,
-      'requested_at': requestedAt?.toIso8601String(),
-      'coach_approved_at': coachApprovedAt?.toIso8601String(),
-      'staff_approved_at': staffApprovedAt?.toIso8601String(),
-      'handled_by_coach': handledByCoach,
-      'handled_by_staff': handledByStaff,
+      'fitness_goals': fitnessGoals,
+      'preferences': preferences,
       'request_id': requestId,
-      'subscription_status': subscriptionStatus,
+      'phone': phone,
+      'birth_date': birthDate?.toIso8601String(),
+      'gender': gender,
+      'height': height,
+      'weight': weight,
+      'fitness_level': fitnessLevel,
+      'medical_conditions': medicalConditions,
+      'progress_data': progressData,
+      'requested_at': requestedAt?.toIso8601String(),
+      'gender_name': genderName,
       'plan_name': planName,
-      'subscription_start': subscriptionStart?.toIso8601String(),
-      'subscription_end': subscriptionEnd?.toIso8601String(),
+      'age': age,
     };
   }
 
-  @override
-  String toString() {
-    return 'MemberModel(id: $id, fullName: $fullName, email: $email, approvalStep: $currentApprovalStep, subscriptionStatus: $subscriptionStatus)';
+  MemberModel copyWith({
+    int? id,
+    String? firstName,
+    String? lastName,
+    String? email,
+    String? profileImage,
+    DateTime? joinDate,
+    String? status,
+    Map<String, dynamic>? fitnessGoals,
+    Map<String, dynamic>? preferences,
+    int? requestId,
+    String? phone,
+    DateTime? birthDate,
+    String? gender,
+    double? height,
+    double? weight,
+    String? fitnessLevel,
+    List<String>? medicalConditions,
+    Map<String, dynamic>? progressData,
+    DateTime? requestedAt,
+    String? genderName,
+    String? planName,
+    int? age,
+  }) {
+    return MemberModel(
+      id: id ?? this.id,
+      firstName: firstName ?? this.firstName,
+      lastName: lastName ?? this.lastName,
+      email: email ?? this.email,
+      profileImage: profileImage ?? this.profileImage,
+      joinDate: joinDate ?? this.joinDate,
+      status: status ?? this.status,
+      fitnessGoals: fitnessGoals ?? this.fitnessGoals,
+      preferences: preferences ?? this.preferences,
+      requestId: requestId ?? this.requestId,
+      phone: phone ?? this.phone,
+      birthDate: birthDate ?? this.birthDate,
+      gender: gender ?? this.gender,
+      height: height ?? this.height,
+      weight: weight ?? this.weight,
+      fitnessLevel: fitnessLevel ?? this.fitnessLevel,
+      medicalConditions: medicalConditions ?? this.medicalConditions,
+      progressData: progressData ?? this.progressData,
+      requestedAt: requestedAt ?? this.requestedAt,
+      genderName: genderName ?? this.genderName,
+      planName: planName ?? this.planName,
+      age: age ?? this.age,
+    );
   }
 
   @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is MemberModel &&
-          runtimeType == other.runtimeType &&
-          id == other.id;
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is MemberModel && other.id == id;
+  }
 
   @override
   int get hashCode => id.hashCode;
+
+  @override
+  String toString() {
+    return 'MemberModel(id: $id, name: $fullName, email: $email, status: $status)';
+  }
 }

@@ -172,14 +172,8 @@ class _SignUpPageState extends State<SignUpPage> with SingleTickerProviderStateM
       final data = json.decode(response.body);
 
       if (response.statusCode == 200 && data['success'] == true) {
-        Get.snackbar(
-          'Success',
-          'Account created successfully! You can now login.',
-          snackPosition: SnackPosition.BOTTOM,
-          backgroundColor: Colors.green,
-          colorText: Colors.white,
-        );
-        Navigator.pop(context); // Go back to login screen
+        // Show success dialog with email information
+        _showSuccessDialog(data);
       } else {
         Get.snackbar(
           'Error',
@@ -203,6 +197,149 @@ class _SignUpPageState extends State<SignUpPage> with SingleTickerProviderStateM
         _isLoading = false;
       });
     }
+  }
+
+  void _showSuccessDialog(Map<String, dynamic> data) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          title: Row(
+            children: [
+              Icon(
+                Icons.check_circle_outline,
+                color: Colors.green,
+                size: 28,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Account Created!',
+                  style: GoogleFonts.poppins(
+                    fontWeight: FontWeight.w600,
+                    color: Colors.green,
+                    fontSize: 18,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Congratulations! Your CNERGY GYM account has been created successfully.',
+                style: GoogleFonts.poppins(
+                  fontSize: 14,
+                  color: Colors.black87,
+                ),
+              ),
+              const SizedBox(height: 16),
+              
+              // Email status
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: data['email_sent'] == true ? Colors.green.shade50 : Colors.orange.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: data['email_sent'] == true ? Colors.green.shade200 : Colors.orange.shade200,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      data['email_sent'] == true ? Icons.email : Icons.email_outlined,
+                      color: data['email_sent'] == true ? Colors.green : Colors.orange,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        data['email_sent'] == true 
+                          ? 'Welcome email sent to ${_emailController.text}'
+                          : 'Account created, but email could not be sent',
+                        style: GoogleFonts.poppins(
+                          fontSize: 12,
+                          color: data['email_sent'] == true ? Colors.green.shade700 : Colors.orange.shade700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              
+              const SizedBox(height: 16),
+              
+              // Next steps
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.blue.shade200),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.info_outline,
+                          color: Colors.blue.shade700,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Next Steps:',
+                          style: GoogleFonts.poppins(
+                            fontWeight: FontWeight.w600,
+                            color: Colors.blue.shade700,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '1. Check your email for welcome instructions\n'
+                      '2. Visit our front desk for account verification\n'
+                      '3. Bring a valid government-issued ID\n'
+                      '4. Start your fitness journey!',
+                      style: GoogleFonts.poppins(
+                        fontSize: 12,
+                        color: Colors.blue.shade700,
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(); // Close dialog
+                Navigator.pop(context); // Go back to login screen
+              },
+              child: Text(
+                'Continue to Login',
+                style: GoogleFonts.poppins(
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFFFF6B35),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override
@@ -276,14 +413,8 @@ class _SignUpPageState extends State<SignUpPage> with SingleTickerProviderStateM
                     // Middle Name
                     _buildTextField(
                       controller: _mnameController,
-                      label: 'Middle Name',
+                      label: 'Middle Name (Optional)',
                       icon: Icons.person_outline,
-                      validator: (value) {
-                        if (value == null || value.trim().isEmpty) {
-                          return 'Middle name is required';
-                        }
-                        return null;
-                      },
                     ),
                     const SizedBox(height: 16),
                     

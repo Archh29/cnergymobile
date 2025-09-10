@@ -116,7 +116,6 @@ class _StartWorkoutPreviewPageState extends State<StartWorkoutPreviewPage> {
         
     return Column(
       children: [
-        _buildWorkoutStats(isSmallScreen),
         _buildExercisesHeader(isSmallScreen),
         Expanded(
           child: _buildExercisesList(isSmallScreen),
@@ -195,19 +194,7 @@ class _StartWorkoutPreviewPageState extends State<StartWorkoutPreviewPage> {
               fontWeight: FontWeight.w600,
             ),
           ),
-          Container(
-            width: 28,
-            height: 28,
-            decoration: BoxDecoration(
-              color: const Color(0xFF4ECDC4),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.add,
-              color: Colors.black,
-              size: 18,
-            ),
-          ),
+          // Removed add exercise button
         ],
       ),
     );
@@ -354,14 +341,7 @@ class _StartWorkoutPreviewPageState extends State<StartWorkoutPreviewPage> {
               ),
             ),
           ),
-          IconButton(
-            icon: const Icon(
-              Icons.more_horiz,
-              color: Colors.grey,
-              size: 24,
-            ),
-            onPressed: () => _showExerciseDetail(exercise),
-          ),
+          // Removed per-exercise overflow menu
         ],
       ),
     );

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:video_player/video_player.dart';
 import './models/routine.models.dart';
+import './services/exercise_instructions_service.dart';
 
 class ExerciseInstructionsPage extends StatefulWidget {
   final ExerciseModel exercise;
@@ -20,235 +22,403 @@ class _ExerciseInstructionsPageState extends State<ExerciseInstructionsPage> {
   double videoSpeed = 1.0;
   int selectedVideoIndex = 0;
   
-  final List<String> videoUrls = [
-    'https://hebbkx1anhila5yf.public.blob.vercel-storage.com/518724939_1274839543510024_1614919070104890848_n.jpg-yDDZqqxgCX8rmxCnn2huZLucWdb0mr.jpeg',
-    'https://hebbkx1anhila5yf.public.blob.vercel-storage.com/518724939_1274839543510024_1614919070104890848_n.jpg-yDDZqqxgCX8rmxCnn2huZLucWdb0mr.jpeg', // Replace with second image URL
-  ];
+  ExerciseInstructionData? exerciseData;
+  bool isLoading = true;
+  String? error;
+  
+  VideoPlayerController? _videoController;
+  bool _isVideoInitialized = false;
+  
+  @override
+  void initState() {
+    super.initState();
+    _loadExerciseData();
+  }
+  
+  @override
+  void dispose() {
+    _videoController?.dispose();
+    super.dispose();
+  }
+  
+  Future<void> _loadExerciseData() async {
+    try {
+      setState(() {
+        isLoading = true;
+        error = null;
+      });
+      
+      final data = await ExerciseInstructionService.getExerciseDetails(widget.exercise.id ?? 0);
+      
+      setState(() {
+        exerciseData = data;
+        isLoading = false;
+      });
+      
+      _initializeVideoPlayer();
+    } catch (e) {
+      setState(() {
+        error = 'Failed to load exercise data: $e';
+        isLoading = false;
+      });
+    }
+  }
+  
+  Future<void> _initializeVideoPlayer() async {
+    final urls = videoUrls;
+    if (urls.isNotEmpty && _isVideoFile(urls[selectedVideoIndex])) {
+      try {
+        _videoController?.dispose();
+        _videoController = VideoPlayerController.networkUrl(
+          Uri.parse(urls[selectedVideoIndex])
+        );
+        
+        await _videoController!.initialize();
+        setState(() {
+          _isVideoInitialized = true;
+        });
+      } catch (e) {
+        print('Error initializing video: $e');
+        setState(() {
+          _isVideoInitialized = false;
+        });
+      }
+    }
+  }
+  
+  bool _isVideoFile(String url) {
+    final videoExtensions = ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.m4v'];
+    return videoExtensions.any((ext) => url.toLowerCase().contains(ext));
+  }
+  
+  List<String> get videoUrls {
+    if (exerciseData?.videoUrl != null && exerciseData!.videoUrl.isNotEmpty) {
+      return [exerciseData!.videoUrl];
+    }
+    if (exerciseData?.imageUrl != null && exerciseData!.imageUrl.isNotEmpty) {
+      return [exerciseData!.imageUrl];
+    }
+    return [
+      'https://hebbkx1anhila5yf.public.blob.vercel-storage.com/518724939_1274839543510024_1614919070104890848_n.jpg-yDDZqqxgCX8rmxCnn2huZLucWdb0mr.jpeg',
+    ];
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Color(0xFF0F0F0F),
       body: SafeArea(
-        child: CustomScrollView(
-          slivers: [
-            // Video Player Section
-            SliverToBoxAdapter(
-              child: Container(
-                height: MediaQuery.of(context).size.height * 0.6,
-                width: double.infinity,
-                decoration: BoxDecoration(
-                  color: Colors.black,
-                ),
-                child: Stack(
+        child: isLoading 
+          ? Center(
+              child: CircularProgressIndicator(
+                color: Color(0xFF4A5568),
+              ),
+            )
+          : error != null
+            ? Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    // Video/Image display
-                    GestureDetector(
-                      onTap: () {
-                        setState(() {
-                          isVideoPlaying = !isVideoPlaying;
-                        });
-                      },
-                      child: Container(
-                        width: double.infinity,
-                        height: double.infinity,
-                        decoration: BoxDecoration(
-                          image: DecorationImage(
-                            image: NetworkImage(videoUrls[selectedVideoIndex]),
-                            fit: BoxFit.cover,
-                          ),
-                        ),
-                        child: !isVideoPlaying
-                            ? Center(
-                                child: Container(
-                                  width: 60,
-                                  height: 60,
-                                  decoration: BoxDecoration(
-                                    color: Colors.black.withOpacity(0.7),
-                                    borderRadius: BorderRadius.circular(30),
+                    Text(
+                      'Error loading exercise data',
+                      style: GoogleFonts.poppins(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    SizedBox(height: 8),
+                    Text(
+                      error!,
+                      style: GoogleFonts.poppins(
+                        color: Colors.grey[400],
+                        fontSize: 14,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: _loadExerciseData,
+                      child: Text('Retry'),
+                    ),
+                  ],
+                ),
+              )
+            : CustomScrollView(
+                slivers: [
+                  // Video Player Section
+                  SliverToBoxAdapter(
+                    child: Container(
+                      height: MediaQuery.of(context).size.height * 0.6,
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        color: Colors.black,
+                      ),
+                      child: Stack(
+                        children: [
+                          Container(
+                            width: double.infinity,
+                            height: double.infinity,
+                            child: _isVideoFile(videoUrls[selectedVideoIndex])
+                                ? (_isVideoInitialized && _videoController != null)
+                                    ? AspectRatio(
+                                        aspectRatio: _videoController!.value.aspectRatio,
+                                        child: VideoPlayer(_videoController!),
+                                      )
+                                    : Center(
+                                        child: CircularProgressIndicator(
+                                          color: Colors.white,
+                                        ),
+                                      )
+                                : Container(
+                                    decoration: BoxDecoration(
+                                      image: DecorationImage(
+                                        image: NetworkImage(videoUrls[selectedVideoIndex]),
+                                        fit: BoxFit.cover,
+                                      ),
+                                    ),
                                   ),
-                                  child: Icon(
-                                    Icons.play_arrow,
-                                    color: Colors.white,
-                                    size: 30,
+                          ),
+                          
+                          if (_isVideoFile(videoUrls[selectedVideoIndex]))
+                            Positioned.fill(
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onTap: () {
+                                  print('[v0] Play button tapped, controller: ${_videoController != null}');
+                                  if (_videoController != null && _isVideoInitialized) {
+                                    setState(() {
+                                      if (_videoController!.value.isPlaying) {
+                                        _videoController!.pause();
+                                        isVideoPlaying = false;
+                                        print('[v0] Video paused');
+                                      } else {
+                                        _videoController!.play();
+                                        isVideoPlaying = true;
+                                        print('[v0] Video playing');
+                                      }
+                                    });
+                                  }
+                                },
+                                child: Container(
+                                  color: Colors.transparent,
+                                  child: Center(
+                                    child: AnimatedOpacity(
+                                      opacity: (!isVideoPlaying || !_videoController!.value.isPlaying) ? 1.0 : 0.0,
+                                      duration: Duration(milliseconds: 300),
+                                      child: Container(
+                                        width: 80,
+                                        height: 80,
+                                        decoration: BoxDecoration(
+                                          color: Colors.black.withOpacity(0.8),
+                                          borderRadius: BorderRadius.circular(40),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: Colors.black.withOpacity(0.3),
+                                              blurRadius: 10,
+                                              spreadRadius: 2,
+                                            ),
+                                          ],
+                                        ),
+                                        child: Icon(
+                                          (_videoController != null && _videoController!.value.isPlaying) 
+                                              ? Icons.pause 
+                                              : Icons.play_arrow,
+                                          color: Colors.white,
+                                          size: 40,
+                                        ),
+                                      ),
+                                    ),
                                   ),
                                 ),
-                              )
-                            : null,
-                      ),
-                    ),
-                    
-                    // Back button
-                    Positioned(
-                      top: 16,
-                      left: 16,
-                      child: GestureDetector(
-                        onTap: () => Navigator.of(context).pop(),
-                        child: Container(
-                          width: 40,
-                          height: 40,
-                          decoration: BoxDecoration(
-                            color: Colors.black.withOpacity(0.5),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Icon(
-                            Icons.arrow_back,
-                            color: Colors.white,
-                            size: 20,
-                          ),
-                        ),
-                      ),
-                    ),
-                    
-                    // Video thumbnails at bottom
-                    Positioned(
-                      bottom: 16,
-                      left: 16,
-                      child: Row(
-                        children: List.generate(
-                          videoUrls.length,
-                          (index) => Padding(
-                            padding: EdgeInsets.only(right: 8),
-                            child: _buildVideoThumbnail(index == selectedVideoIndex, index),
-                          ),
-                        ),
-                      ),
-                    ),
-                    
-                    // Video controls
-                    Positioned(
-                      bottom: 16,
-                      right: 16,
-                      child: Row(
-                        children: [
-                          GestureDetector(
-                            onTap: () {
-                              setState(() {
-                                videoSpeed = videoSpeed == 1.0 ? 1.5 : videoSpeed == 1.5 ? 2.0 : 1.0;
-                              });
-                            },
-                            child: Container(
-                              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                              decoration: BoxDecoration(
-                                color: Colors.black.withOpacity(0.7),
-                                borderRadius: BorderRadius.circular(16),
                               ),
-                              child: Text(
-                                '${videoSpeed}x',
-                                style: GoogleFonts.poppins(
+                            ),
+                          
+                          Positioned(
+                            top: 16,
+                            left: 16,
+                            child: GestureDetector(
+                              onTap: () => Navigator.of(context).pop(),
+                              child: Container(
+                                width: 40,
+                                height: 40,
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withOpacity(0.5),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Icon(
+                                  Icons.arrow_back,
                                   color: Colors.white,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
+                                  size: 20,
                                 ),
                               ),
                             ),
                           ),
-                          SizedBox(width: 8),
-                          GestureDetector(
-                            onTap: () {
-                              // Handle fullscreen
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text('Fullscreen mode activated')),
-                              );
-                            },
-                            child: Container(
-                              width: 32,
-                              height: 32,
-                              decoration: BoxDecoration(
-                                color: Colors.black.withOpacity(0.7),
-                                borderRadius: BorderRadius.circular(16),
+                          
+                          Positioned(
+                            bottom: 16,
+                            left: 16,
+                            child: Row(
+                              children: List.generate(
+                                videoUrls.length,
+                                (index) => Padding(
+                                  padding: EdgeInsets.only(right: 8),
+                                  child: _buildVideoThumbnail(index == selectedVideoIndex, index),
+                                ),
                               ),
-                              child: Icon(
-                                Icons.fullscreen,
-                                color: Colors.white,
-                                size: 20,
+                            ),
+                          ),
+                          
+                          if (_isVideoFile(videoUrls[selectedVideoIndex]))
+                            Positioned(
+                              bottom: 16,
+                              right: 16,
+                              child: Row(
+                                children: [
+                                  Material(
+                                    color: Colors.transparent,
+                                    child: InkWell(
+                                      borderRadius: BorderRadius.circular(16),
+                                      onTap: () {
+                                        if (_videoController != null) {
+                                          setState(() {
+                                            videoSpeed = videoSpeed == 1.0 ? 1.5 : videoSpeed == 1.5 ? 2.0 : 1.0;
+                                          });
+                                          _videoController!.setPlaybackSpeed(videoSpeed);
+                                        }
+                                      },
+                                      child: Container(
+                                        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                        decoration: BoxDecoration(
+                                          color: Colors.black.withOpacity(0.7),
+                                          borderRadius: BorderRadius.circular(16),
+                                        ),
+                                        child: Text(
+                                          '${videoSpeed}x',
+                                          style: GoogleFonts.poppins(
+                                            color: Colors.white,
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  SizedBox(width: 8),
+                                  Material(
+                                    color: Colors.transparent,
+                                    child: InkWell(
+                                      borderRadius: BorderRadius.circular(16),
+                                      onTap: () {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(content: Text('Fullscreen mode activated')),
+                                        );
+                                      },
+                                      child: Container(
+                                        width: 32,
+                                        height: 32,
+                                        decoration: BoxDecoration(
+                                          color: Colors.black.withOpacity(0.7),
+                                          borderRadius: BorderRadius.circular(16),
+                                        ),
+                                        child: Icon(
+                                          Icons.fullscreen,
+                                          color: Colors.white,
+                                          size: 20,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  
+                  // Content Section
+                  SliverFillRemaining(
+                    child: Container(
+                      padding: EdgeInsets.all(20),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Title and favorite
+                          Row(
+                            children: [
+                              Text(
+                                'Video & Instructions',
+                                style: GoogleFonts.poppins(
+                                  color: Colors.grey[400],
+                                  fontSize: 14,
+                                ),
+                              ),
+                              Spacer(),
+                              GestureDetector(
+                                onTap: () {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text('Added to favorites!')),
+                                  );
+                                },
+                                child: Icon(
+                                  Icons.favorite_border,
+                                  color: Colors.white,
+                                  size: 24,
+                                ),
+                              ),
+                            ],
+                          ),
+                          SizedBox(height: 8),
+                          
+                          Text(
+                            exerciseData?.name ?? widget.exercise.name,
+                            style: GoogleFonts.poppins(
+                              color: Colors.white,
+                              fontSize: 28,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          SizedBox(height: 24),
+                          
+                          // Tab buttons
+                          Row(
+                            children: [
+                              _buildTabButton('Instructions', selectedTab == 'Instructions'),
+                              SizedBox(width: 16),
+                              _buildTabButton('Target', selectedTab == 'Target'),
+                            ],
+                          ),
+                          SizedBox(height: 24),
+                          
+                          // Content based on selected tab
+                          Expanded(
+                            child: SingleChildScrollView(
+                              child: _buildTabContent(),
                             ),
                           ),
                         ],
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-            ),
-            
-            // Content Section
-            SliverFillRemaining(
-              child: Container(
-                padding: EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Title and favorite
-                    Row(
-                      children: [
-                        Text(
-                          'Video & Instructions',
-                          style: GoogleFonts.poppins(
-                            color: Colors.grey[400],
-                            fontSize: 14,
-                          ),
-                        ),
-                        Spacer(),
-                        GestureDetector(
-                          onTap: () {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Added to favorites!')),
-                            );
-                          },
-                          child: Icon(
-                            Icons.favorite_border,
-                            color: Colors.white,
-                            size: 24,
-                          ),
-                        ),
-                      ],
-                    ),
-                    SizedBox(height: 8),
-                    
-                    Text(
-                      widget.exercise.name,
-                      style: GoogleFonts.poppins(
-                        color: Colors.white,
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    SizedBox(height: 24),
-                    
-                    // Tab buttons (removed Equipment)
-                    Row(
-                      children: [
-                        _buildTabButton('Instructions', selectedTab == 'Instructions'),
-                        SizedBox(width: 16),
-                        _buildTabButton('Target', selectedTab == 'Target'),
-                      ],
-                    ),
-                    SizedBox(height: 24),
-                    
-                    // Content based on selected tab
-                    Expanded(
-                      child: SingleChildScrollView(
-                        child: _buildTabContent(),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
 
   Widget _buildVideoThumbnail(bool isSelected, int index) {
     return GestureDetector(
-      onTap: () {
+      onTap: () async {
         setState(() {
           selectedVideoIndex = index;
+          _isVideoInitialized = false;
         });
+        
+        // Initialize new video if it's a video file
+        if (_isVideoFile(videoUrls[index])) {
+          await _initializeVideoPlayer();
+        }
       },
       child: Container(
         width: 60,
@@ -262,28 +432,40 @@ class _ExerciseInstructionsPageState extends State<ExerciseInstructionsPage> {
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(6),
-          child: Container(
-            decoration: BoxDecoration(
-              image: DecorationImage(
-                image: NetworkImage(videoUrls[index]),
-                fit: BoxFit.cover,
-              ),
-            ),
-            child: Center(
-              child: Text(
-                '${index + 1}',
-                style: GoogleFonts.poppins(
-                  color: Colors.white,
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
+          child: _isVideoFile(videoUrls[index])
+              ? Container(
+                  color: Colors.grey[800],
+                  child: Center(
+                    child: Icon(
+                      Icons.play_circle_outline,
+                      color: Colors.white,
+                      size: 20,
+                    ),
+                  ),
+                )
+              : Container(
+                  decoration: BoxDecoration(
+                    image: DecorationImage(
+                      image: NetworkImage(videoUrls[index]),
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                  child: Center(
+                    child: Text(
+                      '${index + 1}',
+                      style: GoogleFonts.poppins(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
                 ),
-              ),
-            ),
-          ),
         ),
       ),
     );
   }
+
 
   Widget _buildTabButton(String title, bool isSelected) {
     return GestureDetector(
@@ -316,63 +498,110 @@ class _ExerciseInstructionsPageState extends State<ExerciseInstructionsPage> {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildInstructionStep(
-              1,
-              'Start with your feet hip-width apart and knees slightly bent. Place your left hand on a bench while holding a dumbbell in your right hand.',
-            ),
-            SizedBox(height: 16),
-            _buildInstructionStep(
-              2,
-              'Bend your torso forward until it\'s almost parallel to the floor. Your right arm should be extended straight down from your shoulder, palm facing your thigh.',
-            ),
-            SizedBox(height: 16),
-            _buildInstructionStep(
-              3,
-              'Squeeze your shoulder blades together and pull the dumbbell to your side, keeping your elbow close to your torso.',
-            ),
-            SizedBox(height: 16),
-            _buildInstructionStep(
-              4,
-              'Pause briefly at the top of the movement, then slowly lower the weight back to the starting position.',
-            ),
-            SizedBox(height: 16),
-            _buildInstructionStep(
-              5,
-              'Repeat for the desired number of repetitions, then switch sides.',
-            ),
+            if (exerciseData?.instructionSteps != null && exerciseData!.instructionSteps.isNotEmpty)
+              ...exerciseData!.instructionSteps.map((step) => Padding(
+                padding: EdgeInsets.only(bottom: 16),
+                child: _buildInstructionStep(step.step, step.instruction),
+              )).toList()
+            else
+              Text(
+                'No instructions available for this exercise.',
+                style: GoogleFonts.poppins(
+                  color: Colors.grey[400],
+                  fontSize: 16,
+                ),
+              ),
           ],
         );
       case 'Target':
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildTargetMuscle('Primary', 'Latissimus Dorsi', Colors.red),
-            SizedBox(height: 12),
-            _buildTargetMuscle('Secondary', 'Rhomboids', Colors.orange),
-            SizedBox(height: 12),
-            _buildTargetMuscle('Secondary', 'Middle Trapezius', Colors.orange),
-            SizedBox(height: 12),
-            _buildTargetMuscle('Stabilizer', 'Posterior Deltoid', Colors.blue),
-            SizedBox(height: 12),
-            _buildTargetMuscle('Stabilizer', 'Biceps Brachii', Colors.blue),
-            SizedBox(height: 24),
-            Text(
-              'Muscle Benefits',
-              style: GoogleFonts.poppins(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
+            if (exerciseData?.targetMuscles != null) ...[
+              // Primary muscles
+              if (exerciseData!.targetMuscles['primary']?.isNotEmpty == true) ...[
+                ...exerciseData!.targetMuscles['primary']!.map((muscle) => Padding(
+                  padding: EdgeInsets.only(bottom: 12),
+                  child: _buildTargetMuscle('Primary', muscle.name, Colors.red),
+                )).toList(),
+              ],
+              // Secondary muscles
+              if (exerciseData!.targetMuscles['secondary']?.isNotEmpty == true) ...[
+                ...exerciseData!.targetMuscles['secondary']!.map((muscle) => Padding(
+                  padding: EdgeInsets.only(bottom: 12),
+                  child: _buildTargetMuscle('Secondary', muscle.name, Colors.orange),
+                )).toList(),
+              ],
+              // Stabilizer muscles
+              if (exerciseData!.targetMuscles['stabilizer']?.isNotEmpty == true) ...[
+                ...exerciseData!.targetMuscles['stabilizer']!.map((muscle) => Padding(
+                  padding: EdgeInsets.only(bottom: 12),
+                  child: _buildTargetMuscle('Stabilizer', muscle.name, Colors.blue),
+                )).toList(),
+              ],
+              SizedBox(height: 24),
+              Text(
+                'Muscle Benefits',
+                style: GoogleFonts.poppins(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
-            ),
-            SizedBox(height: 12),
-            Text(
-              'This exercise primarily targets the latissimus dorsi, helping to build width and thickness in your back. It also engages the rhomboids and middle trapezius for better posture and upper back strength.',
-              style: GoogleFonts.poppins(
-                color: Colors.grey[300],
-                fontSize: 16,
-                height: 1.5,
+              SizedBox(height: 12),
+              if (exerciseData!.benefits.isNotEmpty)
+                ...exerciseData!.benefits.map((benefit) => Padding(
+                  padding: EdgeInsets.only(bottom: 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        benefit.title,
+                        style: GoogleFonts.poppins(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      if (benefit.description.isNotEmpty) ...[
+                        SizedBox(height: 4),
+                        Text(
+                          benefit.description,
+                          style: GoogleFonts.poppins(
+                            color: Colors.grey[300],
+                            fontSize: 14,
+                            height: 1.5,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                )).toList()
+              else if (exerciseData?.description != null && exerciseData!.description.isNotEmpty)
+                Text(
+                  exerciseData!.description,
+                  style: GoogleFonts.poppins(
+                    color: Colors.grey[300],
+                    fontSize: 16,
+                    height: 1.5,
+                  ),
+                )
+              else
+                Text(
+                  'No muscle benefits information available for this exercise.',
+                  style: GoogleFonts.poppins(
+                    color: Colors.grey[400],
+                    fontSize: 16,
+                  ),
+                ),
+            ] else
+              Text(
+                'No target muscle information available for this exercise.',
+                style: GoogleFonts.poppins(
+                  color: Colors.grey[400],
+                  fontSize: 16,
+                ),
               ),
-            ),
           ],
         );
       default:
@@ -474,12 +703,14 @@ class _ExerciseInstructionsPageState extends State<ExerciseInstructionsPage> {
               ),
             ),
             SizedBox(width: 8),
-            Text(
-              muscleName,
-              style: GoogleFonts.poppins(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
+            Expanded(
+              child: Text(
+                muscleName,
+                style: GoogleFonts.poppins(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
             ),
           ],

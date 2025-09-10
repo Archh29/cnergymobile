@@ -18,6 +18,7 @@ class WorkoutHeatmapPage extends StatefulWidget {
 
 class _WorkoutHeatmapPageState extends State<WorkoutHeatmapPage> {
   int selectedYear = DateTime.now().year;
+  int selectedMonth = DateTime.now().month; // 1-12
 
   @override
   Widget build(BuildContext context) {
@@ -39,6 +40,23 @@ class _WorkoutHeatmapPageState extends State<WorkoutHeatmapPage> {
           ),
         ),
         actions: [
+          // Month selector
+          PopupMenuButton<int>(
+            icon: Icon(Icons.calendar_view_month_rounded, color: Colors.white),
+            color: Color(0xFF2A2A2A),
+            onSelected: (month) {
+              setState(() {
+                selectedMonth = month;
+              });
+            },
+            itemBuilder: (context) => List.generate(12, (i) => i + 1)
+                .map((m) => PopupMenuItem(
+                      value: m,
+                      child: Text(_monthName(m), style: GoogleFonts.poppins(color: Colors.white)),
+                    ))
+                .toList(),
+          ),
+          // Year selector
           PopupMenuButton<int>(
             icon: Icon(Icons.calendar_today_rounded, color: Colors.white),
             color: Color(0xFF2A2A2A),
@@ -48,8 +66,9 @@ class _WorkoutHeatmapPageState extends State<WorkoutHeatmapPage> {
               });
             },
             itemBuilder: (context) => [
-              PopupMenuItem(value: 2024, child: Text('2024', style: GoogleFonts.poppins(color: Colors.white))),
-              PopupMenuItem(value: 2023, child: Text('2023', style: GoogleFonts.poppins(color: Colors.white))),
+              PopupMenuItem(value: DateTime.now().year, child: Text('${DateTime.now().year}', style: GoogleFonts.poppins(color: Colors.white))),
+              PopupMenuItem(value: DateTime.now().year - 1, child: Text('${DateTime.now().year - 1}', style: GoogleFonts.poppins(color: Colors.white))),
+              PopupMenuItem(value: DateTime.now().year - 2, child: Text('${DateTime.now().year - 2}', style: GoogleFonts.poppins(color: Colors.white))),
             ],
           ),
         ],
@@ -81,7 +100,7 @@ class _WorkoutHeatmapPageState extends State<WorkoutHeatmapPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '$selectedYear Workout Activity',
+            '${_monthName(selectedMonth)} $selectedYear Activity',
             style: GoogleFonts.poppins(
               color: Colors.white,
               fontSize: 18,
@@ -89,45 +108,89 @@ class _WorkoutHeatmapPageState extends State<WorkoutHeatmapPage> {
             ),
           ),
           SizedBox(height: 20),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-                .map((month) => Text(
-                      month,
-                      style: GoogleFonts.poppins(
-                        color: Colors.grey[500],
-                        fontSize: 12,
-                      ),
-                    ))
-                .toList(),
-          ),
-          SizedBox(height: 12),
-          Container(
-            height: 200,
-            child: GridView.builder(
-              physics: NeverScrollableScrollPhysics(),
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 53,
-                mainAxisSpacing: 2,
-                crossAxisSpacing: 2,
-              ),
-              itemCount: 365,
-              itemBuilder: (context, index) {
-                final date = DateTime(selectedYear, 1, 1).add(Duration(days: index));
-                final intensity = widget.heatmapData[DateTime(date.year, date.month, date.day)] ?? 0;
-                                
-                return Container(
-                  decoration: BoxDecoration(
-                    color: _getHeatmapColor(intensity),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                );
-              },
-            ),
-          ),
+          _buildMonthGrid(selectedYear, selectedMonth),
         ],
       ),
     );
+  }
+
+  Widget _buildMonthGrid(int year, int month) {
+    final int days = _daysInMonth(year, month);
+    final DateTime firstDay = DateTime(year, month, 1);
+    final int startWeekday = firstDay.weekday; // 1=Mon..7=Sun
+    // Map Monday->0, Tuesday->1, ..., Sunday->6
+    final int leadingBlanks = (startWeekday - 1);
+
+    final totalCells = leadingBlanks + days;
+    final int rows = (totalCells / 7).ceil();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: ['M', 'T', 'W', 'T', 'F', 'S', 'S']
+              .map((d) => Expanded(
+                    child: Center(
+                      child: Text(
+                        d,
+                        style: GoogleFonts.poppins(color: Colors.grey[500], fontSize: 12),
+                      ),
+                    ),
+                  ))
+              .toList(),
+        ),
+        SizedBox(height: 8),
+        GridView.builder(
+          physics: NeverScrollableScrollPhysics(),
+          shrinkWrap: true,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 7,
+            mainAxisSpacing: 4,
+            crossAxisSpacing: 4,
+          ),
+          itemCount: rows * 7,
+          itemBuilder: (context, index) {
+            final int dayNumber = index - leadingBlanks + 1;
+            if (dayNumber < 1 || dayNumber > days) {
+              return Container(
+                height: 24,
+                decoration: BoxDecoration(
+                  color: Colors.transparent,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              );
+            }
+            final date = DateTime(year, month, dayNumber);
+            final int intensity = widget.heatmapData[DateTime(date.year, date.month, date.day)] ?? 0;
+            return Tooltip(
+              message: '${date.year}-${date.month.toString().padLeft(2, '0')}-${dayNumber.toString().padLeft(2, '0')}',
+              child: Container(
+                height: 24,
+                decoration: BoxDecoration(
+                  color: _getHeatmapColor(intensity),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  int _daysInMonth(int year, int month) {
+    final beginningNextMonth = (month == 12) ? DateTime(year + 1, 1, 1) : DateTime(year, month + 1, 1);
+    final lastDayOfMonth = beginningNextMonth.subtract(Duration(days: 1));
+    return lastDayOfMonth.day;
+  }
+
+  String _monthName(int m) {
+    const names = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+    return names[m - 1];
   }
 
   Widget _buildStats() {

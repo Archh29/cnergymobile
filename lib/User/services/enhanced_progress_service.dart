@@ -60,18 +60,16 @@ class EnhancedProgressService {
     try {
       final userId = await getCurrentUserId();
       final response = await http.get(
-        Uri.parse('$routinesUrl?action=fetch_user_routines&user_id=$userId'),
+        Uri.parse('$routinesUrl?action=fetch&user_id=$userId'),
         headers: {"Content-Type": "application/json"},
       );
 
       if (response.statusCode == 200) {
         final dynamic responseData = json.decode(response.body);
-        if (responseData is Map && responseData.containsKey('success') && responseData['success']) {
-          final List<dynamic> routinesData = responseData['routines'] ?? [];
-          return routinesData.map((json) => RoutineModel.fromJson(json)).toList();
-        }
-        if (responseData is List) {
-          return responseData.map((json) => RoutineModel.fromJson(json)).toList();
+        if (responseData is Map) {
+          // Prefer categorized list if present
+          final List<dynamic> my = (responseData['my_routines'] ?? responseData['routines'] ?? []) as List<dynamic>;
+          return my.map((json) => RoutineModel.fromJson(json)).toList();
         }
       }
       return [];
@@ -83,19 +81,17 @@ class EnhancedProgressService {
 
   static Future<List<RoutineModel>> fetchCoachRoutines() async {
     try {
+      final userId = await getCurrentUserId();
       final response = await http.get(
-        Uri.parse('$routinesUrl?action=fetch_coach_routines'),
+        Uri.parse('$routinesUrl?action=fetch&user_id=$userId'),
         headers: {"Content-Type": "application/json"},
       );
 
       if (response.statusCode == 200) {
         final dynamic responseData = json.decode(response.body);
-        if (responseData is Map && responseData.containsKey('success') && responseData['success']) {
-          final List<dynamic> routinesData = responseData['routines'] ?? [];
-          return routinesData.map((json) => RoutineModel.fromJson(json)).toList();
-        }
-        if (responseData is List) {
-          return responseData.map((json) => RoutineModel.fromJson(json)).toList();
+        if (responseData is Map) {
+          final List<dynamic> coach = (responseData['coach_assigned'] ?? []) as List<dynamic>;
+          return coach.map((json) => RoutineModel.fromJson(json)).toList();
         }
       }
       return [];
@@ -294,11 +290,13 @@ class EnhancedProgressService {
 
   static Future<bool> logWorkoutSession(WorkoutSessionModel session) async {
     try {
+      final userId = await getCurrentUserId();
       final response = await http.post(
         Uri.parse('$baseUrl?action=create_session'),
         headers: {"Content-Type": "application/json"},
         body: json.encode({
           "action": "create_session",
+          "user_id": userId,
           ...session.toJson(),
         }),
       );

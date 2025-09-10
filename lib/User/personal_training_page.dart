@@ -27,6 +27,8 @@ class _PersonalTrainingPageState extends State<PersonalTrainingPage>
   int? selectedCoachId;
   String? selectedCoachName;
   String? requestDate;
+  Map<String, dynamic>? _remoteCoachRequest; // latest from API
+  bool _loadingCoachRequest = false;
 
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
@@ -38,6 +40,7 @@ class _PersonalTrainingPageState extends State<PersonalTrainingPage>
     _initializeAnimations();
     _loadCoaches();
     _loadLocalData();
+    _loadCoachRequestStatus();
   }
 
   void _initializeAnimations() {
@@ -90,6 +93,34 @@ class _PersonalTrainingPageState extends State<PersonalTrainingPage>
     });
   }
 
+  Future<void> _loadCoachRequestStatus() async {
+    try {
+      setState(() { _loadingCoachRequest = true; });
+      int? userId = widget.currentUser?.id;
+      if (userId == null) {
+        final prefs = await SharedPreferences.getInstance();
+        userId = int.tryParse(prefs.getString('user_id') ?? '');
+      }
+      if (userId == null) {
+        setState(() { _loadingCoachRequest = false; });
+        return;
+      }
+      final data = await CoachService.getUserCoachRequest(userId);
+      setState(() {
+        _remoteCoachRequest = data?['request'];
+        if (_remoteCoachRequest != null) {
+          selectedCoachId = _remoteCoachRequest!['coach_id'];
+          selectedCoachName = _remoteCoachRequest!['coach_name'];
+          coachRequestStatus = (_remoteCoachRequest!['status'] ?? 'pending').toString();
+          requestDate = _remoteCoachRequest!['requested_at']?.toString();
+        }
+        _loadingCoachRequest = false;
+      });
+    } catch (e) {
+      setState(() { _loadingCoachRequest = false; });
+    }
+  }
+
   Future<void> _saveCoachRequestStatus() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('coach_request_status', coachRequestStatus);
@@ -127,6 +158,7 @@ class _PersonalTrainingPageState extends State<PersonalTrainingPage>
             child: CustomScrollView(
               slivers: [
                 _buildSliverAppBar(),
+                _buildCoachStatusSection(),
                 if (widget.currentUser != null && !widget.currentUser!.isPremium) _buildUpgradeSection(),
                 _buildAboutSection(),
                 if (widget.currentUser != null && widget.currentUser!.isPremium) _buildFilterSection(),
@@ -134,6 +166,114 @@ class _PersonalTrainingPageState extends State<PersonalTrainingPage>
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  SliverToBoxAdapter _buildCoachStatusSection() {
+    // Decide what to show based on remote data
+    if (_loadingCoachRequest) {
+      return SliverToBoxAdapter(
+        child: Container(
+          margin: EdgeInsets.all(20),
+          padding: EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Color(0xFF1A1A1A),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF4ECDC4)),
+                ),
+              ),
+              SizedBox(width: 12),
+              Text('Checking coach assignment...', style: GoogleFonts.poppins(color: Colors.white)),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_remoteCoachRequest == null) {
+      return SliverToBoxAdapter(child: SizedBox.shrink());
+    }
+
+    final coachApproval = (_remoteCoachRequest!['coach_approval'] ?? '').toString();
+    final staffApproval = (_remoteCoachRequest!['staff_approval'] ?? '').toString();
+    final status = (_remoteCoachRequest!['status'] ?? '').toString();
+    final coachName = (_remoteCoachRequest!['coach_name'] ?? 'Coach').toString();
+    final requestedAt = (_remoteCoachRequest!['requested_at'] ?? '').toString();
+
+    String title;
+    String subtitle;
+    Color color;
+    IconData icon;
+
+    if (status == 'rejected' || coachApproval == 'rejected') {
+      title = 'Request Rejected';
+      subtitle = 'Your request with $coachName was rejected.';
+      color = Colors.red;
+      icon = Icons.cancel;
+    } else if (coachApproval == 'approved' && staffApproval == 'approved') {
+      title = 'Coach Assigned';
+      subtitle = 'You are assigned to $coachName.';
+      color = Color(0xFF4ECDC4);
+      icon = Icons.verified;
+    } else if (coachApproval == 'approved' && staffApproval != 'approved') {
+      title = 'Awaiting Staff Approval';
+      subtitle = 'Coach approved. Please wait for staff confirmation.';
+      color = Color(0xFFFFD700);
+      icon = Icons.hourglass_top;
+    } else {
+      title = 'Awaiting Coach Approval';
+      subtitle = 'Request sent to $coachName on ${requestedAt.isNotEmpty ? requestedAt : '—'}';
+      color = Color(0xFFFFD700);
+      icon = Icons.hourglass_top;
+    }
+
+    return SliverToBoxAdapter(
+      child: Container(
+        margin: EdgeInsets.fromLTRB(20, 10, 20, 10),
+        padding: EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Color(0xFF1A1A1A),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: color.withOpacity(0.35)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: color, size: 20),
+            ),
+            SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.w700)),
+                  SizedBox(height: 4),
+                  Text(subtitle, style: GoogleFonts.poppins(color: Colors.grey[400], fontSize: 12)),
+                ],
+              ),
+            ),
+            IconButton(
+              onPressed: _loadCoachRequestStatus,
+              icon: Icon(Icons.refresh, color: color, size: 18),
+              tooltip: 'Refresh',
+            ),
+          ],
         ),
       ),
     );

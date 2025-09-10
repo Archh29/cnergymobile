@@ -5,6 +5,7 @@ import './models/routine.models.dart';
 import './models/workoutpreview_model.dart';
 import './services/workout_preview_service.dart';
 import './exercise_instructions_page.dart';
+import './exercise_selection_modal.dart';
 
 class WorkoutSessionPage extends StatefulWidget {
   final RoutineModel routine;
@@ -274,20 +275,28 @@ class _WorkoutSessionPageState extends State<WorkoutSessionPage> {
       isDismissible: false,
       enableDrag: false,
       backgroundColor: Colors.transparent,
-      builder: (context) => ExerciseCompletedModal(
+      builder: (context) => ExerciseSelectionModal(
         exerciseName: currentExercise.name,
         exerciseColor: Color(0xFF4ECDC4),
-        isLastExercise: currentExerciseIndex >= workoutExercises.length - 1,
-        onContinue: () {
+        workoutExercises: workoutExercises,
+        currentExerciseIndex: currentExerciseIndex,
+        onExerciseSelected: (selectedIndex) {
           Navigator.of(context).pop();
-          if (currentExerciseIndex < workoutExercises.length - 1) {
-            _moveToNextExercise();
+          if (selectedIndex != -1) {
+            _moveToSelectedExercise(selectedIndex);
           } else {
             _completeWorkout();
           }
         },
       ),
     );
+  }
+
+  void _moveToSelectedExercise(int selectedIndex) {
+    setState(() {
+      currentExerciseIndex = selectedIndex;
+      currentSetIndex = workoutExercises[currentExerciseIndex].completedSets;
+    });
   }
 
   void _moveToNextExercise() {
@@ -1160,79 +1169,6 @@ class _TimerSettingsModalState extends State<TimerSettingsModal> {
                   ),
                 ),
               ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class ExerciseCompletedModal extends StatelessWidget {
-  final String exerciseName;
-  final Color exerciseColor;
-  final bool isLastExercise;
-  final VoidCallback onContinue;
-
-  const ExerciseCompletedModal({
-    Key? key,
-    required this.exerciseName,
-    required this.exerciseColor,
-    required this.isLastExercise,
-    required this.onContinue,
-  }) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: Color(0xFF1A1A1A),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 40,
-            height: 4,
-            decoration: BoxDecoration(
-              color: Colors.grey[600],
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          SizedBox(height: 24),
-          Icon(Icons.check_circle, color: exerciseColor, size: 48),
-          SizedBox(height: 16),
-          Text(
-            'Exercise Complete!',
-            style: GoogleFonts.poppins(
-              color: Colors.white,
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          SizedBox(height: 8),
-          Text(
-            'Great job completing $exerciseName',
-            style: GoogleFonts.poppins(color: Colors.grey[400], fontSize: 14),
-            textAlign: TextAlign.center,
-          ),
-          SizedBox(height: 24),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: onContinue,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: exerciseColor,
-                foregroundColor: Colors.black,
-                padding: EdgeInsets.symmetric(vertical: 12),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-              ),
-              child: Text(
-                isLastExercise ? 'Finish Workout' : 'Next Exercise',
-                style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600),
-              ),
             ),
           ),
         ],

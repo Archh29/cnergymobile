@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:confetti/confetti.dart';
 import 'dart:math';
+import 'services/achievements_service.dart';
 
 class AchievementsPage extends StatefulWidget {
   @override
@@ -12,75 +13,10 @@ class _AchievementsPageState extends State<AchievementsPage> with TickerProvider
   String _selectedFilter = 'All';
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
-
-  final List<Map<String, dynamic>> _achievements = [
-    {
-      'title': 'Workout Warrior',
-      'description': 'You have successfully completed 10 workouts this month.',
-      'image': 'assets/images/workout.png',
-      'progress': 1.0,
-      'level': 'Silver',
-      'unlocked': true,
-      'points': 150,
-      'category': 'Fitness',
-      'color': Color(0xFFFF6B35),
-    },
-    {
-      'title': 'Weight Loss Champion',
-      'description': 'Congratulations on your weight loss journey!',
-      'image': 'assets/images/weight_loss.png',
-      'progress': 1.0,
-      'level': 'Gold',
-      'unlocked': true,
-      'points': 300,
-      'category': 'Health',
-      'color': Color(0xFFFFD700),
-    },
-    {
-      'title': 'Challenge Accepted',
-      'description': 'You have joined the 30-day fitness challenge.',
-      'image': 'assets/images/challenge.png',
-      'progress': 0.8,
-      'level': 'Bronze',
-      'unlocked': true,
-      'points': 100,
-      'category': 'Challenge',
-      'color': Color(0xFF4ECDC4),
-    },
-    {
-      'title': 'Personal Best',
-      'description': 'You set a new personal best in your last workout.',
-      'image': 'assets/images/personal_best.png',
-      'progress': 0.4,
-      'level': 'Silver',
-      'unlocked': false,
-      'points': 200,
-      'category': 'Performance',
-      'color': Color(0xFF96CEB4),
-    },
-    {
-      'title': 'Consistency King',
-      'description': 'You attended for 4 consecutive weeks.',
-      'image': 'assets/images/attendance.png',
-      'progress': 0.6,
-      'level': 'Bronze',
-      'unlocked': false,
-      'points': 120,
-      'category': 'Consistency',
-      'color': Color(0xFF45B7D1),
-    },
-    {
-      'title': 'Strength Master',
-      'description': 'Achieved maximum strength in all major lifts.',
-      'image': 'assets/images/strength.png',
-      'progress': 0.3,
-      'level': 'Gold',
-      'unlocked': false,
-      'points': 500,
-      'category': 'Strength',
-      'color': Color(0xFFE74C3C),
-    },
-  ];
+  
+  AchievementsData? _achievementsData;
+  bool _isLoading = true;
+  String? _error;
 
   final List<String> _filters = ['All', 'Unlocked', 'Locked', 'Gold', 'Silver', 'Bronze'];
 
@@ -97,7 +33,7 @@ class _AchievementsPageState extends State<AchievementsPage> with TickerProvider
     _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
     );
-    _animationController.forward();
+    _loadAchievements();
   }
 
   @override
@@ -107,25 +43,111 @@ class _AchievementsPageState extends State<AchievementsPage> with TickerProvider
     super.dispose();
   }
 
-  List<Map<String, dynamic>> get _filteredAchievements {
-    if (_selectedFilter == 'Unlocked') {
-      return _achievements.where((a) => a['unlocked']).toList();
-    } else if (_selectedFilter == 'Locked') {
-      return _achievements.where((a) => !a['unlocked']).toList();
-    } else if (_selectedFilter == 'Gold' || _selectedFilter == 'Silver' || _selectedFilter == 'Bronze') {
-      return _achievements.where((a) => a['level'] == _selectedFilter).toList();
+  Future<void> _loadAchievements() async {
+    try {
+      setState(() {
+        _isLoading = true;
+        _error = null;
+      });
+
+      final achievementsData = await AchievementsService.getAchievements();
+      
+      setState(() {
+        _achievementsData = achievementsData;
+        _isLoading = false;
+      });
+
+      _animationController.forward();
+    } catch (e) {
+      setState(() {
+        _error = e.toString();
+        _isLoading = false;
+      });
     }
-    return _achievements;
+  }
+
+  Future<void> _forceCheckAchievements() async {
+    try {
+      setState(() {
+        _isLoading = true;
+      });
+
+      final result = await AchievementsService.forceCheckAchievements();
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Force check completed. ${result['count']} new achievements awarded.'),
+          backgroundColor: Colors.green,
+        ),
+      );
+
+      // Reload achievements after force check
+      await _loadAchievements();
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error force checking achievements: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  List<Achievement> get _filteredAchievements {
+    if (_achievementsData == null) return [];
+    
+    final achievements = _achievementsData!.achievements;
+    
+    if (_selectedFilter == 'Unlocked') {
+      return achievements.where((a) => a.unlocked).toList();
+    } else if (_selectedFilter == 'Locked') {
+      return achievements.where((a) => !a.unlocked).toList();
+    } else if (_selectedFilter == 'Gold' || _selectedFilter == 'Silver' || _selectedFilter == 'Bronze') {
+      return achievements.where((a) => a.level == _selectedFilter).toList();
+    }
+    return achievements;
   }
 
   int get _totalPoints {
-    return _achievements
-        .where((a) => a['unlocked'])
-        .fold(0, (sum, a) => sum + (a['points'] as int));
+    return _achievementsData?.totalPoints ?? 0;
   }
 
-  void _showAchievementDetails(Map<String, dynamic> achievement) {
-    if (achievement['unlocked']) {
+  IconData _getIconData(String iconName) {
+    switch (iconName.toLowerCase()) {
+      case 'log-in':
+        return Icons.login;
+      case 'calendar':
+        return Icons.event;
+      case 'dumbbell':
+        return Icons.fitness_center;
+      case 'star':
+        return Icons.star;
+      case 'medal':
+        return Icons.emoji_events;
+      case 'award':
+        return Icons.military_tech;
+      case 'clipboard':
+        return Icons.assignment;
+      case 'barbell':
+        return Icons.sports_gymnastics;
+      case 'trophy':
+        return Icons.emoji_events;
+      case 'flag':
+        return Icons.flag;
+      case 'handshake':
+        return Icons.handshake;
+      case 'message-circle':
+        return Icons.message;
+      default:
+        return Icons.emoji_events;
+    }
+  }
+
+  void _showAchievementDetails(Achievement achievement) {
+    if (achievement.unlocked) {
       _confettiController.play();
     }
     
@@ -157,8 +179,8 @@ class _AchievementsPageState extends State<AchievementsPage> with TickerProvider
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         colors: [
-                          achievement['color'].withOpacity(0.8),
-                          achievement['color'].withOpacity(0.6),
+                          Color(achievement.color).withOpacity(0.8),
+                          Color(achievement.color).withOpacity(0.6),
                         ],
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
@@ -166,14 +188,16 @@ class _AchievementsPageState extends State<AchievementsPage> with TickerProvider
                       shape: BoxShape.circle,
                     ),
                     child: Icon(
-                      achievement['unlocked'] ? Icons.emoji_events : Icons.lock,
+                      achievement.unlocked 
+                          ? _getIconData(achievement.icon)
+                          : Icons.lock,
                       color: Colors.white,
                       size: 40,
                     ),
                   ),
                   SizedBox(height: 16),
                   Text(
-                    achievement['title'],
+                    achievement.title,
                     style: GoogleFonts.poppins(
                       color: Colors.white,
                       fontSize: 20,
@@ -185,13 +209,13 @@ class _AchievementsPageState extends State<AchievementsPage> with TickerProvider
                   Container(
                     padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
-                      color: achievement['color'].withOpacity(0.2),
+                      color: Color(achievement.color).withOpacity(0.2),
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Text(
-                      '${achievement['level']} • ${achievement['points']} pts',
+                      '${achievement.level} • ${achievement.points} pts',
                       style: GoogleFonts.poppins(
-                        color: achievement['color'],
+                        color: Color(achievement.color),
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
                       ),
@@ -199,7 +223,7 @@ class _AchievementsPageState extends State<AchievementsPage> with TickerProvider
                   ),
                   SizedBox(height: 16),
                   Text(
-                    achievement['description'],
+                    achievement.description,
                     style: GoogleFonts.poppins(
                       color: Colors.grey[400],
                       fontSize: 14,
@@ -207,7 +231,7 @@ class _AchievementsPageState extends State<AchievementsPage> with TickerProvider
                     ),
                     textAlign: TextAlign.center,
                   ),
-                  if (!achievement['unlocked']) ...[
+                  if (!achievement.unlocked) ...[
                     SizedBox(height: 16),
                     Container(
                       width: double.infinity,
@@ -223,14 +247,14 @@ class _AchievementsPageState extends State<AchievementsPage> with TickerProvider
                           ),
                           SizedBox(height: 8),
                           LinearProgressIndicator(
-                            value: achievement['progress'],
+                            value: achievement.progress,
                             backgroundColor: Colors.grey[800],
-                            valueColor: AlwaysStoppedAnimation<Color>(achievement['color']),
+                            valueColor: AlwaysStoppedAnimation<Color>(Color(achievement.color)),
                             minHeight: 6,
                           ),
                           SizedBox(height: 4),
                           Text(
-                            '${(achievement['progress'] * 100).toInt()}% Complete',
+                            '${(achievement.progress * 100).toInt()}% Complete',
                             style: GoogleFonts.poppins(
                               color: Colors.grey[400],
                               fontSize: 12,
@@ -244,7 +268,7 @@ class _AchievementsPageState extends State<AchievementsPage> with TickerProvider
                   ElevatedButton(
                     onPressed: () => Navigator.of(context).pop(),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: achievement['color'],
+                      backgroundColor: Color(achievement.color),
                       foregroundColor: Colors.white,
                       padding: EdgeInsets.symmetric(horizontal: 32, vertical: 12),
                       shape: RoundedRectangleBorder(
@@ -260,12 +284,12 @@ class _AchievementsPageState extends State<AchievementsPage> with TickerProvider
               ),
             ),
           ),
-          if (achievement['unlocked'])
+          if (achievement.unlocked)
             ConfettiWidget(
               confettiController: _confettiController,
               blastDirectionality: BlastDirectionality.explosive,
               shouldLoop: false,
-              colors: [achievement['color'], Colors.white, Colors.amber],
+              colors: [Color(achievement.color), Colors.white, Colors.amber],
               numberOfParticles: 30,
               emissionFrequency: 0.05,
               gravity: 0.1,
@@ -300,13 +324,76 @@ class _AchievementsPageState extends State<AchievementsPage> with TickerProvider
           ),
           onPressed: () => Navigator.pop(context),
         ),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.refresh, color: Colors.white),
+            onPressed: _loadAchievements,
+          ),
+          IconButton(
+            icon: Icon(Icons.auto_fix_high, color: Colors.white),
+            onPressed: _forceCheckAchievements,
+            tooltip: 'Force Check Achievements',
+          ),
+        ],
       ),
-      body: FadeTransition(
-        opacity: _fadeAnimation,
-        child: Padding(
-          padding: const EdgeInsets.all(20.0),
-          child: Column(
-            children: [
+      body: _isLoading
+          ? Center(
+              child: CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFFF6B35)),
+              ),
+            )
+          : _error != null
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.error_outline,
+                        color: Colors.red,
+                        size: 64,
+                      ),
+                      SizedBox(height: 16),
+                      Text(
+                        'Error loading achievements',
+                        style: GoogleFonts.poppins(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      SizedBox(height: 8),
+                      Text(
+                        _error!,
+                        style: GoogleFonts.poppins(
+                          color: Colors.grey[400],
+                          fontSize: 14,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      SizedBox(height: 24),
+                      ElevatedButton(
+                        onPressed: _loadAchievements,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Color(0xFFFF6B35),
+                          padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                        ),
+                        child: Text(
+                          'Retry',
+                          style: GoogleFonts.poppins(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              : FadeTransition(
+                  opacity: _fadeAnimation,
+                  child: Padding(
+                    padding: const EdgeInsets.all(20.0),
+                    child: Column(
+                      children: [
               // Header with stats
               Container(
                 padding: EdgeInsets.all(24),
@@ -366,7 +453,7 @@ class _AchievementsPageState extends State<AchievementsPage> with TickerProvider
                     Column(
                       children: [
                         Text(
-                          '${_achievements.where((a) => a['unlocked']).length}',
+                          '${_achievementsData?.unlockedCount ?? 0}',
                           style: GoogleFonts.poppins(
                             fontSize: 24,
                             fontWeight: FontWeight.bold,
@@ -444,13 +531,13 @@ class _AchievementsPageState extends State<AchievementsPage> with TickerProvider
                     return GestureDetector(
                       onTap: () => _showAchievementDetails(achievement),
                       child: Hero(
-                        tag: achievement['title'],
+                        tag: achievement.title,
                         child: Container(
                           decoration: BoxDecoration(
                             color: Color(0xFF1A1A1A),
                             borderRadius: BorderRadius.circular(20),
-                            border: achievement['unlocked']
-                                ? Border.all(color: achievement['color'], width: 1)
+                            border: achievement.unlocked
+                                ? Border.all(color: Color(achievement.color), width: 1)
                                 : null,
                             boxShadow: [
                               BoxShadow(
@@ -468,10 +555,10 @@ class _AchievementsPageState extends State<AchievementsPage> with TickerProvider
                                 height: 100,
                                 decoration: BoxDecoration(
                                   gradient: LinearGradient(
-                                    colors: achievement['unlocked']
+                                    colors: achievement.unlocked
                                         ? [
-                                            achievement['color'].withOpacity(0.8),
-                                            achievement['color'].withOpacity(0.6),
+                                            Color(achievement.color).withOpacity(0.8),
+                                            Color(achievement.color).withOpacity(0.6),
                                           ]
                                         : [
                                             Colors.grey[800]!,
@@ -486,7 +573,9 @@ class _AchievementsPageState extends State<AchievementsPage> with TickerProvider
                                   children: [
                                     Center(
                                       child: Icon(
-                                        achievement['unlocked'] ? Icons.emoji_events : Icons.lock,
+                                        achievement.unlocked 
+                                            ? _getIconData(achievement.icon)
+                                            : Icons.lock,
                                         color: Colors.white,
                                         size: 40,
                                       ),
@@ -501,7 +590,7 @@ class _AchievementsPageState extends State<AchievementsPage> with TickerProvider
                                           borderRadius: BorderRadius.circular(12),
                                         ),
                                         child: Text(
-                                          achievement['level'],
+                                          achievement.level,
                                           style: GoogleFonts.poppins(
                                             color: Colors.white,
                                             fontSize: 10,
@@ -521,7 +610,7 @@ class _AchievementsPageState extends State<AchievementsPage> with TickerProvider
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       Text(
-                                        achievement['title'],
+                                        achievement.title,
                                         style: GoogleFonts.poppins(
                                           color: Colors.white,
                                           fontSize: 14,
@@ -532,24 +621,24 @@ class _AchievementsPageState extends State<AchievementsPage> with TickerProvider
                                       ),
                                       SizedBox(height: 8),
                                       Text(
-                                        achievement['category'],
+                                        achievement.category,
                                         style: GoogleFonts.poppins(
-                                          color: achievement['color'],
+                                          color: Color(achievement.color),
                                           fontSize: 12,
                                           fontWeight: FontWeight.w500,
                                         ),
                                       ),
                                       Spacer(),
-                                      if (!achievement['unlocked']) ...[
+                                      if (!achievement.unlocked) ...[
                                         LinearProgressIndicator(
-                                          value: achievement['progress'],
+                                          value: achievement.progress,
                                           backgroundColor: Colors.grey[800],
-                                          valueColor: AlwaysStoppedAnimation<Color>(achievement['color']),
+                                          valueColor: AlwaysStoppedAnimation<Color>(Color(achievement.color)),
                                           minHeight: 4,
                                         ),
                                         SizedBox(height: 4),
                                         Text(
-                                          '${(achievement['progress'] * 100).toInt()}%',
+                                          '${(achievement.progress * 100).toInt()}%',
                                           style: GoogleFonts.poppins(
                                             color: Colors.grey[400],
                                             fontSize: 12,
@@ -560,14 +649,14 @@ class _AchievementsPageState extends State<AchievementsPage> with TickerProvider
                                           children: [
                                             Icon(
                                               Icons.star,
-                                              color: achievement['color'],
+                                              color: Color(achievement.color),
                                               size: 16,
                                             ),
                                             SizedBox(width: 4),
                                             Text(
-                                              '${achievement['points']} pts',
+                                              '${achievement.points} pts',
                                               style: GoogleFonts.poppins(
-                                                color: achievement['color'],
+                                                color: Color(achievement.color),
                                                 fontSize: 12,
                                                 fontWeight: FontWeight.w600,
                                               ),

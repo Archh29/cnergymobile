@@ -124,6 +124,13 @@ class ExerciseModel {
   }) : sets = sets ?? [];
 
   factory ExerciseModel.fromJson(Map<String, dynamic> json) {
+    print('🔍 ExerciseModel.fromJson for: ${json['name']}');
+    print('  - target_muscle: "${json['target_muscle']}"');
+    print('  - targetMuscle: "${json['targetMuscle']}"');
+    
+    final targetMuscle = json['target_muscle'] ?? json['targetMuscle'] ?? '';
+    print('  - Final targetMuscle: "$targetMuscle"');
+    
     return ExerciseModel(
       id: json['id'],
       name: json['name'] ?? '',
@@ -140,7 +147,7 @@ class ExerciseModel {
       color: json['color'] ?? '0xFF96CEB4',
       restTime: json['rest_time'] ?? json['restTime'] ?? 60,
       notes: json['notes'] ?? '',
-      targetMuscle: json['target_muscle'] ?? json['targetMuscle'] ?? '',
+      targetMuscle: targetMuscle,
       description: json['description'] ?? '',
       imageUrl: json['image_url'] ?? json['imageUrl'] ?? '',
     );
@@ -245,6 +252,9 @@ class TargetMuscleModel {
 class RoutineResponse {
   final bool success;
   final List<RoutineModel> routines;
+  final List<RoutineModel> myRoutines;
+  final List<RoutineModel> coachAssigned;
+  final List<RoutineModel> templateRoutines;
   final int totalRoutines;
   final bool isPremium;
   final Map<String, dynamic>? membershipStatus;
@@ -253,6 +263,9 @@ class RoutineResponse {
   RoutineResponse({
     required this.success,
     required this.routines,
+    required this.myRoutines,
+    required this.coachAssigned,
+    required this.templateRoutines,
     required this.totalRoutines,
     required this.isPremium,
     this.membershipStatus,
@@ -264,6 +277,15 @@ class RoutineResponse {
       success: json['success'] ?? false,
       routines: json['routines'] != null 
           ? (json['routines'] as List).map((r) => RoutineModel.fromJson(r)).toList()
+          : [],
+      myRoutines: json['my_routines'] != null
+          ? (json['my_routines'] as List).map((r) => RoutineModel.fromJson(r)).toList()
+          : [],
+      coachAssigned: json['coach_assigned'] != null
+          ? (json['coach_assigned'] as List).map((r) => RoutineModel.fromJson(r)).toList()
+          : [],
+      templateRoutines: json['template_routines'] != null
+          ? (json['template_routines'] as List).map((r) => RoutineModel.fromJson(r)).toList()
           : [],
       totalRoutines: json['total_routines'] ?? 0,
       isPremium: json['is_premium'] ?? false,

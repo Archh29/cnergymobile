@@ -33,7 +33,7 @@ class _FirstTimeSetupScreenState extends State<FirstTimeSetupScreen>
   late Animation<double> _progressAnimation;
   
   int currentPage = 0;
-  final int totalPages = 4;
+  int get totalPages => widget.userId != null ? 3 : 4;
   
   // Services
   final OnboardingService _onboardingService = OnboardingService();
@@ -126,6 +126,25 @@ class _FirstTimeSetupScreenState extends State<FirstTimeSetupScreen>
       final levelsResponse = await _onboardingService.getActivityLevels();
 
       if (goalsResponse.success && levelsResponse.success) {
+        // For existing users, try to prefill from profile so we don't ask for personal info
+        if (widget.userId != null) {
+          final profileResp = await _onboardingService.getUserProfile(widget.userId!);
+          if (profileResp.success && profileResp.data != null) {
+            final profile = profileResp.data!;
+            // Prefill gender/birthdate silently (not shown in UI for existing users)
+            selectedGender = profile.genderId == 1 ? 'Male' : 'Female';
+            selectedBirthdate = profile.birthdate;
+            // Prefill some workout related fields if present
+            _heightController.text = profile.heightCm.toString();
+            _weightController.text = profile.weightKg.toString();
+            if (profile.targetWeight != null) {
+              _targetWeightController.text = profile.targetWeight!.toString();
+            }
+            selectedGoals = List<String>.from(profile.fitnessGoals);
+            selectedActivityLevel = profile.activityLevel;
+            selectedWorkoutDays = profile.workoutDaysPerWeek;
+          }
+        }
         setState(() {
           fitnessGoals = goalsResponse.data!;
           activityLevels = levelsResponse.data!;
@@ -201,16 +220,25 @@ class _FirstTimeSetupScreenState extends State<FirstTimeSetupScreen>
   }
 
   bool _canProceed() {
-    switch (currentPage) {
-      case 0:
-        if (widget.userId != null) {
-          // Existing user - only need basic info
-          return _firstNameController.text.isNotEmpty &&
-              _lastNameController.text.isNotEmpty &&
-              selectedBirthdate != null &&
-              selectedGender.isNotEmpty;
-        } else {
-          // New user - need email and password too
+    // Pages differ for existing vs new users
+    if (widget.userId != null) {
+      // Existing users: [Physical, Goals, FitnessLevel]
+      switch (currentPage) {
+        case 0:
+          return _heightController.text.isNotEmpty && _weightController.text.isNotEmpty;
+        case 1:
+          return selectedGoals.isNotEmpty;
+        case 2:
+          return selectedFitnessLevel.isNotEmpty &&
+              selectedActivityLevel.isNotEmpty &&
+              selectedWorkoutDays != null;
+        default:
+          return false;
+      }
+    } else {
+      // New users: [Basic, Physical, Goals, FitnessLevel]
+      switch (currentPage) {
+        case 0:
           return _firstNameController.text.isNotEmpty &&
               _lastNameController.text.isNotEmpty &&
               selectedBirthdate != null &&
@@ -219,18 +247,17 @@ class _FirstTimeSetupScreenState extends State<FirstTimeSetupScreen>
               _passwordController.text.isNotEmpty &&
               _onboardingService.isValidEmail(_emailController.text) &&
               _onboardingService.isValidPassword(_passwordController.text);
-        }
-      case 1:
-        return _heightController.text.isNotEmpty &&
-            _weightController.text.isNotEmpty;
-      case 2:
-        return selectedGoals.isNotEmpty;
-      case 3:
-        return selectedFitnessLevel.isNotEmpty &&
-            selectedActivityLevel.isNotEmpty &&
-            selectedWorkoutDays != null;
-      default:
-        return false;
+        case 1:
+          return _heightController.text.isNotEmpty && _weightController.text.isNotEmpty;
+        case 2:
+          return selectedGoals.isNotEmpty;
+        case 3:
+          return selectedFitnessLevel.isNotEmpty &&
+              selectedActivityLevel.isNotEmpty &&
+              selectedWorkoutDays != null;
+        default:
+          return false;
+      }
     }
   }
 
@@ -250,13 +277,18 @@ class _FirstTimeSetupScreenState extends State<FirstTimeSetupScreen>
       });
 
       if (widget.userId != null) {
-        // Update existing user profile
+        // Update existing user profile (no personal info required)
+        final int safeGenderId = selectedGender.isNotEmpty
+            ? _onboardingService.getGenderId(selectedGender)
+            : _onboardingService.getGenderId('male');
+        final DateTime safeBirthdate = selectedBirthdate ?? DateTime.now();
+
         final profile = MemberProfileDetails(
           userId: widget.userId!,
           fitnessLevel: selectedFitnessLevel,
           fitnessGoals: selectedGoals,
-          genderId: _onboardingService.getGenderId(selectedGender),
-          birthdate: selectedBirthdate!,
+          genderId: safeGenderId,
+          birthdate: safeBirthdate,
           heightCm: double.parse(_heightController.text),
           weightKg: double.parse(_weightController.text),
           targetWeight: _targetWeightController.text.isNotEmpty 
@@ -423,12 +455,18 @@ class _FirstTimeSetupScreenState extends State<FirstTimeSetupScreen>
                   _animationController.forward();
                   _progressController.animateTo((index + 1) / totalPages);
                 },
-                children: [
-                  _buildModernBasicInfoPage(isSmallScreen),
-                  _buildModernPhysicalInfoPage(isSmallScreen),
-                  _buildModernGoalsPage(isSmallScreen),
-                  _buildModernFitnessLevelPage(isSmallScreen),
-                ],
+                children: widget.userId != null
+                    ? [
+                        _buildModernPhysicalInfoPage(isSmallScreen),
+                        _buildModernGoalsPage(isSmallScreen),
+                        _buildModernFitnessLevelPage(isSmallScreen),
+                      ]
+                    : [
+                        _buildModernBasicInfoPage(isSmallScreen),
+                        _buildModernPhysicalInfoPage(isSmallScreen),
+                        _buildModernGoalsPage(isSmallScreen),
+                        _buildModernFitnessLevelPage(isSmallScreen),
+                      ],
               ),
             ),
             _buildModernNavigationButtons(isSmallScreen),

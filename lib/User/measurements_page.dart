@@ -3,6 +3,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:fl_chart/fl_chart.dart';
 import './models/progress_model.dart';
 import './services/enhanced_progress_service.dart';
+import './services/profile_service.dart';
+import './services/gym_utils_service.dart';
 
 class MeasurementsPage extends StatefulWidget {
   final Map<String, double> currentMeasurements;
@@ -23,14 +25,18 @@ class _MeasurementsPageState extends State<MeasurementsPage> {
   final TextEditingController chestController = TextEditingController();
   final TextEditingController waistController = TextEditingController();
   final TextEditingController hipsController = TextEditingController();
+  final TextEditingController armsController = TextEditingController();
+  final TextEditingController thighsController = TextEditingController();
     
-  String selectedMood = 'Good';
-  List<String> moods = ['Excellent', 'Good', 'Average', 'Poor'];
+  String selectedMeasurement = 'Weight';
+  List<String> measurements = ['Weight', 'BMI', 'Chest', 'Waist', 'Hips', 'Arms', 'Thighs'];
+  double? userHeight;
 
   @override
   void initState() {
     super.initState();
     _loadCurrentMeasurements();
+    _loadUserHeight();
   }
 
   void _loadCurrentMeasurements() {
@@ -38,6 +44,21 @@ class _MeasurementsPageState extends State<MeasurementsPage> {
     chestController.text = widget.currentMeasurements['chest']?.toString() ?? '';
     waistController.text = widget.currentMeasurements['waist']?.toString() ?? '';
     hipsController.text = widget.currentMeasurements['hips']?.toString() ?? '';
+    armsController.text = widget.currentMeasurements['arms']?.toString() ?? '';
+    thighsController.text = widget.currentMeasurements['thighs']?.toString() ?? '';
+  }
+
+  Future<void> _loadUserHeight() async {
+    try {
+      final profileData = await ProfileService.getProfile();
+      if (profileData != null && profileData['height_cm'] != null) {
+        setState(() {
+          userHeight = double.tryParse(profileData['height_cm'].toString());
+        });
+      }
+    } catch (e) {
+      print('Error loading user height: $e');
+    }
   }
 
   @override
@@ -69,8 +90,6 @@ class _MeasurementsPageState extends State<MeasurementsPage> {
             SizedBox(height: 24),
             _buildUpdateMeasurements(),
             SizedBox(height: 24),
-            _buildMoodTracker(),
-            SizedBox(height: 24),
             _buildCurrentStats(),
           ],
         ),
@@ -88,13 +107,46 @@ class _MeasurementsPageState extends State<MeasurementsPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Weight Progress',
-            style: GoogleFonts.poppins(
-              color: Colors.white,
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                '${selectedMeasurement} Progress',
+                style: GoogleFonts.poppins(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              Container(
+                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Color(0xFF2A2A2A),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Color(0xFF4ECDC4).withOpacity(0.3)),
+                ),
+                child: DropdownButton<String>(
+                  value: selectedMeasurement,
+                  dropdownColor: Color(0xFF2A2A2A),
+                  underline: SizedBox(),
+                  icon: Icon(Icons.keyboard_arrow_down, color: Color(0xFF4ECDC4)),
+                  style: GoogleFonts.poppins(color: Colors.white, fontSize: 14),
+                  items: measurements.map((String measurement) {
+                    return DropdownMenuItem<String>(
+                      value: measurement,
+                      child: Text(measurement),
+                    );
+                  }).toList(),
+                  onChanged: (String? newValue) {
+                    if (newValue != null) {
+                      setState(() {
+                        selectedMeasurement = newValue;
+                      });
+                    }
+                  },
+                ),
+              ),
+            ],
           ),
           SizedBox(height: 20),
           Container(
@@ -113,14 +165,14 @@ class _MeasurementsPageState extends State<MeasurementsPage> {
                       borderData: FlBorderData(show: false),
                       lineBarsData: [
                         LineChartBarData(
-                          spots: _generateWeightDataFromProgress(),
+                          spots: _generateDataFromProgress(selectedMeasurement),
                           isCurved: true,
-                          color: Color(0xFF4ECDC4),
+                          color: _getMeasurementColor(selectedMeasurement),
                           barWidth: 3,
                           dotData: FlDotData(show: true),
                           belowBarData: BarAreaData(
                             show: true,
-                            color: Color(0xFF4ECDC4).withOpacity(0.1),
+                            color: _getMeasurementColor(selectedMeasurement).withOpacity(0.1),
                           ),
                         ),
                       ],
@@ -132,22 +184,113 @@ class _MeasurementsPageState extends State<MeasurementsPage> {
     );
   }
 
-  List<FlSpot> _generateWeightDataFromProgress() {
+  List<FlSpot> _generateDataFromProgress(String measurement) {
     if (widget.progressData.isEmpty) return [];
     
-    // Sort by date and take last 10 entries
-    final sortedData = widget.progressData
-        .where((p) => p.weight != null && p.weight! > 0)
-        .toList()
-      ..sort((a, b) => a.dateRecorded.compareTo(b.dateRecorded));
+    List<ProgressModel> sortedData;
+    
+    // Filter and sort data based on selected measurement
+    switch (measurement) {
+      case 'Weight':
+        sortedData = widget.progressData
+            .where((p) => p.weight != null && p.weight! > 0)
+            .toList()
+          ..sort((a, b) => a.dateRecorded.compareTo(b.dateRecorded));
+        break;
+      case 'BMI':
+        sortedData = widget.progressData
+            .where((p) => p.bmi != null && p.bmi! > 0)
+            .toList()
+          ..sort((a, b) => a.dateRecorded.compareTo(b.dateRecorded));
+        break;
+      case 'Chest':
+        sortedData = widget.progressData
+            .where((p) => p.chestCm != null && p.chestCm! > 0)
+            .toList()
+          ..sort((a, b) => a.dateRecorded.compareTo(b.dateRecorded));
+        break;
+      case 'Waist':
+        sortedData = widget.progressData
+            .where((p) => p.waistCm != null && p.waistCm! > 0)
+            .toList()
+          ..sort((a, b) => a.dateRecorded.compareTo(b.dateRecorded));
+        break;
+      case 'Hips':
+        sortedData = widget.progressData
+            .where((p) => p.hipsCm != null && p.hipsCm! > 0)
+            .toList()
+          ..sort((a, b) => a.dateRecorded.compareTo(b.dateRecorded));
+        break;
+      case 'Arms':
+        sortedData = widget.progressData
+            .where((p) => p.armsCm != null && p.armsCm! > 0)
+            .toList()
+          ..sort((a, b) => a.dateRecorded.compareTo(b.dateRecorded));
+        break;
+      case 'Thighs':
+        sortedData = widget.progressData
+            .where((p) => p.thighsCm != null && p.thighsCm! > 0)
+            .toList()
+          ..sort((a, b) => a.dateRecorded.compareTo(b.dateRecorded));
+        break;
+      default:
+        sortedData = [];
+    }
     
     final recentData = sortedData.length > 10 
         ? sortedData.sublist(sortedData.length - 10)
         : sortedData;
     
     return recentData.asMap().entries.map((entry) {
-      return FlSpot(entry.key.toDouble(), entry.value.weight!);
+      double value;
+      switch (measurement) {
+        case 'Weight':
+          value = entry.value.weight!;
+          break;
+        case 'BMI':
+          value = entry.value.bmi!;
+          break;
+        case 'Chest':
+          value = entry.value.chestCm!;
+          break;
+        case 'Waist':
+          value = entry.value.waistCm!;
+          break;
+        case 'Hips':
+          value = entry.value.hipsCm!;
+          break;
+        case 'Arms':
+          value = entry.value.armsCm!;
+          break;
+        case 'Thighs':
+          value = entry.value.thighsCm!;
+          break;
+        default:
+          value = 0.0;
+      }
+      return FlSpot(entry.key.toDouble(), value);
     }).toList();
+  }
+
+  Color _getMeasurementColor(String measurement) {
+    switch (measurement) {
+      case 'Weight':
+        return Color(0xFF4ECDC4);
+      case 'BMI':
+        return Color(0xFFFF6B35);
+      case 'Chest':
+        return Color(0xFFE67E22);
+      case 'Waist':
+        return Color(0xFFE74C3C);
+      case 'Hips':
+        return Color(0xFF96CEB4);
+      case 'Arms':
+        return Color(0xFF45B7D1);
+      case 'Thighs':
+        return Color(0xFF9B59B6);
+      default:
+        return Color(0xFF4ECDC4);
+    }
   }
 
   Widget _buildUpdateMeasurements() {
@@ -176,6 +319,10 @@ class _MeasurementsPageState extends State<MeasurementsPage> {
           _buildMeasurementInput('Waist (cm)', waistController, Icons.straighten_rounded),
           SizedBox(height: 16),
           _buildMeasurementInput('Hips (cm)', hipsController, Icons.straighten_rounded),
+          SizedBox(height: 16),
+          _buildMeasurementInput('Arms (cm)', armsController, Icons.straighten_rounded),
+          SizedBox(height: 16),
+          _buildMeasurementInput('Thighs (cm)', thighsController, Icons.straighten_rounded),
           SizedBox(height: 24),
           Container(
             width: double.infinity,
@@ -236,82 +383,6 @@ class _MeasurementsPageState extends State<MeasurementsPage> {
     );
   }
 
-  Widget _buildMoodTracker() {
-    return Container(
-      padding: EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: Color(0xFF1A1A1A),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'How are you feeling today?',
-            style: GoogleFonts.poppins(
-              color: Colors.white,
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          SizedBox(height: 20),
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: moods.map((mood) {
-              final isSelected = selectedMood == mood;
-              return GestureDetector(
-                onTap: () {
-                  setState(() {
-                    selectedMood = mood;
-                  });
-                },
-                child: Container(
-                  padding: EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: isSelected ? Color(0xFF4ECDC4) : Color(0xFF2A2A2A),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: isSelected ? Color(0xFF4ECDC4) : Colors.transparent,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        _getMoodIcon(mood),
-                        color: isSelected ? Colors.white : Colors.grey[400],
-                        size: 20,
-                      ),
-                      SizedBox(width: 8),
-                      Text(
-                        mood,
-                        style: GoogleFonts.poppins(
-                          color: isSelected ? Colors.white : Colors.grey[400],
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            }).toList(),
-          ),
-        ],
-      ),
-    );
-  }
-
-  IconData _getMoodIcon(String mood) {
-    switch (mood) {
-      case 'Excellent': return Icons.sentiment_very_satisfied_rounded;
-      case 'Good': return Icons.sentiment_satisfied_rounded;
-      case 'Average': return Icons.sentiment_neutral_rounded;
-      case 'Poor': return Icons.sentiment_dissatisfied_rounded;
-      default: return Icons.sentiment_neutral_rounded;
-    }
-  }
 
   Widget _buildCurrentStats() {
     final latestProgress = widget.progressData.isNotEmpty 
@@ -341,7 +412,7 @@ class _MeasurementsPageState extends State<MeasurementsPage> {
               Expanded(
                 child: _buildStatItem(
                   'BMI', 
-                  latestProgress?.bmi?.toStringAsFixed(1) ?? '--', 
+                  _getCurrentBMI(), 
                   Color(0xFF45B7D1)
                 ),
               ),
@@ -375,6 +446,42 @@ class _MeasurementsPageState extends State<MeasurementsPage> {
               ),
             ],
           ),
+          SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: _buildStatItem(
+                  'Hips', 
+                  latestProgress?.hipsCm?.toStringAsFixed(1) ?? '--', 
+                  Color(0xFF96CEB4)
+                ),
+              ),
+              SizedBox(width: 16),
+              Expanded(
+                child: _buildStatItem(
+                  'Arms', 
+                  latestProgress?.armsCm?.toStringAsFixed(1) ?? '--', 
+                  Color(0xFF45B7D1)
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: _buildStatItem(
+                  'Thighs', 
+                  latestProgress?.thighsCm?.toStringAsFixed(1) ?? '--', 
+                  Color(0xFF9B59B6)
+                ),
+              ),
+              SizedBox(width: 16),
+              Expanded(
+                child: Container(), // Empty space for alignment
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -393,6 +500,28 @@ class _MeasurementsPageState extends State<MeasurementsPage> {
     final change = sortedData.last.weight! - sortedData.first.weight!;
     final sign = change >= 0 ? '+' : '';
     return '$sign${change.toStringAsFixed(1)} kg';
+  }
+
+  String _getCurrentBMI() {
+    // First try to get BMI from latest progress data
+    if (widget.progressData.isNotEmpty) {
+      final sortedData = List<ProgressModel>.from(widget.progressData)
+        ..sort((a, b) => b.dateRecorded.compareTo(a.dateRecorded));
+      final latestProgress = sortedData.first;
+      
+      if (latestProgress.bmi != null && latestProgress.bmi! > 0) {
+        return latestProgress.bmi!.toStringAsFixed(1);
+      }
+    }
+    
+    // If no BMI in progress data, calculate from current measurements and user height
+    final currentWeight = widget.currentMeasurements['weight'];
+    if (currentWeight != null && currentWeight > 0 && userHeight != null && userHeight! > 0) {
+      final bmi = GymUtilsService.calculateBMI(currentWeight, userHeight!);
+      return bmi.toStringAsFixed(1);
+    }
+    
+    return '--';
   }
 
   Widget _buildStatItem(String label, String value, Color color) {
@@ -429,25 +558,65 @@ class _MeasurementsPageState extends State<MeasurementsPage> {
     try {
       final userId = await EnhancedProgressService.getCurrentUserId();
       
+      // Calculate BMI if weight and height are available
+      double? calculatedBMI;
+      final weight = double.tryParse(weightController.text);
+      if (weight != null && userHeight != null && userHeight! > 0) {
+        calculatedBMI = GymUtilsService.calculateBMI(weight, userHeight!);
+      }
+      
       final progressModel = ProgressModel(
         userId: userId,
-        weight: double.tryParse(weightController.text),
+        weight: weight,
+        bmi: calculatedBMI,
         chestCm: double.tryParse(chestController.text),
         waistCm: double.tryParse(waistController.text),
         hipsCm: double.tryParse(hipsController.text),
+        armsCm: double.tryParse(armsController.text),
+        thighsCm: double.tryParse(thighsController.text),
         dateRecorded: DateTime.now(),
       );
       
       final success = await EnhancedProgressService.addProgress(progressModel);
       
       if (success) {
+        // Update the current measurements immediately for real-time updates
+        setState(() {
+          if (progressModel.weight != null) {
+            widget.currentMeasurements['weight'] = progressModel.weight!;
+          }
+          if (progressModel.bmi != null) {
+            widget.currentMeasurements['bmi'] = progressModel.bmi!;
+          }
+          if (progressModel.chestCm != null) {
+            widget.currentMeasurements['chest'] = progressModel.chestCm!;
+          }
+          if (progressModel.waistCm != null) {
+            widget.currentMeasurements['waist'] = progressModel.waistCm!;
+          }
+          if (progressModel.hipsCm != null) {
+            widget.currentMeasurements['hips'] = progressModel.hipsCm!;
+          }
+          if (progressModel.armsCm != null) {
+            widget.currentMeasurements['arms'] = progressModel.armsCm!;
+          }
+          if (progressModel.thighsCm != null) {
+            widget.currentMeasurements['thighs'] = progressModel.thighsCm!;
+          }
+        });
+        
+        // Add the new progress data to the list for immediate chart update
+        widget.progressData.add(progressModel);
+        
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Measurements saved successfully!'),
             backgroundColor: Color(0xFF4ECDC4),
           ),
         );
-        Navigator.pop(context);
+        
+        // Return true to indicate measurements were updated
+        Navigator.pop(context, true);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

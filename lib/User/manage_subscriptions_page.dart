@@ -17,6 +17,8 @@ class _ManageSubscriptionsPageState extends State<ManageSubscriptionsPage> {
   
   // Loading states
   bool _isRequestingPlan = false;
+  String? _monthlyPlanStatus;
+  List<UserSubscription> _userSubscriptions = [];
   
   @override
   void initState() {
@@ -32,6 +34,50 @@ class _ManageSubscriptionsPageState extends State<ManageSubscriptionsPage> {
     }
     
     _subscriptionPlansFuture = SubscriptionService.getSubscriptionPlansWithRetry();
+    _loadMonthlySubscriptionStatus();
+    _loadUserSubscriptions();
+  }
+
+  Future<void> _loadUserSubscriptions() async {
+    try {
+      final uid = AuthService.getCurrentUserId();
+      if (uid == null) return;
+      final subs = await SubscriptionService.getUserSubscriptions(uid);
+      if (!mounted) return;
+      setState(() { _userSubscriptions = subs; });
+    } catch (_) {}
+  }
+
+  Future<void> _loadMonthlySubscriptionStatus() async {
+    try {
+      final currentUserId = AuthService.getCurrentUserId();
+      if (currentUserId == null) return;
+      final subs = await SubscriptionService.getUserSubscriptions(currentUserId);
+      final now = DateTime.now();
+      UserSubscription? activeMonthly;
+      for (final sub in subs) {
+        final isMembership = sub.planName.toLowerCase().contains('member fee');
+        if (isMembership) continue;
+        DateTime? end;
+        try { end = DateTime.parse(sub.endDate); } catch (_) { end = null; }
+        if (end == null) continue;
+        final isActive = (sub.getStatusDisplayName().toLowerCase() == 'approved' || sub.getStatusDisplayName().toLowerCase() == 'active') && !end.isBefore(DateTime(now.year, now.month, now.day));
+        if (isActive) { activeMonthly = sub; break; }
+      }
+      if (activeMonthly != null) {
+        final end = DateTime.parse(activeMonthly!.endDate);
+        final today = DateTime(now.year, now.month, now.day);
+        final until = DateTime(end.year, end.month, end.day);
+        final remainingDays = until.difference(today).inDays;
+        final daysLeft = remainingDays < 0 ? 0 : remainingDays;
+        final endText = '${until.day}/${until.month}/${until.year}';
+        setState(() { _monthlyPlanStatus = 'Monthly plan: ${daysLeft} day${daysLeft == 1 ? '' : 's'} left (until $endText)'; });
+      } else {
+        setState(() { _monthlyPlanStatus = 'Not subscribed to any monthly plan'; });
+      }
+    } catch (e) {
+      setState(() { _monthlyPlanStatus = 'Not subscribed to any monthly plan'; });
+    }
   }
 
   void _showLoginRequiredDialog() {
@@ -69,6 +115,129 @@ class _ManageSubscriptionsPageState extends State<ManageSubscriptionsPage> {
     setState(() {
       _subscriptionPlansFuture = SubscriptionService.getSubscriptionPlansWithRetry();
     });
+  }
+
+  void _showPlanUpdatesModal() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Color(0xFF1A1A1A),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) {
+        final items = _userSubscriptions;
+        return SafeArea(
+          child: DraggableScrollableSheet(
+            initialChildSize: 0.6,
+            minChildSize: 0.4,
+            maxChildSize: 0.95,
+            expand: false,
+            builder: (context, scrollController) {
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Padding(
+                    padding: EdgeInsets.symmetric(vertical: 10),
+                    child: Container(
+                      width: 36,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.white24,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    child: Row(
+                      children: [
+                        Icon(Icons.receipt_long, color: Color(0xFF4ECDC4), size: 20),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Plan Request Updates',
+                            style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: () => Navigator.pop(context),
+                          icon: Icon(Icons.close, color: Colors.white70),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: ListView.builder(
+                      controller: scrollController,
+                      padding: EdgeInsets.only(left: 16, right: 16, bottom: 16),
+                      itemCount: items.length,
+                      itemBuilder: (context, index) {
+                        final sub = items[index];
+                        final statusColor = sub.getStatusColor();
+                        final statusText = sub.getStatusDisplayName();
+                        return Container(
+                          margin: EdgeInsets.only(bottom: 10),
+                          padding: EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Color(0xFF2A2A2A),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: statusColor.withOpacity(0.25)),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Icon(
+                                statusText.toLowerCase().contains('pending')
+                                    ? Icons.hourglass_top
+                                    : statusText.toLowerCase().contains('approved') || statusText.toLowerCase().contains('active')
+                                        ? Icons.check_circle
+                                        : Icons.cancel,
+                                color: statusColor,
+                                size: 18,
+                              ),
+                              SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      sub.planName,
+                                      style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13),
+                                      overflow: TextOverflow.ellipsis,
+                                      maxLines: 1,
+                                    ),
+                                    SizedBox(height: 2),
+                                    Wrap(
+                                      spacing: 8,
+                                      runSpacing: 4,
+                                      children: [
+                                        Text(
+                                          statusText,
+                                          style: GoogleFonts.poppins(color: statusColor, fontSize: 12),
+                                        ),
+                                        Text(
+                                          'Ends: ' + sub.getFormattedEndDate(),
+                                          style: GoogleFonts.poppins(color: Colors.grey[400], fontSize: 11),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -123,6 +292,50 @@ class _ManageSubscriptionsPageState extends State<ManageSubscriptionsPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Quick active subscription banner with cancel action
+            FutureBuilder<List<UserSubscription>>(
+              future: AuthService.getCurrentUserId() != null
+                  ? SubscriptionService.getUserSubscriptions(AuthService.getCurrentUserId()!)
+                  : Future.value([]),
+              builder: (context, snap) {
+                if (!snap.hasData || snap.data!.isEmpty) return SizedBox.shrink();
+                final now = DateTime.now();
+                UserSubscription? active;
+                for (final s in snap.data!) {
+                  DateTime? end;
+                  try { end = DateTime.parse(s.endDate); } catch (_) { end = null; }
+                  final isActive = (s.getStatusDisplayName().toLowerCase() == 'approved' || s.getStatusDisplayName().toLowerCase() == 'active') && (end != null && !end.isBefore(DateTime(now.year, now.month, now.day)));
+                  if (isActive) { active = s; break; }
+                }
+                if (active == null) return SizedBox.shrink();
+                return Container(
+                  margin: EdgeInsets.only(bottom: 16),
+                  padding: EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Color(0xFF1A1A1A),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.green.withOpacity(0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.check_circle, color: Colors.green, size: 20),
+                      SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Active: ' + active!.planName,
+                          style: GoogleFonts.poppins(color: Colors.white),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () => _confirmCancelActiveSubscription(context),
+                        child: Text('Cancel', style: GoogleFonts.poppins(color: Colors.red)),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
             // Header with user info
             Container(
               padding: EdgeInsets.all(24),
@@ -176,6 +389,17 @@ class _ManageSubscriptionsPageState extends State<ManageSubscriptionsPage> {
                             fontSize: 14,
                           ),
                         ),
+                        if (_monthlyPlanStatus != null) ...[
+                          SizedBox(height: 6),
+                          Text(
+                            _monthlyPlanStatus!,
+                            style: GoogleFonts.poppins(
+                              color: Colors.white.withOpacity(0.9),
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
                         if (isUserMember)
                           Container(
                             margin: EdgeInsets.only(top: 8),
@@ -196,10 +420,12 @@ class _ManageSubscriptionsPageState extends State<ManageSubscriptionsPage> {
                       ],
                     ),
                   ),
+                  
                 ],
               ),
             ),
             SizedBox(height: 24),
+            // Updates moved to modal; button in header opens it
             
             // Subscription Plans List
             Expanded(
@@ -320,11 +546,7 @@ class _ManageSubscriptionsPageState extends State<ManageSubscriptionsPage> {
   void _showPlanDialog(BuildContext context, SubscriptionPlan plan) {
     final isUserMember = AuthService.isUserMember();
     
-    // Check if user can access this plan
-    if (plan.isMemberOnly && !isUserMember) {
-      _showMembersOnlyDialog(context, plan);
-      return;
-    }
+    // Note: Member Fee can be stacked with monthly plans; do not block selection here.
 
     showDialog(
       context: context,
@@ -403,7 +625,7 @@ class _ManageSubscriptionsPageState extends State<ManageSubscriptionsPage> {
               ),
               SizedBox(height: 16),
               Text(
-                'Are you sure you want to request this subscription plan? Your request will be sent to the admin for approval.',
+                'Are you sure you want to request this subscription plan? Your request will be sent to the admin for approval. Please proceed to the front desk to pay the required amount for activation.',
                 style: GoogleFonts.poppins(
                   fontSize: 14,
                   color: Colors.grey[400],
@@ -467,6 +689,70 @@ class _ManageSubscriptionsPageState extends State<ManageSubscriptionsPage> {
         ),
       ),
     );
+  }
+
+  Future<void> _confirmCancelActiveSubscription(BuildContext context) async {
+    final currentUserId = AuthService.getCurrentUserId();
+    if (currentUserId == null) {
+      _showErrorSnackBar(context, 'User not logged in.');
+      return;
+    }
+    // Get latest subscriptions and pick most recent active to cancel
+    List<UserSubscription> subs = [];
+    try {
+      subs = await SubscriptionService.getUserSubscriptions(currentUserId);
+    } catch (_) {}
+    final now = DateTime.now();
+    UserSubscription? active;
+    for (final s in subs) {
+      DateTime? end;
+      try { end = DateTime.parse(s.endDate); } catch (_) { end = null; }
+      final isActive = (s.getStatusDisplayName().toLowerCase() == 'approved' || s.getStatusDisplayName().toLowerCase() == 'active') && (end != null && !end.isBefore(DateTime(now.year, now.month, now.day)));
+      if (isActive) { active = s; break; }
+    }
+    if (active == null) {
+      _showErrorSnackBar(context, 'No active subscription found.');
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: Color(0xFF1A1A1A),
+        title: Text('Cancel Subscription', style: GoogleFonts.poppins(color: Colors.white)),
+        content: Text(
+          'Are you sure you want to cancel "${active!.planName}"? This will end your access immediately.',
+          style: GoogleFonts.poppins(color: Colors.grey[400]),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('No', style: GoogleFonts.poppins(color: Colors.grey[400])),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: Text('Yes, Cancel', style: GoogleFonts.poppins(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    final ok = await SubscriptionService.cancelSubscription(subscriptionId: active.id);
+    if (ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Subscription cancelled', style: GoogleFonts.poppins()),
+          backgroundColor: Colors.red,
+        ),
+      );
+      _refreshData();
+      _loadMonthlySubscriptionStatus();
+    } else {
+      _showErrorSnackBar(context, 'Failed to cancel subscription.');
+    }
   }
 
   void _showMembersOnlyDialog(BuildContext context, SubscriptionPlan plan) {
@@ -904,6 +1190,45 @@ class DynamicSubscriptionCard extends StatelessWidget {
                           ),
                         ),
                       ],
+                    ],
+                  ),
+                  SizedBox(height: 10),
+                  // Plan type and duration badges (show for all plans)
+                  Row(
+                    children: [
+                      Container(
+                        padding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        margin: EdgeInsets.only(right: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(30),
+                          border: Border.all(color: Colors.white.withOpacity(0.25)),
+                        ),
+                        child: Text(
+                          plan.getPlanTypeText(),
+                          style: GoogleFonts.poppins(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      Container(
+                        padding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(30),
+                          border: Border.all(color: Colors.white.withOpacity(0.25)),
+                        ),
+                        child: Text(
+                          plan.getDurationText(),
+                          style: GoogleFonts.poppins(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ],

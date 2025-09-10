@@ -6,6 +6,10 @@ class SubscriptionPlan {
   final double price;
   final double? discountedPrice;
   final bool isMemberOnly;
+  final int durationMonths;
+  final bool isAvailable;
+  final String? unavailableReason;
+  final String? description;
   final List<Feature> features;
 
   SubscriptionPlan({
@@ -14,6 +18,10 @@ class SubscriptionPlan {
     required this.price,
     this.discountedPrice,
     required this.isMemberOnly,
+    this.durationMonths = 1,
+    this.isAvailable = true,
+    this.unavailableReason,
+    this.description,
     required this.features,
   });
 
@@ -26,6 +34,10 @@ class SubscriptionPlan {
           ? double.tryParse(json['discounted_price'].toString())
           : null,
       isMemberOnly: json['is_member_only'] == 1 || json['is_member_only'] == true,
+      durationMonths: int.tryParse(json['duration_months']?.toString() ?? '1') ?? 1,
+      isAvailable: json['is_available'] == true,
+      unavailableReason: json['unavailable_reason']?.toString(),
+      description: json['description']?.toString(),
       features: (json['features'] as List<dynamic>?)
               ?.map((featureJson) => Feature.fromJson(featureJson))
               .toList() ??
@@ -40,6 +52,10 @@ class SubscriptionPlan {
       'price': price,
       'discounted_price': discountedPrice,
       'is_member_only': isMemberOnly,
+      'duration_months': durationMonths,
+      'is_available': isAvailable,
+      'unavailable_reason': unavailableReason,
+      'description': description,
       'features': features.map((feature) => feature.toJson()).toList(),
     };
   }
@@ -64,6 +80,34 @@ class SubscriptionPlan {
   String? getFormattedDiscountPercentage() {
     final percentage = discountPercentage;
     return percentage != null ? '${percentage.toStringAsFixed(0)}% OFF' : null;
+  }
+
+  String getDurationText() {
+    if (planName.toLowerCase().contains('member fee')) {
+      return '1 Year';
+    }
+    return durationMonths == 1 ? '1 Month' : '$durationMonths Months';
+  }
+
+  String getPlanTypeText() {
+    if (planName.toLowerCase().contains('member fee')) {
+      return 'Annual Membership';
+    } else if (isMemberOnly) {
+      return 'Member Monthly Plan';
+    } else {
+      return 'Non-Member Monthly Plan';
+    }
+  }
+
+  bool get isMembershipPlan => planName.toLowerCase().contains('member fee');
+  bool get isMonthlyPlan => !isMembershipPlan;
+
+  String getAvailabilityText() {
+    if (isAvailable) {
+      return 'Available';
+    } else {
+      return unavailableReason ?? 'Not Available';
+    }
   }
 }
 
@@ -269,4 +313,55 @@ class SubscriptionRequestData {
       endDate: json['end_date']?.toString() ?? '',
     );
   }
+}
+
+class UserSubscriptionStatus {
+  final bool isPremium;
+  final bool hasActiveMembership;
+  final List<Map<String, dynamic>> activeSubscriptions;
+
+  UserSubscriptionStatus({
+    required this.isPremium,
+    required this.hasActiveMembership,
+    required this.activeSubscriptions,
+  });
+
+  factory UserSubscriptionStatus.fromJson(Map<String, dynamic> json) {
+    return UserSubscriptionStatus(
+      isPremium: json['is_premium'] == true,
+      hasActiveMembership: json['has_active_membership'] == true,
+      activeSubscriptions: (json['active_subscriptions'] as List<dynamic>?)
+              ?.map((sub) => Map<String, dynamic>.from(sub))
+              .toList() ??
+          [],
+    );
+  }
+}
+
+class SubscriptionPlansResponse {
+  final bool success;
+  final List<SubscriptionPlan> plans;
+  final UserSubscriptionStatus userStatus;
+  final String message;
+
+  SubscriptionPlansResponse({
+    required this.success,
+    required this.plans,
+    required this.userStatus,
+    required this.message,
+  });
+}
+
+class SubscriptionEligibility {
+  final bool isEligible;
+  final String? reason;
+  final SubscriptionPlan? plan;
+  final UserSubscriptionStatus? userStatus;
+
+  SubscriptionEligibility({
+    required this.isEligible,
+    this.reason,
+    this.plan,
+    this.userStatus,
+  });
 }

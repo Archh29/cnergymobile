@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'dart:ui';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
+import 'services/profile_service.dart';
 
 class ManageProfilePage extends StatefulWidget {
   @override
@@ -10,15 +11,17 @@ class ManageProfilePage extends StatefulWidget {
 }
 
 class _ManageProfilePageState extends State<ManageProfilePage> with TickerProviderStateMixin {
-  bool isDarkMode = true;
-  bool isNotificationsEnabled = true;
-  bool isLocationEnabled = false;
   File? _profileImage;
   final ImagePicker _picker = ImagePicker();
   
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
+  
+  // Profile data
+  Map<String, dynamic>? _profileData;
+  bool _isLoading = true;
+  String? _error;
   
   final List<Map<String, dynamic>> profileSettings = [
     {
@@ -33,34 +36,9 @@ class _ManageProfilePageState extends State<ManageProfilePage> with TickerProvid
       'color': Color(0xFF96CEB4),
       'route': 'ChangePasswordPage',
     },
-    {
-      'title': 'Manage Notifications',
-      'icon': Icons.notifications_outlined,
-      'color': Color(0xFFFF6B35),
-      'route': 'ManageNotificationsPage',
-    },
-    {
-      'title': 'Privacy Settings',
-      'icon': Icons.privacy_tip_outlined,
-      'color': Color(0xFF45B7D1),
-      'route': 'PrivacySettingsPage',
-    },
   ];
   
-  final List<Map<String, dynamic>> accountSettings = [
-    {
-      'title': 'Language',
-      'icon': Icons.language,
-      'color': Color(0xFFE74C3C),
-      'value': 'English',
-    },
-    {
-      'title': 'Units',
-      'icon': Icons.straighten,
-      'color': Color(0xFF9B59B6),
-      'value': 'Metric',
-    },
-  ];
+  final List<Map<String, dynamic>> accountSettings = [];
 
   @override
   void initState() {
@@ -75,13 +53,36 @@ class _ManageProfilePageState extends State<ManageProfilePage> with TickerProvid
     _slideAnimation = Tween<Offset>(begin: Offset(0, 0.1), end: Offset.zero).animate(
       CurvedAnimation(parent: _animationController, curve: Curves.easeOutCubic),
     );
-    _animationController.forward();
+    _loadProfile();
   }
 
   @override
   void dispose() {
     _animationController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadProfile() async {
+    try {
+      setState(() {
+        _isLoading = true;
+        _error = null;
+      });
+
+      final profileData = await ProfileService.getProfile();
+      
+      setState(() {
+        _profileData = profileData;
+        _isLoading = false;
+      });
+
+      _animationController.forward();
+    } catch (e) {
+      setState(() {
+        _error = e.toString();
+        _isLoading = false;
+      });
+    }
   }
 
   Future<void> _pickImage() async {
@@ -221,7 +222,9 @@ class _ManageProfilePageState extends State<ManageProfilePage> with TickerProvid
                       ),
                       SizedBox(height: 16),
                       Text(
-                        'Francis Baron B. Uyguangco',
+                        _profileData != null 
+                            ? '${_profileData!['fname'] ?? ''} ${_profileData!['mname'] ?? ''} ${_profileData!['lname'] ?? ''}'.trim()
+                            : 'Loading...',
                         style: GoogleFonts.poppins(
                           color: Colors.white,
                           fontSize: 24,
@@ -230,7 +233,7 @@ class _ManageProfilePageState extends State<ManageProfilePage> with TickerProvid
                       ),
                       SizedBox(height: 4),
                       Text(
-                        'uyguangco.francisbaron.com',
+                        _profileData?['email'] ?? 'Loading...',
                         style: GoogleFonts.poppins(
                           color: Colors.white.withOpacity(0.8),
                           fontSize: 14,
@@ -274,81 +277,6 @@ class _ManageProfilePageState extends State<ManageProfilePage> with TickerProvid
                 
                 SizedBox(height: 24),
                 
-                // Account Settings Section
-                _buildSectionTitle('Account Settings'),
-                SizedBox(height: 12),
-                
-                ListView.builder(
-                  shrinkWrap: true,
-                  physics: NeverScrollableScrollPhysics(),
-                  itemCount: accountSettings.length,
-                  itemBuilder: (context, index) {
-                    final setting = accountSettings[index];
-                    return _buildProfileOption(
-                      title: setting['title'],
-                      icon: setting['icon'],
-                      iconColor: setting['color'],
-                      trailing: Text(
-                        setting['value'],
-                        style: GoogleFonts.poppins(
-                          color: Colors.grey[400],
-                          fontSize: 14,
-                        ),
-                      ),
-                      onTap: () => _showOptionsDialog(setting['title'], setting['value']),
-                    );
-                  },
-                ),
-                
-                SizedBox(height: 24),
-                
-                // Preferences Section
-                _buildSectionTitle('Preferences'),
-                SizedBox(height: 12),
-                
-                _buildToggleOption(
-                  title: 'Dark Mode',
-                  icon: Icons.dark_mode_outlined,
-                  iconColor: Color(0xFF9B59B6),
-                  value: isDarkMode,
-                  onChanged: (value) {
-                    setState(() => isDarkMode = value);
-                  },
-                ),
-                
-                _buildToggleOption(
-                  title: 'Notifications',
-                  icon: Icons.notifications_outlined,
-                  iconColor: Color(0xFFFF6B35),
-                  value: isNotificationsEnabled,
-                  onChanged: (value) {
-                    setState(() => isNotificationsEnabled = value);
-                  },
-                ),
-                
-                _buildToggleOption(
-                  title: 'Location Services',
-                  icon: Icons.location_on_outlined,
-                  iconColor: Color(0xFF45B7D1),
-                  value: isLocationEnabled,
-                  onChanged: (value) {
-                    setState(() => isLocationEnabled = value);
-                  },
-                ),
-                
-                SizedBox(height: 24),
-                
-                // Danger Zone
-                _buildSectionTitle('Danger Zone', color: Colors.red),
-                SizedBox(height: 12),
-                
-                _buildProfileOption(
-                  title: 'Delete Account',
-                  icon: Icons.delete_forever,
-                  iconColor: Colors.red,
-                  onTap: () => _showDeleteAccountDialog(),
-                  isDestructive: true,
-                ),
                 
                 SizedBox(height: 40),
                 
@@ -482,60 +410,6 @@ class _ManageProfilePageState extends State<ManageProfilePage> with TickerProvid
     );
   }
 
-  Widget _buildToggleOption({
-    required String title,
-    required IconData icon,
-    required Color iconColor,
-    required bool value,
-    required ValueChanged<bool> onChanged,
-  }) {
-    return Container(
-      margin: EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: Color(0xFF1A1A1A),
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.2),
-            blurRadius: 8,
-            offset: Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Padding(
-        padding: EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-        child: Row(
-          children: [
-            Container(
-              padding: EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: iconColor.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(icon, color: iconColor, size: 20),
-            ),
-            SizedBox(width: 16),
-            Expanded(
-              child: Text(
-                title,
-                style: GoogleFonts.poppins(
-                  color: Colors.white,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-            Switch(
-              value: value,
-              onChanged: onChanged,
-              activeColor: iconColor,
-              activeTrackColor: iconColor.withOpacity(0.3),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
   void _showLogoutDialog() {
     showDialog(
@@ -649,212 +523,7 @@ class _ManageProfilePageState extends State<ManageProfilePage> with TickerProvid
     );
   }
 
-  void _showDeleteAccountDialog() {
-    showDialog(
-      context: context,
-      builder: (_) => Dialog(
-        backgroundColor: Colors.transparent,
-        child: Container(
-          padding: EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: Color(0xFF1A1A1A),
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.3),
-                blurRadius: 20,
-                offset: Offset(0, 10),
-              ),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                padding: EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.red.withOpacity(0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  Icons.delete_forever,
-                  color: Colors.red,
-                  size: 32,
-                ),
-              ),
-              SizedBox(height: 16),
-              Text(
-                'Delete Account',
-                style: GoogleFonts.poppins(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.red,
-                ),
-              ),
-              SizedBox(height: 8),
-              Text(
-                'This action is irreversible. Are you sure you want to delete your account?',
-                style: GoogleFonts.poppins(
-                  fontSize: 14,
-                  color: Colors.grey[400],
-                ),
-                textAlign: TextAlign.center,
-              ),
-              SizedBox(height: 24),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => Navigator.pop(context),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.white54,
-                        side: BorderSide(color: Colors.grey[700]!),
-                        padding: EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      child: Text(
-                        'Cancel',
-                        style: GoogleFonts.poppins(),
-                      ),
-                    ),
-                  ),
-                  SizedBox(width: 16),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () {
-                        Navigator.pop(context);
-                        // Handle delete account logic
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              'Account deletion is not yet implemented.',
-                              style: GoogleFonts.poppins(),
-                            ),
-                            backgroundColor: Colors.red,
-                            behavior: SnackBarBehavior.floating,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                          ),
-                        );
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.red,
-                        foregroundColor: Colors.white,
-                        padding: EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      child: Text(
-                        'Delete',
-                        style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 
-  void _showOptionsDialog(String title, String currentValue) {
-    List<String> options = [];
-    
-    if (title == 'Language') {
-      options = ['English', 'Spanish', 'French', 'German', 'Chinese'];
-    } else if (title == 'Units') {
-      options = ['Metric', 'Imperial'];
-    }
-    
-    showDialog(
-      context: context,
-      builder: (_) => Dialog(
-        backgroundColor: Colors.transparent,
-        child: Container(
-          padding: EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: Color(0xFF1A1A1A),
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.3),
-                blurRadius: 20,
-                offset: Offset(0, 10),
-              ),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'Select $title',
-                style: GoogleFonts.poppins(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-              ),
-              SizedBox(height: 16),
-              Container(
-                constraints: BoxConstraints(maxHeight: 300),
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: options.map((option) {
-                      bool isSelected = option == currentValue;
-                      return ListTile(
-                        title: Text(
-                          option,
-                          style: GoogleFonts.poppins(
-                            color: isSelected ? Color(0xFF4ECDC4) : Colors.white,
-                            fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-                          ),
-                        ),
-                        trailing: isSelected 
-                            ? Icon(Icons.check_circle, color: Color(0xFF4ECDC4))
-                            : null,
-                        onTap: () {
-                          Navigator.pop(context);
-                          // Update the setting
-                          setState(() {
-                            for (var setting in accountSettings) {
-                              if (setting['title'] == title) {
-                                setting['value'] = option;
-                              }
-                            }
-                          });
-                        },
-                      );
-                    }).toList(),
-                  ),
-                ),
-              ),
-              SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: () => Navigator.pop(context),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Color(0xFF4ECDC4),
-                  foregroundColor: Colors.white,
-                  padding: EdgeInsets.symmetric(vertical: 12, horizontal: 24),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                child: Text(
-                  'Cancel',
-                  style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 
   void _navigateWithTransition(BuildContext context, Widget page) {
     Navigator.push(
@@ -892,10 +561,34 @@ class _SettingsDetailPageState extends State<SettingsDetailPage> with TickerProv
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   
-  final TextEditingController _nameController = TextEditingController(text: 'John Doe');
-  final TextEditingController _emailController = TextEditingController(text: 'johndoe@example.com');
-  final TextEditingController _phoneController = TextEditingController(text: '+1 (555) 123-4567');
-  final TextEditingController _bioController = TextEditingController(text: 'Fitness enthusiast and health coach with 5+ years of experience.');
+  // Controllers for form fields
+  final TextEditingController _fnameController = TextEditingController();
+  final TextEditingController _mnameController = TextEditingController();
+  final TextEditingController _lnameController = TextEditingController();
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _bdayController = TextEditingController();
+  final TextEditingController _heightController = TextEditingController();
+  final TextEditingController _weightController = TextEditingController();
+  final TextEditingController _targetWeightController = TextEditingController();
+  final TextEditingController _bodyFatController = TextEditingController();
+  final TextEditingController _workoutDaysController = TextEditingController();
+  final TextEditingController _equipmentController = TextEditingController();
+  
+  // Password change controllers
+  final TextEditingController _currentPasswordController = TextEditingController();
+  final TextEditingController _newPasswordController = TextEditingController();
+  final TextEditingController _confirmPasswordController = TextEditingController();
+  
+  // Profile data
+  Map<String, dynamic>? _profileData;
+  List<Map<String, dynamic>> _genders = [];
+  bool _isLoading = true;
+  String? _error;
+  
+  // Selected values
+  String? _selectedGenderId;
+  String? _selectedFitnessLevel;
+  String? _selectedActivityLevel;
 
   @override
   void initState() {
@@ -907,17 +600,168 @@ class _SettingsDetailPageState extends State<SettingsDetailPage> with TickerProv
     _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
     );
-    _animationController.forward();
+    _loadData();
   }
 
   @override
   void dispose() {
     _animationController.dispose();
-    _nameController.dispose();
+    _fnameController.dispose();
+    _mnameController.dispose();
+    _lnameController.dispose();
     _emailController.dispose();
-    _phoneController.dispose();
-    _bioController.dispose();
+    _bdayController.dispose();
+    _heightController.dispose();
+    _weightController.dispose();
+    _targetWeightController.dispose();
+    _bodyFatController.dispose();
+    _workoutDaysController.dispose();
+    _equipmentController.dispose();
+    _currentPasswordController.dispose();
+    _newPasswordController.dispose();
+    _confirmPasswordController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadData() async {
+    try {
+      setState(() {
+        _isLoading = true;
+        _error = null;
+      });
+
+      // Load profile data and genders in parallel
+      final results = await Future.wait([
+        ProfileService.getProfile(),
+        ProfileService.getGenders(),
+      ]);
+
+      final profileData = results[0] as Map<String, dynamic>;
+      final genders = results[1] as List<Map<String, dynamic>>;
+
+      setState(() {
+        _profileData = profileData;
+        _genders = genders;
+        _isLoading = false;
+      });
+
+      // Populate form fields
+      _populateFormFields();
+      _animationController.forward();
+    } catch (e) {
+      setState(() {
+        _error = e.toString();
+        _isLoading = false;
+      });
+    }
+  }
+
+  void _populateFormFields() {
+    if (_profileData != null) {
+      _fnameController.text = _profileData!['fname'] ?? '';
+      _mnameController.text = _profileData!['mname'] ?? '';
+      _lnameController.text = _profileData!['lname'] ?? '';
+      _emailController.text = _profileData!['email'] ?? '';
+      _bdayController.text = _profileData!['bday'] ?? '';
+      _heightController.text = _profileData!['height_cm']?.toString() ?? '';
+      _weightController.text = _profileData!['weight_kg']?.toString() ?? '';
+      _targetWeightController.text = _profileData!['target_weight']?.toString() ?? '';
+      _bodyFatController.text = _profileData!['body_fat']?.toString() ?? '';
+      _workoutDaysController.text = _profileData!['workout_days_per_week']?.toString() ?? '';
+      _equipmentController.text = _profileData!['equipment_access'] ?? '';
+      
+      _selectedGenderId = _profileData!['gender_id']?.toString();
+      _selectedFitnessLevel = _profileData!['fitness_level'];
+      _selectedActivityLevel = _profileData!['activity_level'];
+    }
+  }
+
+  Future<void> _saveChanges() async {
+    try {
+      if (widget.title == 'Change Password') {
+        // Handle password change
+        if (_currentPasswordController.text.isEmpty || 
+            _newPasswordController.text.isEmpty || 
+            _confirmPasswordController.text.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('All password fields are required'),
+              backgroundColor: Colors.red,
+            ),
+          );
+          return;
+        }
+
+        if (_newPasswordController.text != _confirmPasswordController.text) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('New password and confirm password do not match'),
+              backgroundColor: Colors.red,
+            ),
+          );
+          return;
+        }
+
+        await ProfileService.changePassword(
+          currentPassword: _currentPasswordController.text,
+          newPassword: _newPasswordController.text,
+          confirmPassword: _confirmPasswordController.text,
+        );
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Password changed successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else {
+        // Handle profile update
+        if (_fnameController.text.isEmpty || 
+            _lnameController.text.isEmpty || 
+            _emailController.text.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('First name, last name, and email are required'),
+              backgroundColor: Colors.red,
+            ),
+          );
+          return;
+        }
+
+        await ProfileService.updateProfile(
+          fname: _fnameController.text,
+          mname: _mnameController.text,
+          lname: _lnameController.text,
+          email: _emailController.text,
+          bday: _bdayController.text,
+          genderId: _selectedGenderId ?? '',
+          fitnessLevel: _selectedFitnessLevel ?? '',
+          heightCm: _heightController.text,
+          weightKg: _weightController.text,
+          targetWeight: _targetWeightController.text,
+          bodyFat: _bodyFatController.text,
+          activityLevel: _selectedActivityLevel ?? '',
+          workoutDaysPerWeek: _workoutDaysController.text,
+          equipmentAccess: _equipmentController.text,
+        );
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Profile updated successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+
+      Navigator.pop(context);
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   @override
@@ -1018,11 +862,7 @@ class _SettingsDetailPageState extends State<SettingsDetailPage> with TickerProv
 if (widget.title == 'Edit Profile') 
   _buildEditProfileContent()
 else if (widget.title == 'Change Password')
-  _buildChangePasswordContent()
-else if (widget.title == 'Manage Notifications')
-  _buildNotificationsContent()
-else if (widget.title == 'Privacy Settings')
-  _buildPrivacyContent(),
+  _buildChangePasswordContent(),
 
 SizedBox(height: 40),
 
@@ -1046,20 +886,7 @@ SizedBox(height: 40),
                   ],
                 ),
                 child: ElevatedButton(
-                  onPressed: () {
-                    Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          'Changes saved successfully!',
-                          style: GoogleFonts.poppins(),
-                        ),
-                        backgroundColor: widget.color,
-                        behavior: SnackBarBehavior.floating,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      ),
-                    );
-                  },
+                  onPressed: _saveChanges,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.transparent,
                     foregroundColor: Colors.white,
@@ -1102,16 +929,81 @@ SizedBox(height: 40),
   }
 
   Widget _buildEditProfileContent() {
+    if (_isLoading) {
+      return Center(
+        child: CircularProgressIndicator(
+          valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFFF6B35)),
+        ),
+      );
+    }
+
+    if (_error != null) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.error_outline, color: Colors.red, size: 64),
+            SizedBox(height: 16),
+            Text(
+              'Error loading profile: $_error',
+              style: GoogleFonts.poppins(color: Colors.red),
+              textAlign: TextAlign.center,
+            ),
+            SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: _loadData,
+              child: Text('Retry'),
+            ),
+          ],
+        ),
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildInputField('Full Name', _nameController, Icons.person_outline),
+        _buildInputField('First Name', _fnameController, Icons.person_outline),
+        SizedBox(height: 16),
+        _buildInputField('Middle Name', _mnameController, Icons.person_outline),
+        SizedBox(height: 16),
+        _buildInputField('Last Name', _lnameController, Icons.person_outline),
         SizedBox(height: 16),
         _buildInputField('Email Address', _emailController, Icons.email_outlined),
         SizedBox(height: 16),
-        _buildInputField('Phone Number', _phoneController, Icons.phone_outlined),
+        _buildInputField('Birthday (YYYY-MM-DD)', _bdayController, Icons.cake_outlined),
         SizedBox(height: 16),
-        _buildInputField('Bio', _bioController, Icons.description_outlined, maxLines: 4),
+        _buildDropdownField('Gender', _selectedGenderId, _genders.map((g) => {'value': g['id'].toString(), 'label': g['type'].toString()}).toList(), (value) {
+          setState(() => _selectedGenderId = value);
+        }),
+        SizedBox(height: 16),
+        _buildInputField('Height (cm)', _heightController, Icons.height),
+        SizedBox(height: 16),
+        _buildInputField('Weight (kg)', _weightController, Icons.monitor_weight_outlined),
+        SizedBox(height: 16),
+        _buildInputField('Target Weight (kg)', _targetWeightController, Icons.flag_outlined),
+        SizedBox(height: 16),
+        _buildInputField('Body Fat %', _bodyFatController, Icons.analytics_outlined),
+        SizedBox(height: 16),
+        _buildDropdownField('Fitness Level', _selectedFitnessLevel, [
+          {'value': 'Beginner', 'label': 'Beginner'},
+          {'value': 'Intermediate', 'label': 'Intermediate'},
+          {'value': 'Advanced', 'label': 'Advanced'},
+        ], (value) {
+          setState(() => _selectedFitnessLevel = value);
+        }),
+        SizedBox(height: 16),
+        _buildDropdownField('Activity Level', _selectedActivityLevel, [
+          {'value': 'Sedentary', 'label': 'Sedentary'},
+          {'value': 'Light', 'label': 'Light'},
+          {'value': 'Moderate', 'label': 'Moderate'},
+          {'value': 'Active', 'label': 'Active'},
+        ], (value) {
+          setState(() => _selectedActivityLevel = value);
+        }),
+        SizedBox(height: 16),
+        _buildInputField('Workout Days per Week', _workoutDaysController, Icons.calendar_today),
+        SizedBox(height: 16),
+        _buildInputField('Equipment Access', _equipmentController, Icons.fitness_center, maxLines: 3),
       ],
     );
   }
@@ -1120,11 +1012,11 @@ SizedBox(height: 40),
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildInputField('Current Password', TextEditingController(), Icons.lock_outline, isPassword: true),
+        _buildInputField('Current Password', _currentPasswordController, Icons.lock_outline, isPassword: true),
         SizedBox(height: 16),
-        _buildInputField('New Password', TextEditingController(), Icons.lock_outline, isPassword: true),
+        _buildInputField('New Password', _newPasswordController, Icons.lock_outline, isPassword: true),
         SizedBox(height: 16),
-        _buildInputField('Confirm New Password', TextEditingController(), Icons.lock_outline, isPassword: true),
+        _buildInputField('Confirm New Password', _confirmPasswordController, Icons.lock_outline, isPassword: true),
         SizedBox(height: 24),
         Container(
           padding: EdgeInsets.all(16),
@@ -1144,10 +1036,10 @@ SizedBox(height: 40),
                 ),
               ),
               SizedBox(height: 8),
-              _buildRequirement('At least 8 characters', true),
-              _buildRequirement('At least one uppercase letter', true),
-              _buildRequirement('At least one number', true),
-              _buildRequirement('At least one special character', false),
+              _buildRequirement('At least 8 characters', _newPasswordController.text.length >= 8),
+              _buildRequirement('At least one uppercase letter', _newPasswordController.text.contains(RegExp(r'[A-Z]'))),
+              _buildRequirement('At least one number', _newPasswordController.text.contains(RegExp(r'[0-9]'))),
+              _buildRequirement('At least one special character', _newPasswordController.text.contains(RegExp(r'[!@#$%^&*(),.?":{}|<>]'))),
             ],
           ),
         ),
@@ -1155,86 +1047,47 @@ SizedBox(height: 40),
     );
   }
 
-  Widget _buildNotificationsContent() {
+  Widget _buildDropdownField(String label, String? value, List<Map<String, String>> options, Function(String?) onChanged) {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildNotificationToggle('Workout Reminders', 'Get notified before scheduled workouts', true),
-        SizedBox(height: 12),
-        _buildNotificationToggle('Achievement Alerts', 'Notifications when you earn achievements', true),
-        SizedBox(height: 12),
-        _buildNotificationToggle('Friend Activity', 'Updates about your friends\' workouts', false),
-        SizedBox(height: 12),
-        _buildNotificationToggle('New Features', 'Learn about new app features', true),
-        SizedBox(height: 12),
-        _buildNotificationToggle('Promotions', 'Special offers and discounts', false),
-      ],
-    );
-  }
-
-  Widget _buildPrivacyContent() {
-    return Column(
-      children: [
-        _buildPrivacyToggle('Profile Visibility', 'Allow others to find your profile', true),
-        SizedBox(height: 12),
-        _buildPrivacyToggle('Activity Sharing', 'Share your workout activity with friends', true),
-        SizedBox(height: 12),
-        _buildPrivacyToggle('Location Services', 'Allow app to access your location', false),
-        SizedBox(height: 12),
-        _buildPrivacyToggle('Data Collection', 'Allow anonymous usage data collection', true),
-        SizedBox(height: 24),
+        Text(
+          label,
+          style: GoogleFonts.poppins(
+            color: Colors.grey[400],
+            fontSize: 14,
+          ),
+        ),
+        SizedBox(height: 8),
         Container(
-          padding: EdgeInsets.all(16),
           decoration: BoxDecoration(
             color: Color(0xFF1A1A1A),
             borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Color(0xFF2A2A2A)),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Data & Privacy',
-                style: GoogleFonts.poppins(
-                  color: Colors.white,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              SizedBox(height: 8),
-              Text(
-                'You can request a copy of your data or delete your account at any time.',
-                style: GoogleFonts.poppins(
-                  color: Colors.grey[400],
-                  fontSize: 14,
-                ),
-              ),
-              SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () {},
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: widget.color,
-                        side: BorderSide(color: widget.color),
-                        padding: EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      child: Text(
-                        'Download Data',
-                        style: GoogleFonts.poppins(),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
+          child: DropdownButtonFormField<String>(
+            value: value,
+            onChanged: onChanged,
+            dropdownColor: Color(0xFF1A1A1A),
+            style: GoogleFonts.poppins(color: Colors.white),
+            decoration: InputDecoration(
+              border: InputBorder.none,
+              contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+              hintText: 'Select $label',
+              hintStyle: GoogleFonts.poppins(color: Colors.grey[600]),
+            ),
+            items: options.map((option) {
+              return DropdownMenuItem<String>(
+                value: option['value'],
+                child: Text(option['label']!),
+              );
+            }).toList(),
           ),
         ),
       ],
     );
   }
+
 
   Widget _buildInputField(
     String label,
@@ -1301,89 +1154,4 @@ SizedBox(height: 40),
     );
   }
 
-  Widget _buildNotificationToggle(String title, String subtitle, bool initialValue) {
-    return Container(
-      padding: EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Color(0xFF1A1A1A),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: GoogleFonts.poppins(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                SizedBox(height: 4),
-                Text(
-                  subtitle,
-                  style: GoogleFonts.poppins(
-                    color: Colors.grey[400],
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Switch(
-            value: initialValue,
-            onChanged: (value) {},
-            activeColor: widget.color,
-            activeTrackColor: widget.color.withOpacity(0.3),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPrivacyToggle(String title, String subtitle, bool initialValue) {
-    return Container(
-      padding: EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Color(0xFF1A1A1A),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: GoogleFonts.poppins(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                SizedBox(height: 4),
-                Text(
-                  subtitle,
-                  style: GoogleFonts.poppins(
-                    color: Colors.grey[400],
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Switch(
-            value: initialValue,
-            onChanged: (value) {},
-            activeColor: widget.color,
-            activeTrackColor: widget.color.withOpacity(0.3),
-          ),
-        ],
-      ),
-    );
-  }
 }

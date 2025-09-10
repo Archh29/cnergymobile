@@ -9,8 +9,8 @@ class SubscriptionService {
 
   static const Duration timeoutDuration = Duration(seconds: 30);
 
-  /// ✅ Fetch all subscription plans, unlocks member-only if user is premium
-  static Future<List<SubscriptionPlan>> getSubscriptionPlans({int? userId}) async {
+  /// ✅ Fetch all subscription plans with enhanced business logic
+  static Future<SubscriptionPlansResponse> getSubscriptionPlans({int? userId}) async {
     try {
       final url = userId != null
           ? Uri.parse('$getPlansUrl?action=getPlans&user_id=$userId')
@@ -27,11 +27,33 @@ class SubscriptionService {
       if (response.statusCode == 200) {
         final Map<String, dynamic> jsonData = json.decode(response.body);
 
+        print("[v0] API Response: ${jsonData.toString()}");
+
         if (jsonData.containsKey('success') && jsonData['success'] == true) {
-          final List<dynamic> plansJson = jsonData['plans'] as List<dynamic>;
-          return plansJson
+          final dynamic plansData = jsonData['plans'];
+          
+          print("[v0] Plans data type: ${plansData.runtimeType}");
+          print("[v0] Plans data content: ${plansData.toString()}");
+          
+          if (plansData == null) {
+            throw Exception('Plans data is null in API response');
+          }
+          
+          if (plansData is! List) {
+            throw Exception('Plans data is not a list. Received: ${plansData.runtimeType}');
+          }
+          
+          final List<dynamic> plansJson = plansData as List<dynamic>;
+          final plans = plansJson
               .map((planJson) => SubscriptionPlan.fromJson(planJson))
               .toList();
+          
+          return SubscriptionPlansResponse(
+            success: true,
+            plans: plans,
+            userStatus: UserSubscriptionStatus.fromJson(jsonData['user_status'] ?? {}),
+            message: jsonData['message'] ?? 'Plans retrieved successfully',
+          );
         } else {
           throw Exception('API returned unsuccessful response: ${jsonData['message'] ?? 'Unknown error'}');
         }
@@ -62,7 +84,8 @@ class SubscriptionService {
 
     while (attempts < maxRetries) {
       try {
-        return await getSubscriptionPlans(userId: userId);
+        final response = await getSubscriptionPlans(userId: userId);
+        return response.plans;
       } catch (e) {
         attempts++;
         if (attempts >= maxRetries) {
@@ -80,6 +103,20 @@ class SubscriptionService {
     required int planId,
   }) async {
     try {
+      // First check if the plan is available for this user
+      final plansResponse = await getSubscriptionPlans(userId: userId);
+      final targetPlan = plansResponse.plans.firstWhere(
+        (plan) => plan.id == planId,
+        orElse: () => throw Exception('Plan not found'),
+      );
+      
+      if (!targetPlan.isAvailable) {
+        return SubscriptionRequestResponse(
+          success: false,
+          message: targetPlan.unavailableReason ?? 'This plan is not available for you',
+        );
+      }
+
       final response = await http.post(
         Uri.parse('$getPlansUrl?action=requestPlan'),
         headers: {
@@ -133,6 +170,56 @@ class SubscriptionService {
     }
   }
 
+  static Future<bool> cancelSubscription({required int subscriptionId}) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$getPlansUrl?action=cancelSubscription'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: json.encode({
+          'subscription_id': subscriptionId,
+        }),
+      ).timeout(timeoutDuration);
+
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> data = json.decode(response.body);
+        return data['success'] == true;
+      }
+      return false;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  static Future<SubscriptionEligibility> checkSubscriptionEligibility({
+    required int userId,
+    required int planId,
+  }) async {
+    try {
+      final plansResponse = await getSubscriptionPlans(userId: userId);
+      final targetPlan = plansResponse.plans.firstWhere(
+        (plan) => plan.id == planId,
+        orElse: () => throw Exception('Plan not found'),
+      );
+      
+      return SubscriptionEligibility(
+        isEligible: targetPlan.isAvailable,
+        reason: targetPlan.unavailableReason,
+        plan: targetPlan,
+        userStatus: plansResponse.userStatus,
+      );
+    } catch (e) {
+      return SubscriptionEligibility(
+        isEligible: false,
+        reason: 'Error checking eligibility: ${e.toString()}',
+        plan: null,
+        userStatus: null,
+      );
+    }
+  }
+
   static Future<List<UserSubscription>> getUserSubscriptions(int userId) async {
     try {
       final response = await http.get(
@@ -147,7 +234,20 @@ class SubscriptionService {
         final Map<String, dynamic> jsonData = json.decode(response.body);
 
         if (jsonData['success'] == true) {
-          final List<dynamic> subscriptionsJson = jsonData['subscriptions'] as List<dynamic>;
+          final dynamic subscriptionsData = jsonData['subscriptions'];
+          
+          print("[v0] Subscriptions data type: ${subscriptionsData.runtimeType}");
+          print("[v0] Subscriptions data content: ${subscriptionsData.toString()}");
+          
+          if (subscriptionsData == null) {
+            throw Exception('Subscriptions data is null in API response');
+          }
+          
+          if (subscriptionsData is! List) {
+            throw Exception('Subscriptions data is not a list. Received: ${subscriptionsData.runtimeType}');
+          }
+          
+          final List<dynamic> subscriptionsJson = subscriptionsData as List<dynamic>;
           return subscriptionsJson
               .map((subJson) => UserSubscription.fromJson(subJson))
               .toList();
@@ -197,8 +297,8 @@ class SubscriptionService {
 
   static Future<SubscriptionPlan?> getSubscriptionPlanById(int planId) async {
     try {
-      final plans = await getSubscriptionPlans();
-      return plans.firstWhere(
+      final response = await getSubscriptionPlans();
+      return response.plans.firstWhere(
         (plan) => plan.id == planId,
         orElse: () => throw Exception('Plan not found'),
       );

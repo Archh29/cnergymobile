@@ -21,6 +21,7 @@ class _CoachDashboardState extends State<CoachDashboard> with TickerProviderStat
   MemberModel? selectedMember;
   List<MemberModel> assignedMembers = [];
   bool isLoadingMembers = true;
+  bool _hasNotifications = false; // Added to track notifications
   
   late AnimationController _fabAnimationController;
   late Animation<double> _fabAnimation;
@@ -163,13 +164,17 @@ class _CoachDashboardState extends State<CoachDashboard> with TickerProviderStat
   }
 
   Widget _buildSelectMemberPrompt() {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final screenHeight = MediaQuery.of(context).size.height;
+    final isSmallScreen = screenHeight < 700 || screenWidth < 350;
+    
     return Center(
       child: Container(
-        margin: EdgeInsets.all(20),
-        padding: EdgeInsets.all(24),
+        margin: EdgeInsets.all(isSmallScreen ? 12 : 20), // Reduced margin
+        padding: EdgeInsets.all(isSmallScreen ? 16 : 24), // Reduced padding
         decoration: BoxDecoration(
           color: Color(0xFF1A1A1A),
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(isSmallScreen ? 16 : 20),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withOpacity(0.2),
@@ -182,7 +187,7 @@ class _CoachDashboardState extends State<CoachDashboard> with TickerProviderStat
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              padding: EdgeInsets.all(16),
+              padding: EdgeInsets.all(isSmallScreen ? 12 : 16), // Smaller padding
               decoration: BoxDecoration(
                 color: Color(0xFF45B7D1).withOpacity(0.1),
                 shape: BoxShape.circle,
@@ -190,28 +195,33 @@ class _CoachDashboardState extends State<CoachDashboard> with TickerProviderStat
               child: Icon(
                 Icons.people_outline,
                 color: Color(0xFF45B7D1),
-                size: 48,
+                size: isSmallScreen ? 36 : 48, // Smaller icon
               ),
             ),
-            SizedBox(height: 16),
+            SizedBox(height: isSmallScreen ? 12 : 16), // Reduced spacing
             Text(
               'Select a Member',
               style: GoogleFonts.poppins(
-                fontSize: 20,
+                fontSize: isSmallScreen ? 16 : 20, // Responsive font size
                 fontWeight: FontWeight.bold,
                 color: Colors.white,
               ),
             ),
-            SizedBox(height: 8),
-            Text(
-              'Choose a member from the Members tab to view their progress and manage their routines.',
-              style: GoogleFonts.poppins(
-                fontSize: 14,
-                color: Colors.grey[400],
+            SizedBox(height: isSmallScreen ? 6 : 8),
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: isSmallScreen ? 8 : 0), // Extra padding on small screens
+              child: Text(
+                'Choose a member from the Members tab to view their progress and manage their routines.',
+                style: GoogleFonts.poppins(
+                  fontSize: isSmallScreen ? 12 : 14, // Smaller text
+                  color: Colors.grey[400],
+                ),
+                textAlign: TextAlign.center,
+                maxLines: 3, // Prevent overflow
+                overflow: TextOverflow.ellipsis,
               ),
-              textAlign: TextAlign.center,
             ),
-            SizedBox(height: 20),
+            SizedBox(height: isSmallScreen ? 16 : 20),
             ElevatedButton.icon(
               onPressed: () {
                 setState(() => _selectedIndex = 2);
@@ -220,15 +230,24 @@ class _CoachDashboardState extends State<CoachDashboard> with TickerProviderStat
               style: ElevatedButton.styleFrom(
                 backgroundColor: Color(0xFF45B7D1),
                 foregroundColor: Colors.white,
-                padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                padding: EdgeInsets.symmetric(
+                  horizontal: isSmallScreen ? 16 : 24, // Responsive padding
+                  vertical: isSmallScreen ? 8 : 12,
+                ),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(isSmallScreen ? 8 : 12),
                 ),
               ),
-              icon: Icon(Icons.people),
+              icon: Icon(
+                Icons.people,
+                size: isSmallScreen ? 16 : 18, // Smaller icon
+              ),
               label: Text(
-                'View Members',
-                style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+                'Go to Members',
+                style: GoogleFonts.poppins(
+                  fontSize: isSmallScreen ? 12 : 14, // Responsive text
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
           ],
@@ -255,15 +274,18 @@ class _CoachDashboardState extends State<CoachDashboard> with TickerProviderStat
   }
 
   PreferredSizeWidget _buildAppBar() {
+    final screenHeight = MediaQuery.of(context).size.height;
+    final isSmallScreen = screenHeight < 700; // iPhone SE and similar
+    
     return AppBar(
       backgroundColor: Color(0xFF0F0F0F),
       elevation: 0,
       automaticallyImplyLeading: false,
-      toolbarHeight: 80,
+      toolbarHeight: isSmallScreen ? 60 : 80, // Reduced height for small screens
       title: Row(
         children: [
           Container(
-            padding: EdgeInsets.all(8),
+            padding: EdgeInsets.all(isSmallScreen ? 6 : 8), // Smaller padding on small screens
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [Color(0xFF4ECDC4), Color(0xFF44A08D)],
@@ -273,89 +295,50 @@ class _CoachDashboardState extends State<CoachDashboard> with TickerProviderStat
             child: Icon(
               Icons.school,
               color: Colors.white,
-              size: 20,
+              size: isSmallScreen ? 16 : 20, // Smaller icon on small screens
             ),
           ),
-          SizedBox(width: 12),
-          Text(
-            "COACH PANEL",
-            style: GoogleFonts.poppins(
-              fontWeight: FontWeight.bold,
-              fontSize: 22,
-              letterSpacing: 1.5,
-              color: Colors.white,
+          SizedBox(width: isSmallScreen ? 8 : 12), // Reduced spacing
+          Flexible( // Added Flexible to prevent overflow
+            child: Text(
+              'Coach Dashboard',
+              style: GoogleFonts.poppins(
+                fontSize: isSmallScreen ? 16 : 18, // Responsive font size
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+              overflow: TextOverflow.ellipsis, // Prevent text overflow
             ),
           ),
-          Spacer(),
-          if (selectedMember != null)
-            Container(
-              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: Color(0xFF1A1A1A),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Color(0xFF4ECDC4).withOpacity(0.3)),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  CircleAvatar(
-                    radius: 12,
-                    backgroundColor: Color(0xFF4ECDC4).withOpacity(0.2),
-                    child: Text(
-                      selectedMember!.initials,
-                      style: GoogleFonts.poppins(
-                        color: Color(0xFF4ECDC4),
-                        fontSize: 10,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                  SizedBox(width: 8),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        selectedMember!.fullName,
-                        style: GoogleFonts.poppins(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      Text(
-                        selectedMember!.approvalStatusMessage,
-                        style: GoogleFonts.poppins(
-                          color: selectedMember!.isFullyApproved 
-                              ? Color(0xFF4ECDC4) 
-                              : Colors.orange,
-                          fontSize: 10,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
         ],
       ),
       actions: [
         Container(
-          margin: EdgeInsets.only(right: 16),
+          margin: EdgeInsets.only(right: isSmallScreen ? 8 : 16), // Responsive margin
           child: IconButton(
-            icon: Container(
-              padding: EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Color(0xFF1A1A1A),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(
-                Icons.notifications_none,
-                color: Colors.white,
-                size: 20,
-              ),
+            onPressed: _showNotificationsDialog,
+            icon: Stack(
+              children: [
+                Icon(
+                  Icons.notifications_outlined,
+                  color: Colors.white,
+                  size: isSmallScreen ? 20 : 24, // Responsive icon size
+                ),
+                if (_hasNotifications)
+                  Positioned(
+                    right: 0,
+                    top: 0,
+                    child: Container(
+                      width: isSmallScreen ? 6 : 8, // Smaller notification dot
+                      height: isSmallScreen ? 6 : 8,
+                      decoration: BoxDecoration(
+                        color: Color(0xFFFF6B6B),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+              ],
             ),
-            onPressed: () => _showNotificationsDialog(),
           ),
         ),
       ],
@@ -363,11 +346,15 @@ class _CoachDashboardState extends State<CoachDashboard> with TickerProviderStat
   }
 
   Widget _buildModernBottomNav() {
+    final screenHeight = MediaQuery.of(context).size.height;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isSmallScreen = screenHeight < 700 || screenWidth < 350;
+    
     return Container(
-      height: 90,
+      height: isSmallScreen ? 70 : 90, // Reduced height for small screens
       decoration: BoxDecoration(
         color: Color(0xFF1A1A1A),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(isSmallScreen ? 16 : 24)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.3),
@@ -391,35 +378,40 @@ class _CoachDashboardState extends State<CoachDashboard> with TickerProviderStat
             },
             child: AnimatedContainer(
               duration: Duration(milliseconds: 200),
-              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              padding: EdgeInsets.symmetric(
+                horizontal: isSmallScreen ? 6 : 12, // Reduced padding
+                vertical: isSmallScreen ? 4 : 8,
+              ),
               decoration: BoxDecoration(
                 color: isSelected ? item.color.withOpacity(0.1) : Colors.transparent,
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(isSmallScreen ? 12 : 16),
               ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   AnimatedContainer(
                     duration: Duration(milliseconds: 200),
-                    padding: EdgeInsets.all(8),
+                    padding: EdgeInsets.all(isSmallScreen ? 4 : 8), // Smaller padding
                     decoration: BoxDecoration(
                       color: isSelected ? item.color.withOpacity(0.2) : Colors.transparent,
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(isSmallScreen ? 8 : 12),
                     ),
                     child: Icon(
                       isSelected ? item.activeIcon : item.icon,
                       color: isSelected ? item.color : Colors.grey[400],
-                      size: 22,
+                      size: isSmallScreen ? 18 : 22, // Smaller icons
                     ),
                   ),
-                  SizedBox(height: 4),
+                  SizedBox(height: isSmallScreen ? 2 : 4), // Reduced spacing
                   Text(
                     item.label,
                     style: GoogleFonts.poppins(
-                      fontSize: 10,
+                      fontSize: isSmallScreen ? 8 : 10, // Smaller text
                       fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
                       color: isSelected ? item.color : Colors.grey[400],
                     ),
+                    overflow: TextOverflow.ellipsis, // Prevent overflow
+                    maxLines: 1,
                   ),
                 ],
               ),
@@ -431,11 +423,15 @@ class _CoachDashboardState extends State<CoachDashboard> with TickerProviderStat
   }
 
   Widget _buildModernFAB() {
+    final screenHeight = MediaQuery.of(context).size.height;
+    final isSmallScreen = screenHeight < 700;
+    final fabSize = isSmallScreen ? 48.0 : 56.0; // Smaller FAB on small screens
+    
     return ScaleTransition(
       scale: _fabAnimation,
       child: Container(
-        width: 56,
-        height: 56,
+        width: fabSize,
+        height: fabSize,
         decoration: BoxDecoration(
           gradient: LinearGradient(
             colors: [Color(0xFF4ECDC4), Color(0xFF44A08D)],
@@ -446,8 +442,8 @@ class _CoachDashboardState extends State<CoachDashboard> with TickerProviderStat
           boxShadow: [
             BoxShadow(
               color: Color(0xFF4ECDC4).withOpacity(0.4),
-              blurRadius: 20,
-              offset: Offset(0, 8),
+              blurRadius: isSmallScreen ? 15 : 20, // Reduced shadow
+              offset: Offset(0, isSmallScreen ? 6 : 8),
             ),
           ],
         ),
@@ -458,7 +454,7 @@ class _CoachDashboardState extends State<CoachDashboard> with TickerProviderStat
           child: Icon(
             Icons.chat_bubble_outline,
             color: Colors.white,
-            size: 24,
+            size: isSmallScreen ? 20 : 24, // Smaller icon
           ),
         ),
       ),

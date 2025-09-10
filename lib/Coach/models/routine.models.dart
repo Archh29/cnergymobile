@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import './exercise_model.dart';
 
 enum RoutineStatus {
   active,
@@ -66,6 +68,7 @@ class RoutineModel {
   final bool isFavorite;
   final double? averageRating;
   final int? totalRatings;
+  final List<ExerciseModel>? detailedExercises;
 
   RoutineModel({
     required this.id,
@@ -104,6 +107,7 @@ class RoutineModel {
     this.isFavorite = false,
     this.averageRating,
     this.totalRatings,
+    this.detailedExercises,
   });
 
   // Computed properties
@@ -227,34 +231,33 @@ class RoutineModel {
   }
 
   IconData get categoryIcon {
-  switch (category) {
-    case RoutineCategory.strength:
-      return Icons.fitness_center;
-    case RoutineCategory.cardio:
-      return Icons.directions_run;
-    case RoutineCategory.hiit:
-      return Icons.flash_on;
-    case RoutineCategory.yoga:
-      return Icons.self_improvement;
-    case RoutineCategory.pilates:
-      return Icons.accessibility_new;
-    case RoutineCategory.crossfit:
-      return Icons.sports_gymnastics;
-    case RoutineCategory.bodyweight:
-      return Icons.accessibility;
-    case RoutineCategory.powerlifting:
-      return Icons.fitness_center;
-    case RoutineCategory.olympic:
-      return Icons.emoji_events;
-    case RoutineCategory.rehabilitation:
-      return Icons.healing;
-    case RoutineCategory.flexibility:
-      return Icons.accessibility_new; // ✅ Fixed here
-    case RoutineCategory.sports_specific:
-      return Icons.sports;
+    switch (category) {
+      case RoutineCategory.strength:
+        return Icons.fitness_center;
+      case RoutineCategory.cardio:
+        return Icons.directions_run;
+      case RoutineCategory.hiit:
+        return Icons.flash_on;
+      case RoutineCategory.yoga:
+        return Icons.self_improvement;
+      case RoutineCategory.pilates:
+        return Icons.accessibility_new;
+      case RoutineCategory.crossfit:
+        return Icons.sports_gymnastics;
+      case RoutineCategory.bodyweight:
+        return Icons.accessibility;
+      case RoutineCategory.powerlifting:
+        return Icons.fitness_center;
+      case RoutineCategory.olympic:
+        return Icons.emoji_events;
+      case RoutineCategory.rehabilitation:
+        return Icons.healing;
+      case RoutineCategory.flexibility:
+        return Icons.accessibility_new;
+      case RoutineCategory.sports_specific:
+        return Icons.sports;
+    }
   }
-}
-
 
   String get formattedDuration {
     if (duration.toLowerCase().contains('min')) {
@@ -297,7 +300,7 @@ class RoutineModel {
       exercises: json['exercises'] ?? 0,
       duration: json['duration'] ?? '',
       exerciseList: json['exercise_list'] ?? '',
-      createdBy: json['created_by'] ?? '',
+      createdBy: json['created_by']?.toString() ?? '',
       coachId: json['coach_id']?.toString(),
       memberId: json['member_id']?.toString(),
       color: json['color'] ?? '',
@@ -340,6 +343,11 @@ class RoutineModel {
       isFavorite: json['is_favorite'] ?? false,
       averageRating: json['average_rating']?.toDouble(),
       totalRatings: json['total_ratings'],
+      detailedExercises: json['detailedExercises'] != null
+          ? (json['detailedExercises'] as List)
+              .map((e) => ExerciseModel.fromJson(e))
+              .toList()
+          : null,
     );
   }
 
@@ -381,6 +389,7 @@ class RoutineModel {
       'is_favorite': isFavorite,
       'average_rating': averageRating,
       'total_ratings': totalRatings,
+      'detailedExercises': detailedExercises?.map((e) => e.toJson()).toList(),
     };
   }
 
@@ -422,6 +431,7 @@ class RoutineModel {
     bool? isFavorite,
     double? averageRating,
     int? totalRatings,
+    List<ExerciseModel>? detailedExercises,
   }) {
     return RoutineModel(
       id: id ?? this.id,
@@ -460,6 +470,7 @@ class RoutineModel {
       isFavorite: isFavorite ?? this.isFavorite,
       averageRating: averageRating ?? this.averageRating,
       totalRatings: totalRatings ?? this.totalRatings,
+      detailedExercises: detailedExercises ?? this.detailedExercises,
     );
   }
 

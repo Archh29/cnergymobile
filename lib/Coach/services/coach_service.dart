@@ -60,7 +60,7 @@ class CoachService {
   }
 
   // FIXED: Robust coach ID retrieval that handles both string and int storage
-  static Future<int> _getCoachId() async {
+  static Future<int> getCoachId() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       int coachId = 0;
@@ -131,7 +131,7 @@ class CoachService {
       return coachId;
       
     } catch (e, stackTrace) {
-      print('Error in _getCoachId: $e');
+      print('Error in getCoachId: $e');
       print('Stack trace: $stackTrace');
       return 0;
     }
@@ -194,7 +194,7 @@ class CoachService {
   // FIXED: Get pending member requests for a specific coach
   static Future<List<MemberModel>> getPendingRequests() async {
     try {
-      final coachId = await _getCoachId();
+      final coachId = await getCoachId();
       
       print('Debug: Coach ID for pending requests: $coachId (type: ${coachId.runtimeType})');
       
@@ -282,7 +282,7 @@ class CoachService {
   // Coach approves a pending member request
   static Future<bool> approveMemberRequest(int requestId) async {
     try {
-      final coachId = await _getCoachId();
+      final coachId = await getCoachId();
       
       if (coachId == 0) {
         print('Error: No valid coach ID found');
@@ -317,7 +317,7 @@ class CoachService {
   // Coach rejects a pending member request
   static Future<bool> rejectMemberRequest(int requestId, {String? reason}) async {
     try {
-      final coachId = await _getCoachId();
+      final coachId = await getCoachId();
       
       if (coachId == 0) {
         print('Error: No valid coach ID found');
@@ -348,7 +348,7 @@ class CoachService {
   // FIXED: Get assigned/approved members for a coach
   static Future<List<MemberModel>> getAssignedMembers() async {
     try {
-      final coachId = await _getCoachId();
+      final coachId = await getCoachId();
       
       print('Debug: Coach ID for assigned members: $coachId (type: ${coachId.runtimeType})');
       
@@ -486,18 +486,43 @@ class CoachService {
   // Rest of your existing methods remain the same...
   static Future<List<RoutineModel>> getMemberRoutines(int memberId) async {
     try {
+      final coachId = await getCoachId();
+      
+      print('Debug: Fetching routines for member $memberId by coach $coachId');
+      
       final response = await http.get(
-        Uri.parse('$baseUrl?action=member-routines&member_id=$memberId'),
+        Uri.parse('$baseUrl?action=member-routines&member_id=$memberId&coach_id=$coachId&include_coach_created=true'),
         headers: {'Content-Type': 'application/json'},
       );
+      
+      print('Debug: Member routines response status: ${response.statusCode}');
+      print('Debug: Member routines response body: ${response.body}');
       
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         if (data['success'] == true) {
-          return (data['routines'] as List? ?? [])
-              .map((routine) => RoutineModel.fromJson(routine))
-              .toList();
+          final routinesList = data['routines'] as List? ?? [];
+          print('Debug: Found ${routinesList.length} routines for member $memberId');
+          
+          List<RoutineModel> routines = [];
+          for (var routineData in routinesList) {
+            try {
+              print('Debug: Processing routine data: $routineData');
+              final routine = RoutineModel.fromJson(routineData);
+              routines.add(routine);
+            } catch (e) {
+              print('Error parsing routine: $e');
+              print('Problematic routine data: $routineData');
+            }
+          }
+          
+          print('Debug: Successfully parsed ${routines.length} routines');
+          return routines;
+        } else {
+          print('Error: API returned success=false: ${data['message'] ?? 'Unknown error'}');
         }
+      } else {
+        print('Error: HTTP ${response.statusCode}: ${response.body}');
       }
       return [];
     } catch (e) {
@@ -506,9 +531,46 @@ class CoachService {
     }
   }
 
+  static Future<List<RoutineModel>> getCoachCreatedRoutinesForMember(int memberId) async {
+    try {
+      final coachId = await getCoachId();
+      
+      if (coachId == 0) {
+        print('Error: No valid coach ID found');
+        return [];
+      }
+      
+      print('Debug: Fetching coach-created routines for member $memberId by coach $coachId');
+      
+      final response = await http.get(
+        Uri.parse('$baseUrl?action=coach-created-routines&member_id=$memberId&coach_id=$coachId'),
+        headers: {'Content-Type': 'application/json'},
+      );
+      
+      print('Debug: Coach-created routines response status: ${response.statusCode}');
+      print('Debug: Coach-created routines response body: ${response.body}');
+      
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data['success'] == true) {
+          final routinesList = data['routines'] as List? ?? [];
+          print('Debug: Found ${routinesList.length} coach-created routines for member $memberId');
+          
+          return routinesList
+              .map((routine) => RoutineModel.fromJson(routine))
+              .toList();
+        }
+      }
+      return [];
+    } catch (e) {
+      print('Error fetching coach-created routines: $e');
+      return [];
+    }
+  }
+
   static Future<bool> createRoutineForMember(int memberId, RoutineModel routine) async {
     try {
-      final coachId = await _getCoachId();
+      final coachId = await getCoachId();
       
       if (coachId == 0) return false;
       
@@ -535,7 +597,7 @@ class CoachService {
 
   static Future<bool> updateMemberRoutine(int routineId, Map<String, dynamic> updates) async {
     try {
-      final coachId = await _getCoachId();
+      final coachId = await getCoachId();
       
       if (coachId == 0) return false;
       
@@ -605,7 +667,7 @@ class CoachService {
 
   static Future<bool> addSessionFeedback(int sessionId, String feedback, double rating) async {
     try {
-      final coachId = await _getCoachId();
+      final coachId = await getCoachId();
       
       if (coachId == 0) return false;
       
@@ -658,7 +720,7 @@ class CoachService {
 
   static Future<bool> createGoalForMember(int memberId, GoalModel goal) async {
     try {
-      final coachId = await _getCoachId();
+      final coachId = await getCoachId();
       
       if (coachId == 0) return false;
       
@@ -687,7 +749,7 @@ class CoachService {
 
   static Future<bool> sendMessageToMember(int memberId, String message) async {
     try {
-      final coachId = await _getCoachId();
+      final coachId = await getCoachId();
       
       if (coachId == 0) return false;
       
@@ -718,7 +780,7 @@ class CoachService {
   // Get coach dashboard statistics
   static Future<Map<String, dynamic>> getCoachDashboardStats() async {
     try {
-      final coachId = await _getCoachId();
+      final coachId = await getCoachId();
       
       if (coachId == 0) return {};
       
@@ -765,7 +827,7 @@ class CoachService {
   // Update member information
   static Future<bool> updateMemberInfo(int memberId, Map<String, dynamic> updates) async {
     try {
-      final coachId = await _getCoachId();
+      final coachId = await getCoachId();
       
       if (coachId == 0) return false;
       
@@ -792,7 +854,7 @@ class CoachService {
   // Search members by name or email
   static Future<List<MemberModel>> searchMembers(String query) async {
     try {
-      final coachId = await _getCoachId();
+      final coachId = await getCoachId();
       
       if (coachId == 0) return [];
       
@@ -831,7 +893,7 @@ class CoachService {
   // Get coach profile information
   static Future<Map<String, dynamic>?> getCoachProfile() async {
     try {
-      final coachId = await _getCoachId();
+      final coachId = await getCoachId();
       
       if (coachId == 0) return null;
       
@@ -856,7 +918,7 @@ class CoachService {
   // Update coach profile
   static Future<bool> updateCoachProfile(Map<String, dynamic> updates) async {
     try {
-      final coachId = await _getCoachId();
+      final coachId = await getCoachId();
       
       if (coachId == 0) return false;
       
@@ -882,7 +944,7 @@ class CoachService {
   // Bulk operations for efficiency
   static Future<bool> bulkApproveMemberRequests(List<int> requestIds) async {
     try {
-      final coachId = await _getCoachId();
+      final coachId = await getCoachId();
       
       if (coachId == 0) return false;
       
@@ -909,7 +971,7 @@ class CoachService {
   // Get notification settings
   static Future<Map<String, dynamic>?> getNotificationSettings() async {
     try {
-      final coachId = await _getCoachId();
+      final coachId = await getCoachId();
       
       if (coachId == 0) return null;
       
@@ -934,7 +996,7 @@ class CoachService {
   // Update notification settings
   static Future<bool> updateNotificationSettings(Map<String, dynamic> settings) async {
     try {
-      final coachId = await _getCoachId();
+      final coachId = await getCoachId();
       
       if (coachId == 0) return false;
       

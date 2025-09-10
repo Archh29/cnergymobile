@@ -7,7 +7,10 @@ import 'package:flutter/gestures.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:google_fonts/google_fonts.dart';
-import './User/services/auth_service.dart'; // Import your AuthService
+import './User/services/auth_service.dart';
+import 'user_dashboard.dart';
+import 'account_verification_page.dart';
+import 'coach_dashboard.dart'; // Import CoachDashboard
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -108,6 +111,171 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
         .map((entry) => '${entry.key}=${entry.value}')
         .join('; ');
     return {'Cookie': cookieString};
+  }
+
+  Future<void> _handleSuccessfulLogin(int userId, Map<String, dynamic> userData, String role, String token) async {
+    try {
+      print('🔄 Handling successful login for user: $userId, role: $role');
+      
+      // Set the current user in AuthService
+      await AuthService.setCurrentUser(userId, userData);
+      
+      // Force refresh user data from server to get latest account_status
+      print('📡 Refreshing user data from server...');
+      await AuthService.refreshUserData();
+      
+      // Also store in SharedPreferences for backward compatibility
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('isLoggedIn', true);
+      await prefs.setString('role', role);
+      await prefs.setString('jwt_token', token);
+      await prefs.setString('user_id', userId.toString());
+      await prefs.setString('email', userData['email'] ?? '');
+
+      if (mounted) {
+        if (AuthService.isCoach()) {
+          print('👨‍🏫 Coach login successful, navigating to CoachDashboard');
+          Get.snackbar(
+            "Success",
+            "Welcome back Coach ${AuthService.getUserFirstName()}!",
+            snackPosition: SnackPosition.BOTTOM,
+            backgroundColor: Colors.green,
+            colorText: Colors.white,
+          );
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (context) => CoachDashboard()),
+            (Route<dynamic> route) => false,
+          );
+          return;
+        } else if (AuthService.isAdmin() || AuthService.isStaff()) {
+          print('👑 Admin/Staff login successful');
+          Get.snackbar(
+            "Success",
+            "Welcome back ${AuthService.getUserFirstName()}!",
+            snackPosition: SnackPosition.BOTTOM,
+            backgroundColor: Colors.green,
+            colorText: Colors.white,
+          );
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (context) => UserDashboard()),
+            (Route<dynamic> route) => false,
+          );
+          return;
+        } else if (AuthService.isCustomer()) {
+          // For customers, check account status
+          final accountStatus = AuthService.getAccountStatus();
+          print('🔍 Customer Login Success - Account Status: $accountStatus');
+          
+          switch (accountStatus) {
+            case 'approved':
+              Get.snackbar(
+                "Success",
+                "Login successful! Welcome back ${AuthService.getUserFirstName()}.",
+                snackPosition: SnackPosition.BOTTOM,
+                backgroundColor: Colors.green,
+                colorText: Colors.white,
+              );
+              Navigator.of(context).pushAndRemoveUntil(
+                MaterialPageRoute(builder: (context) => UserDashboard()),
+                (Route<dynamic> route) => false,
+              );
+              break;
+            case 'rejected':
+              // Show rejection dialog and logout
+              _showAccountRejectedDialog();
+              break;
+            case 'pending':
+            default:
+              Get.snackbar(
+                "Account Pending",
+                "Your account is pending verification. Please visit our front desk.",
+                snackPosition: SnackPosition.BOTTOM,
+                backgroundColor: Colors.orange,
+                colorText: Colors.white,
+              );
+              Navigator.of(context).pushAndRemoveUntil(
+                MaterialPageRoute(builder: (context) => const AccountVerificationScreen()),
+                (Route<dynamic> route) => false,
+              );
+              break;
+          }
+        } else {
+          // Unknown user type
+          print('⚠️ Unknown user type after login');
+          Get.snackbar(
+            "Login Error",
+            "Unknown user type. Please contact support.",
+            snackPosition: SnackPosition.BOTTOM,
+            backgroundColor: Colors.red,
+            colorText: Colors.white,
+          );
+          await AuthService.logout();
+        }
+      }
+    } catch (e) {
+      print('❌ Error handling successful login: $e');
+      Get.snackbar(
+        "Login Error",
+        "An error occurred during login. Please try again.",
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
+    }
+  }
+
+  void _showAccountRejectedDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          title: Row(
+            children: [
+              Icon(
+                Icons.cancel_outlined,
+                color: Colors.red,
+                size: 28,
+              ),
+              const SizedBox(width: 12),
+              Text(
+                'Account Rejected',
+                style: GoogleFonts.poppins(
+                  fontWeight: FontWeight.w600,
+                  color: Colors.red,
+                ),
+              ),
+            ],
+          ),
+          content: Text(
+            'Your account verification has been rejected. Please contact our staff for more information or create a new account.',
+            style: GoogleFonts.poppins(
+              fontSize: 14,
+              color: Colors.black87,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () async {
+                Navigator.of(context).pop();
+                await AuthService.logout();
+                // Stay on login screen - no navigation needed
+              },
+              child: Text(
+                'OK',
+                style: GoogleFonts.poppins(
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFFFF6B35),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   void loginUser() async {
@@ -214,68 +382,21 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
             'jwt_token': token,
           };
 
-          // Add any additional user data from the response
-          if (data.containsKey('user_name')) {
-            userData['user_name'] = data['user_name'];
-            userData['fname'] = data['user_name']; // For compatibility
+          int userTypeId = 0;
+          switch (role.toLowerCase()) {
+            case 'admin': userTypeId = 1; break;
+            case 'staff': userTypeId = 2; break;
+            case 'coach': userTypeId = 3; break;
+            case 'customer':
+            case 'member': userTypeId = 4; break;
           }
-          if (data.containsKey('first_name')) {
-            userData['fname'] = data['first_name'];
-            userData['first_name'] = data['first_name'];
-          }
-          if (data.containsKey('last_name')) {
-            userData['lname'] = data['last_name'];
-            userData['last_name'] = data['last_name'];
-          }
-          if (data.containsKey('fname')) {
-            userData['fname'] = data['fname'];
-          }
-          if (data.containsKey('lname')) {
-            userData['lname'] = data['lname'];
-          }
-          if (data.containsKey('profile_completed')) {
-            userData['profile_completed'] = data['profile_completed'];
-          }
-          if (data.containsKey('is_member')) {
-            userData['is_member'] = data['is_member'];
-          }
-          if (data.containsKey('membership_status')) {
-            userData['membership_status'] = data['membership_status'];
-          }
+          userData['user_type_id'] = userTypeId;
 
           print('💾 Storing user data: $userData');
 
-          // Use AuthService to set the current user - THIS IS THE KEY FIX!
-          await AuthService.setCurrentUser(userId, userData);
+          // Handle successful login with account status checking
+          await _handleSuccessfulLogin(userId, userData, role, token);
 
-          // Also store in SharedPreferences for backward compatibility
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.setBool('isLoggedIn', true);
-          await prefs.setString('role', role);
-          await prefs.setString('jwt_token', token);
-          await prefs.setString('user_id', userId.toString());
-          await prefs.setString('email', email);
-
-          // Verify the data was stored correctly
-          print('✅ AuthService verification:');
-          print('   - Is Logged In: ${AuthService.isLoggedIn()}');
-          print('   - Current User ID: ${AuthService.getCurrentUserId()}');
-          print('   - Current User: ${AuthService.getCurrentUser()}');
-
-          String routeName = _getRouteFromRole(role);
-
-          Get.snackbar(
-            "Success",
-            "Login successful! Welcome back ${AuthService.getUserFirstName()}.",
-            snackPosition: SnackPosition.BOTTOM,
-            backgroundColor: Colors.green,
-            colorText: Colors.white,
-          );
-
-          // Navigate to dashboard
-          if (mounted) {
-            Navigator.pushReplacementNamed(context, routeName);
-          }
         } else {
           print('❌ Missing jwt_token or user_role in response');
           Get.snackbar(
@@ -311,17 +432,6 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
           isLoading = false;
         });
       }
-    }
-  }
-
-  String _getRouteFromRole(String role) {
-    switch (role.toLowerCase()) {
-      case 'coach':
-        return '/coachDashboard';
-      case 'customer':
-        return '/userDashboard';
-      default:
-        return '/login';
     }
   }
 
@@ -648,10 +758,6 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                       ),
                     ],
                   ),
-                  const SizedBox(height: 24),
-                  
-                  // Alternative: Create Account Button (more prominent)
-                  
                   const SizedBox(height: 40),
                 ],
               ),
