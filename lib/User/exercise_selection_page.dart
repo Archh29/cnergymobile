@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'models/exercise_selection_model.dart'; // Corrected import
+import 'models/routine.models.dart'; // For ExerciseModel
 import 'services/routine_services.dart'; // Corrected import
 import 'services/exercises_selection_service.dart'; // Corrected import: changed 'exercises_selection_service.dart' to 'exercise_selection_service.dart'
+import 'services/enhanced_muscle_group_service.dart'; // For muscle parts filter
 import 'exercise_configuration_page.dart'; // Corrected import
+import 'exercise_instructions_page.dart'; // For video instructions
 
 class ExerciseSelectionPage extends StatefulWidget {
   final MuscleGroupModel muscleGroup;
@@ -26,6 +29,8 @@ class _ExerciseSelectionPageState extends State<ExerciseSelectionPage> {
   List<ExerciseSelectionModel> selectedExercises = []; // This must hold ALL selected exercises for the entire routine
   bool isLoading = true;
   String searchQuery = '';
+  List<PrimaryMusclePart> availableMuscleParts = []; // Available muscle parts for filtering
+  String? selectedMusclePartFilter; // Selected muscle part filter
 
   @override
   void initState() {
@@ -41,7 +46,20 @@ class _ExerciseSelectionPageState extends State<ExerciseSelectionPage> {
     try {
       setState(() => isLoading = true);
 
-      final exerciseModels = await RoutineService.fetchExercisesByMuscle(widget.muscleGroup.id);
+      // Load exercises and muscle parts in parallel
+      final results = await Future.wait([
+        RoutineService.fetchExercisesByMuscle(widget.muscleGroup.id),
+        EnhancedMuscleGroupService.fetchMuscleGroupsWithParts(),
+      ]);
+
+      final exerciseModels = results[0] as List<ExerciseModel>;
+      final muscleGroupsWithParts = results[1] as List<MuscleGroupWithParts>;
+
+      // Find the current muscle group's parts
+      final currentMuscleGroup = muscleGroupsWithParts.firstWhere(
+        (group) => group.name.toLowerCase() == widget.muscleGroup.name.toLowerCase(),
+        orElse: () => MuscleGroupWithParts(id: 0, name: '', imageUrl: '', primaryParts: []),
+      );
 
       setState(() {
         exercises = exerciseModels.map((exercise) => ExerciseSelectionModel(
@@ -49,12 +67,15 @@ class _ExerciseSelectionPageState extends State<ExerciseSelectionPage> {
           name: exercise.name,
           description: exercise.description,
           imageUrl: exercise.imageUrl,
+          videoUrl: exercise.videoUrl ?? '', // Add video URL
           targetMuscle: exercise.targetMuscle,
           category: exercise.category,
           difficulty: exercise.difficulty,
           // Check if this exercise is in the GLOBAL selectedExercises list
           isSelected: selectedExercises.any((selected) => selected.id == exercise.id),
         )).toList();
+        
+        availableMuscleParts = currentMuscleGroup.primaryParts;
         isLoading = false;
       });
     } catch (e) {
@@ -72,12 +93,60 @@ class _ExerciseSelectionPageState extends State<ExerciseSelectionPage> {
     );
   }
 
+  void _showExerciseInstructions(ExerciseSelectionModel exercise) {
+    print('🎯 Opening exercise instructions for: ${exercise.name} (ID: ${exercise.id})');
+    
+    // Convert ExerciseSelectionModel to ExerciseModel for the instructions page
+    final exerciseModel = ExerciseModel(
+      id: exercise.id,
+      name: exercise.name,
+      targetSets: 3, // Default values
+      targetReps: '10',
+      targetWeight: '',
+      category: exercise.category,
+      difficulty: exercise.difficulty,
+      color: widget.selectedColor.value.toString(),
+      restTime: 60,
+      targetMuscle: exercise.targetMuscle,
+      description: exercise.description,
+      imageUrl: exercise.imageUrl,
+      videoUrl: exercise.videoUrl,
+    );
+
+    print('📋 ExerciseModel created with ID: ${exerciseModel.id}');
+
+    // Navigate to the exercise instructions page
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ExerciseInstructionsPage(
+          exercise: exerciseModel,
+        ),
+      ),
+    );
+  }
+
   List<ExerciseSelectionModel> get filteredExercises {
-    if (searchQuery.isEmpty) return exercises;
-    return exercises.where((exercise) =>
-        exercise.name.toLowerCase().contains(searchQuery.toLowerCase()) ||
-        exercise.description.toLowerCase().contains(searchQuery.toLowerCase())
-    ).toList();
+    var filtered = exercises;
+    
+    // Apply search filter
+    if (searchQuery.isNotEmpty) {
+      filtered = filtered.where((exercise) =>
+          exercise.name.toLowerCase().contains(searchQuery.toLowerCase()) ||
+          exercise.description.toLowerCase().contains(searchQuery.toLowerCase())
+      ).toList();
+    }
+    
+    // Apply muscle part filter
+    if (selectedMusclePartFilter != null && selectedMusclePartFilter!.isNotEmpty) {
+      filtered = filtered.where((exercise) {
+        final targetMuscle = exercise.targetMuscle.toLowerCase();
+        return targetMuscle.contains(selectedMusclePartFilter!.toLowerCase()) &&
+               targetMuscle.contains('(primary)');
+      }).toList();
+    }
+    
+    return filtered;
   }
 
   void _toggleExerciseSelection(ExerciseSelectionModel exercise) {
@@ -197,6 +266,77 @@ class _ExerciseSelectionPageState extends State<ExerciseSelectionPage> {
             ),
           ),
 
+          // Muscle parts filter
+          if (availableMuscleParts.isNotEmpty)
+            Container(
+              padding: EdgeInsets.symmetric(horizontal: 20),
+              child: Row(
+                children: [
+                  Icon(Icons.filter_list, color: Colors.grey[400], size: 20),
+                  SizedBox(width: 8),
+                  Text(
+                    'Filter by muscle part:',
+                    style: GoogleFonts.poppins(
+                      color: Colors.grey[300],
+                      fontSize: 14,
+                    ),
+                  ),
+                  SizedBox(width: 12),
+                  Expanded(
+                    child: Container(
+                      padding: EdgeInsets.symmetric(horizontal: 12),
+                      decoration: BoxDecoration(
+                        color: Color(0xFF1A1A1A),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.grey[700]!),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<String>(
+                          value: selectedMusclePartFilter,
+                          hint: Text(
+                            'All parts',
+                            style: GoogleFonts.poppins(
+                              color: Colors.grey[400],
+                              fontSize: 14,
+                            ),
+                          ),
+                          isExpanded: true,
+                          icon: Icon(Icons.arrow_drop_down, color: Colors.grey[400]),
+                          items: [
+                            DropdownMenuItem<String>(
+                              value: null,
+                              child: Text(
+                                'All parts',
+                                style: GoogleFonts.poppins(
+                                  color: Colors.white,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ),
+                            ...availableMuscleParts.map((part) => DropdownMenuItem<String>(
+                              value: part.name,
+                              child: Text(
+                                part.name,
+                                style: GoogleFonts.poppins(
+                                  color: Colors.white,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            )),
+                          ],
+                          onChanged: (String? newValue) {
+                            setState(() {
+                              selectedMusclePartFilter = newValue;
+                            });
+                          },
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
           // Exercise list
           Expanded(
             child: isLoading
@@ -261,15 +401,43 @@ class _ExerciseSelectionPageState extends State<ExerciseSelectionPage> {
             padding: EdgeInsets.all(16),
             child: Row(
               children: [
-                // Exercise image with improved handling
-                Container(
-                  width: 60,
-                  height: 60,
-                  decoration: BoxDecoration(
-                    color: Color(0xFF2A2A2A),
-                    borderRadius: BorderRadius.circular(12),
+                // Exercise image with improved handling and click functionality
+                GestureDetector(
+                  onTap: () => _showExerciseInstructions(exercise),
+                  child: Container(
+                    width: 60,
+                    height: 60,
+                    decoration: BoxDecoration(
+                      color: Color(0xFF2A2A2A),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: Colors.blue.withOpacity(0.3),
+                        width: 1,
+                      ),
+                    ),
+                    child: Stack(
+                      children: [
+                        _buildExerciseImage(exercise),
+                        // Video play icon overlay
+                        Positioned(
+                          bottom: 4,
+                          right: 4,
+                          child: Container(
+                            padding: EdgeInsets.all(2),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withOpacity(0.7),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Icon(
+                              Icons.play_arrow,
+                              color: Colors.white,
+                              size: 12,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                  child: _buildExerciseImage(exercise),
                 ),
                 SizedBox(width: 16),
 
@@ -451,9 +619,22 @@ class _ExerciseSelectionPageState extends State<ExerciseSelectionPage> {
           .where((config) => config.exercise.targetMuscle.toLowerCase() != widget.muscleGroup.name.toLowerCase())
           .toList();
       
-      final mergedExercises = [...existingExercisesFromOtherMuscles, ...result];
+      // Create a map to track unique exercises by ID to prevent duplicates
+      final Map<int, SelectedExerciseWithConfig> uniqueExercises = {};
       
-      print('Merging exercises: ${existingExercisesFromOtherMuscles.length} existing + ${result.length} new = ${mergedExercises.length} total');
+      // Add existing exercises from other muscle groups
+      for (var exercise in existingExercisesFromOtherMuscles) {
+        uniqueExercises[exercise.exercise.id] = exercise;
+      }
+      
+      // Add newly configured exercises (this will overwrite any existing ones with same ID)
+      for (var exercise in result) {
+        uniqueExercises[exercise.exercise.id] = exercise;
+      }
+      
+      final mergedExercises = uniqueExercises.values.toList();
+      
+      print('Merging exercises: ${existingExercisesFromOtherMuscles.length} existing + ${result.length} new = ${mergedExercises.length} total (after deduplication)');
       for (var exercise in mergedExercises) {
         print('Merged exercise: ${exercise.exercise.name} - Target Muscle: "${exercise.exercise.targetMuscle}"');
       }

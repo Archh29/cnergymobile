@@ -3,7 +3,7 @@ import 'package:http/http.dart' as http;
 import '../models/messages_model.dart';
 
 class MessageService {
-  static const String baseUrl = 'http://localhost/cynergy/messages.php'; // Replace with your actual API URL
+  static const String baseUrl = 'https://api.cnergy.site/messages.php'; // Replace with your actual API URL
   
   // Get all conversations for a user
   static Future<List<Conversation>> getConversations(int userId) async {

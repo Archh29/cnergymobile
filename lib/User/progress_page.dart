@@ -180,8 +180,6 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
       'chest': latest.chestCm ?? 0.0,
       'waist': latest.waistCm ?? 0.0,
       'hips': latest.hipsCm ?? 0.0,
-      'arms': latest.armsCm ?? 0.0,
-      'thighs': latest.thighsCm ?? 0.0,
     };
   }
 

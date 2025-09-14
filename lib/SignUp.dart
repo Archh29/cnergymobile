@@ -66,29 +66,44 @@ class _SignUpPageState extends State<SignUpPage> with SingleTickerProviderStateM
   Future<void> _loadGenders() async {
     try {
       final response = await http.get(
-        Uri.parse('http://localhost/cynergy/loginapp.php?action=get_genders'),
+        Uri.parse('https://api.cnergy.site/loginapp.php?action=get_genders'),
         headers: {'Content-Type': 'application/json'},
       );
 
+      print('Gender API Response Status: ${response.statusCode}');
+      print('Gender API Response Body: ${response.body}');
+
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        if (data['success'] == true) {
+        print('Parsed Gender Data: $data');
+        
+        if (data['success'] == true && data['genders'] != null) {
           setState(() {
             _genders = List<Map<String, dynamic>>.from(data['genders']);
           });
+          print('Loaded ${_genders.length} genders successfully');
+        } else {
+          print('API returned success=false or no genders data');
+          _setDefaultGenders();
         }
+      } else {
+        print('API returned status code: ${response.statusCode}');
+        _setDefaultGenders();
       }
     } catch (e) {
       print('Error loading genders: $e');
-      // Add some default genders if API fails
-      setState(() {
-        _genders = [
-          {'id': 1, 'gender_name': 'Male'},
-          {'id': 2, 'gender_name': 'Female'},
-          {'id': 3, 'gender_name': 'Other'},
-        ];
-      });
+      _setDefaultGenders();
     }
+  }
+
+  void _setDefaultGenders() {
+    setState(() {
+      _genders = [
+        {'id': 1, 'gender_name': 'Male'},
+        {'id': 2, 'gender_name': 'Female'},
+        {'id': 3, 'gender_name': 'Other'},
+      ];
+    });
   }
 
   Future<void> _selectDate() async {
@@ -153,7 +168,7 @@ class _SignUpPageState extends State<SignUpPage> with SingleTickerProviderStateM
 
     try {
       final response = await http.post(
-        Uri.parse('http://localhost/cynergy/loginapp.php'),
+        Uri.parse('https://api.cnergy.site/loginapp.php'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({
           'email': _emailController.text.trim(),
@@ -497,6 +512,16 @@ class _SignUpPageState extends State<SignUpPage> with SingleTickerProviderStateM
                         dropdownColor: const Color(0xFF1A1A1A),
                         style: GoogleFonts.poppins(color: Colors.white),
                         items: _genders.map((gender) {
+                          // Safety check to prevent null access
+                          if (gender == null || gender['id'] == null || gender['gender_name'] == null) {
+                            return DropdownMenuItem<int>(
+                              value: 0,
+                              child: Text(
+                                'Unknown',
+                                style: GoogleFonts.poppins(color: Colors.white),
+                              ),
+                            );
+                          }
                           return DropdownMenuItem<int>(
                             value: gender['id'],
                             child: Text(

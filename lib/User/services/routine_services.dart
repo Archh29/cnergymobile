@@ -4,8 +4,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/routine.models.dart';
 
 class RoutineService {
-  static const String baseUrl = "http://localhost/cynergy/routines.php";
-  static const String exerciseUrl = "http://localhost/cynergy/exercises.php";
+  static const String baseUrl = "https://api.cnergy.site/routines.php";
+  static const String exerciseUrl = "https://api.cnergy.site/exercises.php";
 
   // Get current user ID from SharedPreferences
   static Future<int> getCurrentUserId() async {
@@ -186,6 +186,142 @@ class RoutineService {
     }
   }
 
+  // Fetch ONLY user-created routines (for Tab 1)
+  static Future<RoutineResponse> fetchUserCreatedRoutines() async {
+    try {
+      int currentUserId = await getCurrentUserId();
+      print('🔍 Fetching USER-ONLY routines for user ID: $currentUserId');
+      
+      final url = '$baseUrl?action=user_routines&user_id=$currentUserId';
+      print('📡 API URL: $url');
+      
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {"Content-Type": "application/json"},
+      );
+      
+      print('📊 Response status: ${response.statusCode}');
+      print('📋 Response body: ${response.body}');
+      
+      if (response.statusCode == 200) {
+        final responseData = json.decode(response.body);
+        
+        if (responseData['error'] != null) {
+          print('❌ API Error: ${responseData['error']}');
+          return RoutineResponse(
+            success: false,
+            routines: [],
+            myRoutines: const [],
+            coachAssigned: const [],
+            templateRoutines: const [],
+            totalRoutines: 0,
+            isPremium: false,
+            error: responseData['error'],
+          );
+        }
+        
+        final routineResponse = RoutineResponse.fromJson(responseData);
+        
+        print('✅ Parsed USER-ONLY response:');
+        print('   - Success: ${routineResponse.success}');
+        print('   - My Routines count: ${routineResponse.myRoutines.length}');
+        print('   - Coach Assigned count: ${routineResponse.coachAssigned.length}');
+        print('   - Template Routines count: ${routineResponse.templateRoutines.length}');
+        print('   - Is Premium: ${routineResponse.isPremium}');
+        
+        await _cacheMembershipStatus(
+          routineResponse.isPremium,
+          routineResponse.membershipStatus?['subscription_details']
+        );
+        
+        return routineResponse;
+        
+      } else {
+        print('❌ HTTP Error: ${response.statusCode} - ${response.body}');
+        throw Exception('Failed to load user routines: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('💥 Error fetching user routines: $e');
+      
+      final cachedMembership = await _getCachedMembershipStatus();
+      return RoutineResponse(
+        success: false,
+        routines: const [],
+        myRoutines: const [],
+        coachAssigned: const [],
+        templateRoutines: const [],
+        totalRoutines: 0,
+        isPremium: cachedMembership['is_premium'] ?? false,
+        error: e.toString(),
+      );
+    }
+  }
+
+  // Fetch ONLY coach-created routines (for Tab 2)
+  static Future<RoutineResponse> fetchCoachCreatedRoutines() async {
+    try {
+      int currentUserId = await getCurrentUserId();
+      print('🔍 Fetching COACH-ONLY routines for user ID: $currentUserId');
+      
+      final url = '$baseUrl?action=coach_routines&user_id=$currentUserId';
+      print('📡 API URL: $url');
+      
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {"Content-Type": "application/json"},
+      );
+      
+      print('📊 Response status: ${response.statusCode}');
+      print('📋 Response body: ${response.body}');
+      
+      if (response.statusCode == 200) {
+        final responseData = json.decode(response.body);
+        
+        if (responseData['error'] != null) {
+          print('❌ API Error: ${responseData['error']}');
+          return RoutineResponse(
+            success: false,
+            routines: [],
+            myRoutines: const [],
+            coachAssigned: const [],
+            templateRoutines: const [],
+            totalRoutines: 0,
+            isPremium: false,
+            error: responseData['error'],
+          );
+        }
+        
+        final routineResponse = RoutineResponse.fromJson(responseData);
+        
+        print('✅ Parsed COACH-ONLY response:');
+        print('   - Success: ${routineResponse.success}');
+        print('   - My Routines count: ${routineResponse.myRoutines.length}');
+        print('   - Coach Assigned count: ${routineResponse.coachAssigned.length}');
+        print('   - Template Routines count: ${routineResponse.templateRoutines.length}');
+        print('   - Is Premium: ${routineResponse.isPremium}');
+        
+        return routineResponse;
+        
+      } else {
+        print('❌ HTTP Error: ${response.statusCode} - ${response.body}');
+        throw Exception('Failed to load coach routines: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('💥 Error fetching coach routines: $e');
+      
+      return RoutineResponse(
+        success: false,
+        routines: const [],
+        myRoutines: const [],
+        coachAssigned: const [],
+        templateRoutines: const [],
+        totalRoutines: 0,
+        isPremium: true, // Coach routines don't have membership restrictions
+        error: e.toString(),
+      );
+    }
+  }
+
   // Enhanced create routine with database schema integration
   static Future<Map<String, dynamic>> createRoutine(RoutineModel routine) async {
     try {
@@ -292,6 +428,50 @@ class RoutineService {
       print('💥 Error getting membership status: $e');
       final cachedData = await _getCachedMembershipStatus();
       return cachedData['is_premium'] ?? false;
+    }
+  }
+
+  // Force refresh membership status (clear cache and fetch fresh)
+  static Future<bool> forceRefreshMembershipStatus() async {
+    try {
+      print('🔄 Force refreshing membership status...');
+      
+      // Clear cached membership status
+      await _clearCachedMembershipStatus();
+      
+      // Fetch fresh data
+      final response = await fetchUserRoutinesWithStatus();
+      
+      if (response.success) {
+        print('✅ Force refreshed membership status: ${response.isPremium}');
+        return response.isPremium;
+      } else {
+        print('❌ Failed to get fresh data after cache clear');
+        return false;
+      }
+    } catch (e) {
+      print('💥 Error force refreshing membership status: $e');
+      return false;
+    }
+  }
+
+  // Clear cached membership status
+  static Future<void> _clearCachedMembershipStatus() async {
+    try {
+      int currentUserId = await getCurrentUserId();
+      final prefs = await SharedPreferences.getInstance();
+      
+      String membershipKey = 'is_pro_member_$currentUserId';
+      String subscriptionKey = 'subscription_details_$currentUserId';
+      String lastCheckedKey = 'membership_last_checked_$currentUserId';
+      
+      await prefs.remove(membershipKey);
+      await prefs.remove(subscriptionKey);
+      await prefs.remove(lastCheckedKey);
+      
+      print('🗑️ Cleared cached membership status for user $currentUserId');
+    } catch (e) {
+      print('💥 Error clearing cached membership status: $e');
     }
   }
 

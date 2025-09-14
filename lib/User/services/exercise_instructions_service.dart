@@ -2,32 +2,87 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 class ExerciseInstructionService {
-  static const String baseUrl = 'http://localhost/cynergy/exercise_instructions.php';
+  static const String baseUrl = 'https://api.cnergy.site/exercise_instructions.php';
   
-  static Future<ExerciseInstructionData?> getExerciseDetails(int exerciseId) async {
+  // Test method to check if API is reachable
+  static Future<bool> testApiConnection() async {
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl/exercise_instructions.php?action=get_exercise_details&exercise_id=$exerciseId'),
+        Uri.parse('$baseUrl?action=get_exercise_details&exercise_id=1'),
         headers: {'Content-Type': 'application/json'},
-      );
+      ).timeout(Duration(seconds: 5));
+      
+      print('🔍 API Test - Status: ${response.statusCode}');
+      print('🔍 API Test - Body: ${response.body}');
+      
+      return response.statusCode == 200;
+    } catch (e) {
+      print('💥 API Test failed: $e');
+      return false;
+    }
+  }
+  
+  static Future<ExerciseInstructionData?> getExerciseDetails(dynamic exerciseId) async {
+    try {
+      // Convert to int if it's a string
+      final int id = exerciseId is String ? int.tryParse(exerciseId) ?? 0 : exerciseId;
+      print('🔍 Converting exercise ID: $exerciseId (${exerciseId.runtimeType}) -> $id (int)');
+      final url = '$baseUrl?action=get_exercise_details&exercise_id=$id';
+      print('🔍 Fetching exercise details from: $url');
+      
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {'Content-Type': 'application/json'},
+      ).timeout(Duration(seconds: 10));
+
+      print('📊 Response status: ${response.statusCode}');
+      print('📋 Response body: ${response.body}');
 
       if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        if (data['success'] == true) {
-          return ExerciseInstructionData.fromJson(data['exercise']);
+        try {
+          final data = json.decode(response.body);
+          print('🔍 Parsed JSON data: $data');
+          
+          if (data['success'] == true) {
+            print('✅ API returned success=true');
+            if (data['exercise'] != null) {
+              print('✅ Exercise data found: ${data['exercise']}');
+              try {
+                final exerciseData = ExerciseInstructionData.fromJson(data['exercise']);
+                print('✅ Successfully parsed exercise data');
+                return exerciseData;
+              } catch (e) {
+                print('💥 Error parsing exercise data: $e');
+                print('💥 Stack trace: ${StackTrace.current}');
+                return null;
+              }
+            } else {
+              print('❌ Exercise data is null in response');
+            }
+          } else {
+            print('❌ API returned success=false: ${data['error'] ?? 'Unknown error'}');
+          }
+        } catch (e) {
+          print('💥 Error parsing JSON response: $e');
+          print('📋 Raw response body: ${response.body}');
         }
+      } else {
+        print('❌ HTTP Error: ${response.statusCode}');
+        print('📋 Error response body: ${response.body}');
       }
       return null;
     } catch (e) {
-      print('Error fetching exercise details: $e');
+      print('💥 Error fetching exercise details: $e');
       return null;
     }
   }
 
-  static Future<List<InstructionStep>> getExerciseInstructions(int exerciseId) async {
+  static Future<List<InstructionStep>> getExerciseInstructions(dynamic exerciseId) async {
     try {
+      // Convert to int if it's a string
+      final int id = exerciseId is String ? int.tryParse(exerciseId) ?? 0 : exerciseId;
       final response = await http.get(
-        Uri.parse('$baseUrl/exercise_instructions.php?action=get_exercise_instructions&exercise_id=$exerciseId'),
+        Uri.parse('$baseUrl?action=get_exercise_instructions&exercise_id=$id'),
         headers: {'Content-Type': 'application/json'},
       );
 
@@ -46,10 +101,12 @@ class ExerciseInstructionService {
     }
   }
 
-  static Future<Map<String, List<TargetMuscle>>> getExerciseMuscles(int exerciseId) async {
+  static Future<Map<String, List<TargetMuscle>>> getExerciseMuscles(dynamic exerciseId) async {
     try {
+      // Convert to int if it's a string
+      final int id = exerciseId is String ? int.tryParse(exerciseId) ?? 0 : exerciseId;
       final response = await http.get(
-        Uri.parse('$baseUrl/exercise_instructions.php?action=get_exercise_muscles&exercise_id=$exerciseId'),
+        Uri.parse('$baseUrl?action=get_exercise_muscles&exercise_id=$id'),
         headers: {'Content-Type': 'application/json'},
       );
 
@@ -100,30 +157,63 @@ class ExerciseInstructionData {
   });
 
   factory ExerciseInstructionData.fromJson(Map<String, dynamic> json) {
-    return ExerciseInstructionData(
-      id: json['id'],
-      name: json['name'] ?? '',
-      description: json['description'] ?? '',
-      imageUrl: json['image_url'] ?? '',
-      videoUrl: json['video_url'] ?? '',
-      instructionSteps: (json['instruction_steps'] as List? ?? [])
-          .map((step) => InstructionStep.fromJson(step))
-          .toList(),
-      benefits: (json['benefits'] as List? ?? [])
-          .map((benefit) => ExerciseBenefit.fromJson(benefit))
-          .toList(),
-      targetMuscles: {
-        'primary': (json['target_muscles']['primary'] as List? ?? [])
-            .map((m) => TargetMuscle.fromJson(m))
+    try {
+      print('🔍 Parsing ExerciseInstructionData from JSON: $json');
+      print('🔍 JSON keys: ${json.keys.toList()}');
+      
+      // Handle ID conversion (might be String or int)
+      final dynamic idValue = json['id'];
+      final int id = idValue is String ? int.tryParse(idValue) ?? 0 : (idValue ?? 0);
+      print('🔍 Parsed ID: $id');
+      
+      print('🔍 Parsing name: ${json['name']}');
+      print('🔍 Parsing description: ${json['description']}');
+      print('🔍 Parsing image_url: ${json['image_url']}');
+      print('🔍 Parsing video_url: ${json['video_url']}');
+      print('🔍 Parsing instruction_steps: ${json['instruction_steps']}');
+      print('🔍 Parsing benefits: ${json['benefits']}');
+      print('🔍 Parsing target_muscles: ${json['target_muscles']}');
+      
+      return ExerciseInstructionData(
+        id: id,
+        name: json['name'] ?? '',
+        description: json['description'] ?? '',
+        imageUrl: json['image_url'] ?? '',
+        videoUrl: json['video_url'] ?? '',
+        instructionSteps: (json['instruction_steps'] as List? ?? [])
+            .map((step) => InstructionStep.fromJson(step))
             .toList(),
-        'secondary': (json['target_muscles']['secondary'] as List? ?? [])
-            .map((m) => TargetMuscle.fromJson(m))
+        benefits: (json['benefits'] as List? ?? [])
+            .map((benefit) => ExerciseBenefit.fromJson(benefit))
             .toList(),
-        'stabilizer': (json['target_muscles']['stabilizer'] as List? ?? [])
-            .map((m) => TargetMuscle.fromJson(m))
-            .toList(),
-      },
-    );
+        targetMuscles: {
+          'primary': (json['target_muscles']?['primary'] as List? ?? [])
+              .map((m) => TargetMuscle.fromJson(m))
+              .toList(),
+          'secondary': (json['target_muscles']?['secondary'] as List? ?? [])
+              .map((m) => TargetMuscle.fromJson(m))
+              .toList(),
+          'stabilizer': (json['target_muscles']?['stabilizer'] as List? ?? [])
+              .map((m) => TargetMuscle.fromJson(m))
+              .toList(),
+        },
+      );
+    } catch (e) {
+      print('💥 Error parsing ExerciseInstructionData: $e');
+      print('📋 JSON data: $json');
+      print('💥 Stack trace: ${StackTrace.current}');
+      // Return a default object instead of rethrowing
+      return ExerciseInstructionData(
+        id: 0,
+        name: 'Error Loading Exercise',
+        description: 'Failed to load exercise data',
+        imageUrl: '',
+        videoUrl: '',
+        instructionSteps: [],
+        benefits: [],
+        targetMuscles: {'primary': [], 'secondary': [], 'stabilizer': []},
+      );
+    }
   }
 }
 
@@ -137,10 +227,15 @@ class InstructionStep {
   });
 
   factory InstructionStep.fromJson(Map<String, dynamic> json) {
-    return InstructionStep(
-      step: json['step'],
-      instruction: json['instruction'] ?? '',
-    );
+    try {
+      return InstructionStep(
+        step: json['step'] ?? 0,
+        instruction: json['instruction'] ?? '',
+      );
+    } catch (e) {
+      print('💥 Error parsing InstructionStep: $e');
+      return InstructionStep(step: 0, instruction: 'Error loading step');
+    }
   }
 }
 
@@ -154,10 +249,15 @@ class ExerciseBenefit {
   });
 
   factory ExerciseBenefit.fromJson(Map<String, dynamic> json) {
-    return ExerciseBenefit(
-      title: json['title'] ?? '',
-      description: json['description'] ?? '',
-    );
+    try {
+      return ExerciseBenefit(
+        title: json['title'] ?? '',
+        description: json['description'] ?? '',
+      );
+    } catch (e) {
+      print('💥 Error parsing ExerciseBenefit: $e');
+      return ExerciseBenefit(title: 'Error', description: 'Failed to load benefit');
+    }
   }
 }
 
@@ -179,13 +279,27 @@ class TargetMuscle {
   });
 
   factory TargetMuscle.fromJson(Map<String, dynamic> json) {
-    return TargetMuscle(
-      id: json['id'],
-      name: json['name'] ?? '',
-      imageUrl: json['image_url'] ?? '',
-      parentId: json['parent_id'],
-      parentName: json['parent_name'],
-      role: json['role'] ?? 'primary',
-    );
+    try {
+      // Handle ID conversion (might be String or int)
+      final dynamic idValue = json['id'];
+      final int id = idValue is String ? int.tryParse(idValue) ?? 0 : (idValue ?? 0);
+      
+      return TargetMuscle(
+        id: id,
+        name: json['name'] ?? '',
+        imageUrl: json['image_url'] ?? '',
+        parentId: json['parent_id'],
+        parentName: json['parent_name'],
+        role: json['role'] ?? 'primary',
+      );
+    } catch (e) {
+      print('💥 Error parsing TargetMuscle: $e');
+      return TargetMuscle(
+        id: 0,
+        name: 'Error',
+        imageUrl: '',
+        role: 'primary',
+      );
+    }
   }
 }

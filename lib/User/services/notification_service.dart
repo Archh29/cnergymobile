@@ -3,7 +3,7 @@ import 'package:http/http.dart' as http;
 import 'auth_service.dart';
 
 class NotificationService {
-  static const String baseUrl = 'http://localhost/cynergy/';
+  static const String baseUrl = 'https://api.cnergy.site';
   static const String notificationEndpoint = '${baseUrl}notifications.php';
 
   // Get notifications with pagination

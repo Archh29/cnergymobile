@@ -1,0 +1,84 @@
+# Apache .htaccess file for Flutter Web App
+# This file configures Content Security Policy and other headers
+
+# Enable mod_headers if not already enabled
+<IfModule mod_headers.c>
+    # Content Security Policy for Flutter Web - More permissive for development
+    Header always set Content-Security-Policy "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://fonts.googleapis.com https://fonts.gstatic.com https://www.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: https: blob:; connect-src 'self' https://api.cnergy.site https://fonts.googleapis.com https://www.gstatic.com; media-src 'self' blob:; object-src 'none'; frame-src 'none'; worker-src 'self' blob:; child-src 'self' blob:;"
+    
+    # Additional security headers
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Frame-Options "DENY"
+    Header always set X-XSS-Protection "1; mode=block"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    
+    # CORS headers for API calls
+    Header always set Access-Control-Allow-Origin "*"
+    Header always set Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+    Header always set Access-Control-Allow-Headers "Content-Type, Authorization, X-Requested-With, Accept, Origin"
+    Header always set Access-Control-Max-Age "86400"
+    
+    # Handle preflight requests
+    RewriteEngine On
+    RewriteCond %{REQUEST_METHOD} OPTIONS
+    RewriteRule ^(.*)$ $1 [R=200,L]
+</IfModule>
+
+# Enable mod_rewrite if not already enabled
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    
+    # Handle Flutter web routing - redirect all requests to index.html
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^(.*)$ /index.html [QSA,L]
+    
+    # Force HTTPS (optional - uncomment if you want to force HTTPS)
+    # RewriteCond %{HTTPS} off
+    # RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+</IfModule>
+
+# Cache control for static assets
+<IfModule mod_expires.c>
+    ExpiresActive On
+    
+    # Cache static assets for 1 year
+    ExpiresByType text/css "access plus 1 year"
+    ExpiresByType application/javascript "access plus 1 year"
+    ExpiresByType image/png "access plus 1 year"
+    ExpiresByType image/jpg "access plus 1 year"
+    ExpiresByType image/jpeg "access plus 1 year"
+    ExpiresByType image/gif "access plus 1 year"
+    ExpiresByType image/svg+xml "access plus 1 year"
+    ExpiresByType font/woff "access plus 1 year"
+    ExpiresByType font/woff2 "access plus 1 year"
+    
+    # Cache HTML files for 1 hour
+    ExpiresByType text/html "access plus 1 hour"
+    
+    # Cache manifest files for 1 day
+    ExpiresByType application/manifest+json "access plus 1 day"
+</IfModule>
+
+# Compression for better performance
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE text/plain
+    AddOutputFilterByType DEFLATE text/html
+    AddOutputFilterByType DEFLATE text/xml
+    AddOutputFilterByType DEFLATE text/css
+    AddOutputFilterByType DEFLATE application/xml
+    AddOutputFilterByType DEFLATE application/xhtml+xml
+    AddOutputFilterByType DEFLATE application/rss+xml
+    AddOutputFilterByType DEFLATE application/javascript
+    AddOutputFilterByType DEFLATE application/x-javascript
+    AddOutputFilterByType DEFLATE application/json
+    AddOutputFilterByType DEFLATE application/manifest+json
+</IfModule>
+
+# MIME types for Flutter web assets
+<IfModule mod_mime.c>
+    AddType application/manifest+json .webmanifest
+    AddType application/json .json
+    AddType application/javascript .js
+    AddType text/css .css
+</IfModule>

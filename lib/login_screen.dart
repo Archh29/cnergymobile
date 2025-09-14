@@ -60,6 +60,43 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     ));
 
     _animationController.forward();
+    
+    // Load remembered email
+    _loadRememberedEmail();
+  }
+
+  // Load remembered email from SharedPreferences
+  Future<void> _loadRememberedEmail() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final rememberedEmail = prefs.getString('remembered_email');
+      final shouldRemember = prefs.getBool('remember_me') ?? false;
+      
+      if (shouldRemember && rememberedEmail != null) {
+        setState(() {
+          emailController.text = rememberedEmail;
+          rememberMe = true;
+        });
+      }
+    } catch (e) {
+      print('❌ Error loading remembered email: $e');
+    }
+  }
+
+  // Save remembered email to SharedPreferences
+  Future<void> _saveRememberedEmail(String email) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (rememberMe) {
+        await prefs.setString('remembered_email', email);
+        await prefs.setBool('remember_me', true);
+      } else {
+        await prefs.remove('remembered_email');
+        await prefs.setBool('remember_me', false);
+      }
+    } catch (e) {
+      print('❌ Error saving remembered email: $e');
+    }
   }
 
   String sanitizeInput(String input) {
@@ -131,6 +168,9 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       await prefs.setString('jwt_token', token);
       await prefs.setString('user_id', userId.toString());
       await prefs.setString('email', userData['email'] ?? '');
+      
+      // Save remembered email if remember me is checked
+      await _saveRememberedEmail(userData['email'] ?? '');
 
       if (mounted) {
         if (AuthService.isCoach()) {
@@ -292,7 +332,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       isLoading = true;
     });
 
-    var url = Uri.parse('http://localhost/cynergy/loginapp.php');
+    var url = Uri.parse('https://api.cnergy.site/loginapp.php');
     Map<String, dynamic> requestData = {
       "email": email,
       "password": password,
@@ -312,10 +352,11 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
 
       _updateCookies(response);
 
-      if (response.statusCode == 200) {
-        var data = jsonDecode(response.body);
-        print('📡 Login response: $data');
+      // Parse response body regardless of status code
+      var data = jsonDecode(response.body);
+      print('📡 Login response: $data');
 
+      if (response.statusCode == 200) {
         // Check for error first
         if (data.containsKey("error")) {
           String errorMessage = data["error"];
@@ -407,6 +448,20 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
             colorText: Colors.white,
           );
         }
+      } else if (response.statusCode == 401) {
+        // Handle 401 Unauthorized - show the error message from response
+        String errorMessage = "Invalid email or password";
+        if (data.containsKey("error")) {
+          errorMessage = data["error"];
+        }
+        print('❌ Login failed: $errorMessage');
+        Get.snackbar(
+          "Login Failed",
+          errorMessage,
+          snackPosition: SnackPosition.BOTTOM,
+          backgroundColor: Colors.red,
+          colorText: Colors.white,
+        );
       } else {
         print('❌ Server error: ${response.statusCode}');
         Get.snackbar(
@@ -646,7 +701,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                       ),
                       const SizedBox(width: 12),
                       Text(
-                        'Keep me logged in',
+                        'Remember me',
                         style: GoogleFonts.poppins(
                           color: Colors.grey[400],
                           fontSize: 14,

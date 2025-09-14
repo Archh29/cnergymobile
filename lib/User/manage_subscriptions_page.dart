@@ -292,50 +292,6 @@ class _ManageSubscriptionsPageState extends State<ManageSubscriptionsPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Quick active subscription banner with cancel action
-            FutureBuilder<List<UserSubscription>>(
-              future: AuthService.getCurrentUserId() != null
-                  ? SubscriptionService.getUserSubscriptions(AuthService.getCurrentUserId()!)
-                  : Future.value([]),
-              builder: (context, snap) {
-                if (!snap.hasData || snap.data!.isEmpty) return SizedBox.shrink();
-                final now = DateTime.now();
-                UserSubscription? active;
-                for (final s in snap.data!) {
-                  DateTime? end;
-                  try { end = DateTime.parse(s.endDate); } catch (_) { end = null; }
-                  final isActive = (s.getStatusDisplayName().toLowerCase() == 'approved' || s.getStatusDisplayName().toLowerCase() == 'active') && (end != null && !end.isBefore(DateTime(now.year, now.month, now.day)));
-                  if (isActive) { active = s; break; }
-                }
-                if (active == null) return SizedBox.shrink();
-                return Container(
-                  margin: EdgeInsets.only(bottom: 16),
-                  padding: EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Color(0xFF1A1A1A),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.green.withOpacity(0.3)),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.check_circle, color: Colors.green, size: 20),
-                      SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          'Active: ' + active!.planName,
-                          style: GoogleFonts.poppins(color: Colors.white),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      TextButton(
-                        onPressed: () => _confirmCancelActiveSubscription(context),
-                        child: Text('Cancel', style: GoogleFonts.poppins(color: Colors.red)),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
             // Header with user info
             Container(
               padding: EdgeInsets.all(24),
@@ -691,69 +647,6 @@ class _ManageSubscriptionsPageState extends State<ManageSubscriptionsPage> {
     );
   }
 
-  Future<void> _confirmCancelActiveSubscription(BuildContext context) async {
-    final currentUserId = AuthService.getCurrentUserId();
-    if (currentUserId == null) {
-      _showErrorSnackBar(context, 'User not logged in.');
-      return;
-    }
-    // Get latest subscriptions and pick most recent active to cancel
-    List<UserSubscription> subs = [];
-    try {
-      subs = await SubscriptionService.getUserSubscriptions(currentUserId);
-    } catch (_) {}
-    final now = DateTime.now();
-    UserSubscription? active;
-    for (final s in subs) {
-      DateTime? end;
-      try { end = DateTime.parse(s.endDate); } catch (_) { end = null; }
-      final isActive = (s.getStatusDisplayName().toLowerCase() == 'approved' || s.getStatusDisplayName().toLowerCase() == 'active') && (end != null && !end.isBefore(DateTime(now.year, now.month, now.day)));
-      if (isActive) { active = s; break; }
-    }
-    if (active == null) {
-      _showErrorSnackBar(context, 'No active subscription found.');
-      return;
-    }
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: Color(0xFF1A1A1A),
-        title: Text('Cancel Subscription', style: GoogleFonts.poppins(color: Colors.white)),
-        content: Text(
-          'Are you sure you want to cancel "${active!.planName}"? This will end your access immediately.',
-          style: GoogleFonts.poppins(color: Colors.grey[400]),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text('No', style: GoogleFonts.poppins(color: Colors.grey[400])),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: Text('Yes, Cancel', style: GoogleFonts.poppins(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed != true) return;
-
-    final ok = await SubscriptionService.cancelSubscription(subscriptionId: active.id);
-    if (ok) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Subscription cancelled', style: GoogleFonts.poppins()),
-          backgroundColor: Colors.red,
-        ),
-      );
-      _refreshData();
-      _loadMonthlySubscriptionStatus();
-    } else {
-      _showErrorSnackBar(context, 'Failed to cancel subscription.');
-    }
-  }
 
   void _showMembersOnlyDialog(BuildContext context, SubscriptionPlan plan) {
     showDialog(

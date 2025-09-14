@@ -3,7 +3,7 @@ import 'package:http/http.dart' as http;
 import 'auth_service.dart';
 
 class AchievementsService {
-  static const String baseUrl = 'http://localhost/cynergy/';
+  static const String baseUrl = 'https://api.cnergy.site/';
   static const String achievementsEndpoint = '${baseUrl}achievements.php';
 
   // Get all achievements for a user

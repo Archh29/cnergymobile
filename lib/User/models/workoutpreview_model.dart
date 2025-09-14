@@ -113,7 +113,7 @@ class WorkoutExerciseModel {
 
   // Helper methods
   String get formattedWeight {
-    if (weight == 0) return 'Bodyweight';
+    if (weight == 0) return '';
     return '${weight.toStringAsFixed(weight.truncateToDouble() == weight ? 0 : 1)} kg';
   }
 

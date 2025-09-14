@@ -1,320 +1,358 @@
 import 'dart:convert';
-import 'dart:io';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/subscription_model.dart';
+import 'auth_service.dart';
 
 class SubscriptionService {
-  static const String baseUrl = 'http://localhost/cynergy';
-  static const String getPlansUrl = '$baseUrl/get_subscriptionplan.php';
+  static const String baseUrl = 'https://api.cnergy.site/subscription_history.php';
+  static const String subscriptionBaseUrl = 'https://api.cnergy.site/subscription_plans.php';
 
-  static const Duration timeoutDuration = Duration(seconds: 30);
-
-  /// ✅ Fetch all subscription plans with enhanced business logic
-  static Future<SubscriptionPlansResponse> getSubscriptionPlans({int? userId}) async {
+  // Get subscription history for a user
+  static Future<Map<String, dynamic>?> getSubscriptionHistory(int userId) async {
     try {
-      final url = userId != null
-          ? Uri.parse('$getPlansUrl?action=getPlans&user_id=$userId')
-          : Uri.parse('$getPlansUrl?action=getPlans');
-
-      final response = await http.get(
-        url,
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-      ).timeout(timeoutDuration);
-
-      if (response.statusCode == 200) {
-        final Map<String, dynamic> jsonData = json.decode(response.body);
-
-        print("[v0] API Response: ${jsonData.toString()}");
-
-        if (jsonData.containsKey('success') && jsonData['success'] == true) {
-          final dynamic plansData = jsonData['plans'];
-          
-          print("[v0] Plans data type: ${plansData.runtimeType}");
-          print("[v0] Plans data content: ${plansData.toString()}");
-          
-          if (plansData == null) {
-            throw Exception('Plans data is null in API response');
-          }
-          
-          if (plansData is! List) {
-            throw Exception('Plans data is not a list. Received: ${plansData.runtimeType}');
-          }
-          
-          final List<dynamic> plansJson = plansData as List<dynamic>;
-          final plans = plansJson
-              .map((planJson) => SubscriptionPlan.fromJson(planJson))
-              .toList();
-          
-          return SubscriptionPlansResponse(
-            success: true,
-            plans: plans,
-            userStatus: UserSubscriptionStatus.fromJson(jsonData['user_status'] ?? {}),
-            message: jsonData['message'] ?? 'Plans retrieved successfully',
-          );
-        } else {
-          throw Exception('API returned unsuccessful response: ${jsonData['message'] ?? 'Unknown error'}');
-        }
-      } else {
-        throw Exception('Failed to load subscription plans. Status code: ${response.statusCode}');
-      }
-    } on SocketException {
-      throw Exception('Network error. Please check your internet connection.');
-    } on HttpException {
-      throw Exception('HTTP error occurred. Please try again.');
-    } on FormatException {
-      throw Exception('Invalid response format from server.');
-    } catch (e) {
-      print('Error fetching subscription plans: $e');
-      if (e.toString().contains('TimeoutException')) {
-        throw Exception('Request timeout. Please check your connection and try again.');
-      } else {
-        throw Exception('Failed to load subscription plans: ${e.toString()}');
-      }
-    }
-  }
-
-  static Future<List<SubscriptionPlan>> getSubscriptionPlansWithRetry({
-    int? userId,
-    int maxRetries = 3,
-  }) async {
-    int attempts = 0;
-
-    while (attempts < maxRetries) {
-      try {
-        final response = await getSubscriptionPlans(userId: userId);
-        return response.plans;
-      } catch (e) {
-        attempts++;
-        if (attempts >= maxRetries) {
-          rethrow;
-        }
-        await Future.delayed(Duration(seconds: attempts * 2));
-      }
-    }
-
-    throw Exception('Failed to fetch subscription plans after $maxRetries attempts');
-  }
-
-  static Future<SubscriptionRequestResponse> requestSubscriptionPlan({
-    required int userId,
-    required int planId,
-  }) async {
-    try {
-      // First check if the plan is available for this user
-      final plansResponse = await getSubscriptionPlans(userId: userId);
-      final targetPlan = plansResponse.plans.firstWhere(
-        (plan) => plan.id == planId,
-        orElse: () => throw Exception('Plan not found'),
-      );
+      print('Debug: Getting subscription history for user: $userId');
       
-      if (!targetPlan.isAvailable) {
-        return SubscriptionRequestResponse(
-          success: false,
-          message: targetPlan.unavailableReason ?? 'This plan is not available for you',
-        );
-      }
-
-      final response = await http.post(
-        Uri.parse('$getPlansUrl?action=requestPlan'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: json.encode({
-          'user_id': userId,
-          'plan_id': planId,
-        }),
-      ).timeout(timeoutDuration);
-
-      final Map<String, dynamic> responseData = json.decode(response.body);
-
-      if (response.statusCode == 200) {
-        return SubscriptionRequestResponse.fromJson(responseData);
-      } else {
-        return SubscriptionRequestResponse(
-          success: false,
-          message: responseData['message'] ?? 'Failed to request subscription plan',
-        );
-      }
-    } on SocketException {
-      return SubscriptionRequestResponse(
-        success: false,
-        message: 'Network error. Please check your internet connection.',
-      );
-    } on HttpException {
-      return SubscriptionRequestResponse(
-        success: false,
-        message: 'HTTP error occurred. Please try again.',
-      );
-    } on FormatException {
-      return SubscriptionRequestResponse(
-        success: false,
-        message: 'Invalid response format from server.',
-      );
-    } catch (e) {
-      print('Error requesting subscription plan: $e');
-      if (e.toString().contains('TimeoutException')) {
-        return SubscriptionRequestResponse(
-          success: false,
-          message: 'Request timeout. Please check your connection and try again.',
-        );
-      } else {
-        return SubscriptionRequestResponse(
-          success: false,
-          message: 'Failed to request subscription plan: ${e.toString()}',
-        );
-      }
-    }
-  }
-
-  static Future<bool> cancelSubscription({required int subscriptionId}) async {
-    try {
-      final response = await http.post(
-        Uri.parse('$getPlansUrl?action=cancelSubscription'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: json.encode({
-          'subscription_id': subscriptionId,
-        }),
-      ).timeout(timeoutDuration);
-
-      if (response.statusCode == 200) {
-        final Map<String, dynamic> data = json.decode(response.body);
-        return data['success'] == true;
-      }
-      return false;
-    } catch (e) {
-      return false;
-    }
-  }
-
-  static Future<SubscriptionEligibility> checkSubscriptionEligibility({
-    required int userId,
-    required int planId,
-  }) async {
-    try {
-      final plansResponse = await getSubscriptionPlans(userId: userId);
-      final targetPlan = plansResponse.plans.firstWhere(
-        (plan) => plan.id == planId,
-        orElse: () => throw Exception('Plan not found'),
-      );
-      
-      return SubscriptionEligibility(
-        isEligible: targetPlan.isAvailable,
-        reason: targetPlan.unavailableReason,
-        plan: targetPlan,
-        userStatus: plansResponse.userStatus,
-      );
-    } catch (e) {
-      return SubscriptionEligibility(
-        isEligible: false,
-        reason: 'Error checking eligibility: ${e.toString()}',
-        plan: null,
-        userStatus: null,
-      );
-    }
-  }
-
-  static Future<List<UserSubscription>> getUserSubscriptions(int userId) async {
-    try {
       final response = await http.get(
-        Uri.parse('$getPlansUrl?action=getUserSubscriptions&user_id=$userId'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-      ).timeout(timeoutDuration);
-
-      if (response.statusCode == 200) {
-        final Map<String, dynamic> jsonData = json.decode(response.body);
-
-        if (jsonData['success'] == true) {
-          final dynamic subscriptionsData = jsonData['subscriptions'];
-          
-          print("[v0] Subscriptions data type: ${subscriptionsData.runtimeType}");
-          print("[v0] Subscriptions data content: ${subscriptionsData.toString()}");
-          
-          if (subscriptionsData == null) {
-            throw Exception('Subscriptions data is null in API response');
-          }
-          
-          if (subscriptionsData is! List) {
-            throw Exception('Subscriptions data is not a list. Received: ${subscriptionsData.runtimeType}');
-          }
-          
-          final List<dynamic> subscriptionsJson = subscriptionsData as List<dynamic>;
-          return subscriptionsJson
-              .map((subJson) => UserSubscription.fromJson(subJson))
-              .toList();
-        } else {
-          throw Exception(jsonData['message'] ?? 'Failed to load user subscriptions');
-        }
-      } else {
-        throw Exception('Failed to load user subscriptions. Status code: ${response.statusCode}');
-      }
-    } on SocketException {
-      throw Exception('Network error. Please check your internet connection.');
-    } on HttpException {
-      throw Exception('HTTP error occurred. Please try again.');
-    } on FormatException {
-      throw Exception('Invalid response format from server.');
-    } catch (e) {
-      print('Error fetching user subscriptions: $e');
-      if (e.toString().contains('TimeoutException')) {
-        throw Exception('Request timeout. Please check your connection and try again.');
-      } else {
-        throw Exception('Failed to load user subscriptions: ${e.toString()}');
-      }
-    }
-  }
-
-  static Future<bool> checkApiConnectivity() async {
-    try {
-      final response = await http.get(
-        Uri.parse(getPlansUrl),
+        Uri.parse('$baseUrl?action=get-subscription-history&user_id=$userId'),
         headers: {'Content-Type': 'application/json'},
-      ).timeout(Duration(seconds: 10));
-
-      return response.statusCode == 200;
-    } catch (e) {
-      return false;
-    }
-  }
-
-  static Future<bool> hasNetworkConnection() async {
-    try {
-      final result = await InternetAddress.lookup('google.com');
-      return result.isNotEmpty && result[0].rawAddress.isNotEmpty;
-    } on SocketException catch (_) {
-      return false;
-    }
-  }
-
-  static Future<SubscriptionPlan?> getSubscriptionPlanById(int planId) async {
-    try {
-      final response = await getSubscriptionPlans();
-      return response.plans.firstWhere(
-        (plan) => plan.id == planId,
-        orElse: () => throw Exception('Plan not found'),
       );
+      
+      print('Debug: Subscription history response status: ${response.statusCode}');
+      print('Debug: Subscription history response body: ${response.body}');
+      
+      if (response.statusCode == 200) {
+        try {
+          final data = json.decode(response.body);
+          print('Debug: Successfully decoded subscription history JSON response');
+          if (data['success'] == true) {
+            return data;
+          } else {
+            print('Error: ${data['message']}');
+            return null;
+          }
+        } catch (e) {
+          print('Error decoding subscription history JSON response: $e');
+          print('Response body: ${response.body}');
+          return null;
+        }
+      }
+      return null;
     } catch (e) {
-      print('Error getting plan by ID: $e');
+      print('Error getting subscription history: $e');
       return null;
     }
   }
 
-  static Future<bool> hasPendingSubscriptionRequest(int userId) async {
+  // Get current subscription status
+  static Future<Map<String, dynamic>?> getCurrentSubscription(int userId) async {
     try {
-      final subscriptions = await getUserSubscriptions(userId);
-      return subscriptions.any((sub) => sub.statusName.toLowerCase() == 'pending_approval');
+      print('Debug: Getting current subscription for user: $userId');
+      
+      final response = await http.get(
+        Uri.parse('$baseUrl?action=get-current-subscription&user_id=$userId'),
+        headers: {'Content-Type': 'application/json'},
+      );
+      
+      print('Debug: Current subscription response status: ${response.statusCode}');
+      print('Debug: Current subscription response body: ${response.body}');
+      
+      if (response.statusCode == 200) {
+        try {
+          final data = json.decode(response.body);
+          print('Debug: Successfully decoded current subscription JSON response');
+          if (data['success'] == true) {
+            return data;
+          } else {
+            print('Error: ${data['message']}');
+            return null;
+          }
+        } catch (e) {
+          print('Error decoding current subscription JSON response: $e');
+          print('Response body: ${response.body}');
+          return null;
+        }
+      }
+      return null;
     } catch (e) {
-      print('Error checking pending requests: $e');
-      return false;
+      print('Error getting current subscription: $e');
+      return null;
+    }
+  }
+
+  // Get user ID from AuthService
+  static Future<int> getUserId() async {
+    try {
+      print('Debug: Getting user ID from AuthService...');
+      
+      // First try to get from AuthService
+      final authUserId = AuthService.getCurrentUserId();
+      if (authUserId != null) {
+        print('Debug: Retrieved user ID from AuthService: $authUserId');
+        return authUserId;
+      }
+      
+      print('Debug: No user ID found in AuthService, trying SharedPreferences as fallback...');
+      
+      // Fallback to SharedPreferences with multiple key attempts
+      final prefs = await SharedPreferences.getInstance();
+      
+      // Try different possible keys
+      final keys = ['current_user_id', 'user_id', 'userId'];
+      
+      for (final key in keys) {
+        // Try as integer first
+        final intValue = prefs.getInt(key);
+        if (intValue != null) {
+          print('Debug: Found user ID as integer with key "$key": $intValue');
+          return intValue;
+        }
+        
+        // Try as string
+        final stringValue = prefs.getString(key);
+        if (stringValue != null && stringValue.isNotEmpty) {
+          final cleanValue = stringValue.trim();
+          if (RegExp(r'^\d+$').hasMatch(cleanValue)) {
+            final parsedValue = int.parse(cleanValue);
+            print('Debug: Found user ID as string with key "$key": $parsedValue');
+            return parsedValue;
+          }
+        }
+      }
+      
+      print('Debug: No user ID found in any location, returning 0');
+      return 0;
+    } catch (e) {
+      print('Error getting user ID: $e');
+      print('Error type: ${e.runtimeType}');
+      return 0;
+    }
+  }
+
+  // Helper method to format date
+  static String formatDate(String? dateString) {
+    if (dateString == null || dateString.isEmpty) return 'N/A';
+    
+    try {
+      final date = DateTime.parse(dateString);
+      return '${date.day}/${date.month}/${date.year}';
+    } catch (e) {
+      return 'Invalid Date';
+    }
+  }
+
+  // Helper method to format date with time
+  static String formatDateTime(String? dateString) {
+    if (dateString == null || dateString.isEmpty) return 'N/A';
+    
+    try {
+      final date = DateTime.parse(dateString);
+      return '${date.day}/${date.month}/${date.year} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+    } catch (e) {
+      return 'Invalid Date';
+    }
+  }
+
+  // Helper method to get status color
+  static String getStatusColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'active':
+        return '#4CAF50'; // Green
+      case 'pending approval':
+        return '#FF9800'; // Orange
+      case 'expired':
+        return '#F44336'; // Red
+      case 'disconnected':
+        return '#9E9E9E'; // Grey
+      case 'rejected':
+        return '#F44336'; // Red
+      default:
+        return '#2196F3'; // Blue
+    }
+  }
+
+  // Helper method to get status icon
+  static String getStatusIcon(String status) {
+    switch (status.toLowerCase()) {
+      case 'active':
+        return '✓';
+      case 'pending approval':
+        return '⏳';
+      case 'expired':
+        return '⏰';
+      case 'disconnected':
+        return '❌';
+      case 'rejected':
+        return '❌';
+      default:
+        return '❓';
+    }
+  }
+
+  // Get subscription plans with retry logic
+  static Future<List<SubscriptionPlan>> getSubscriptionPlansWithRetry({int maxRetries = 3}) async {
+    for (int attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        print('Debug: Getting subscription plans (attempt $attempt)');
+        
+        final response = await http.get(
+          Uri.parse('$subscriptionBaseUrl?action=get-plans'),
+          headers: {'Content-Type': 'application/json'},
+        );
+        
+        print('Debug: Subscription plans response status: ${response.statusCode}');
+        print('Debug: Subscription plans response body: ${response.body}');
+        
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body);
+          if (data['success'] == true && data['plans'] != null) {
+            return (data['plans'] as List<dynamic>)
+                .map((planJson) => SubscriptionPlan.fromJson(planJson))
+                .toList();
+          }
+        }
+        
+        if (attempt < maxRetries) {
+          print('Debug: Retrying in 2 seconds...');
+          await Future.delayed(Duration(seconds: 2));
+        }
+      } catch (e) {
+        print('Error getting subscription plans (attempt $attempt): $e');
+        if (attempt < maxRetries) {
+          await Future.delayed(Duration(seconds: 2));
+        }
+      }
+    }
+    
+    print('Debug: Failed to get subscription plans after $maxRetries attempts');
+    return [];
+  }
+
+  // Get user subscriptions
+  static Future<List<UserSubscription>> getUserSubscriptions(int userId) async {
+    try {
+      print('Debug: Getting user subscriptions for user: $userId');
+      
+      final response = await http.get(
+        Uri.parse('$subscriptionBaseUrl?action=get-user-subscriptions&user_id=$userId'),
+        headers: {'Content-Type': 'application/json'},
+      );
+      
+      print('Debug: User subscriptions response status: ${response.statusCode}');
+      print('Debug: User subscriptions response body: ${response.body}');
+      
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data['success'] == true && data['subscriptions'] != null) {
+          return (data['subscriptions'] as List<dynamic>)
+              .map((subJson) => UserSubscription.fromJson(subJson))
+              .toList();
+        }
+      }
+      return [];
+    } catch (e) {
+      print('Error getting user subscriptions: $e');
+      return [];
+    }
+  }
+
+  // Request subscription plan
+  static Future<SubscriptionRequestResponse> requestSubscriptionPlan({
+    required int userId,
+    required int planId,
+    String? paymentMethod,
+  }) async {
+    try {
+      print('Debug: Requesting subscription plan for user: $userId, plan: $planId');
+      
+      final response = await http.post(
+        Uri.parse('$subscriptionBaseUrl?action=request-subscription'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'user_id': userId,
+          'plan_id': planId,
+          'payment_method': paymentMethod ?? 'cash',
+        }),
+      );
+      
+      print('Debug: Request subscription response status: ${response.statusCode}');
+      print('Debug: Request subscription response body: ${response.body}');
+      
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return SubscriptionRequestResponse.fromJson(data);
+      }
+      
+      return SubscriptionRequestResponse(
+        success: false,
+        message: 'Failed to request subscription'
+      );
+    } catch (e) {
+      print('Error requesting subscription plan: $e');
+      return SubscriptionRequestResponse(
+        success: false,
+        message: 'Error requesting subscription: $e'
+      );
+    }
+  }
+
+  // Get subscription plan details
+  static Future<SubscriptionPlan?> getSubscriptionPlan(int planId) async {
+    try {
+      print('Debug: Getting subscription plan details for plan: $planId');
+      
+      final response = await http.get(
+        Uri.parse('$subscriptionBaseUrl?action=get-plan&plan_id=$planId'),
+        headers: {'Content-Type': 'application/json'},
+      );
+      
+      print('Debug: Subscription plan response status: ${response.statusCode}');
+      print('Debug: Subscription plan response body: ${response.body}');
+      
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data['success'] == true && data['plan'] != null) {
+          return SubscriptionPlan.fromJson(data['plan']);
+        }
+      }
+      return null;
+    } catch (e) {
+      print('Error getting subscription plan: $e');
+      return null;
+    }
+  }
+
+  // Cancel subscription
+  static Future<SubscriptionRequestResponse> cancelSubscription(int subscriptionId) async {
+    try {
+      print('Debug: Cancelling subscription: $subscriptionId');
+      
+      final response = await http.post(
+        Uri.parse('$subscriptionBaseUrl?action=cancel-subscription'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'subscription_id': subscriptionId,
+        }),
+      );
+      
+      print('Debug: Cancel subscription response status: ${response.statusCode}');
+      print('Debug: Cancel subscription response body: ${response.body}');
+      
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return SubscriptionRequestResponse.fromJson(data);
+      }
+      
+      return SubscriptionRequestResponse(
+        success: false,
+        message: 'Failed to cancel subscription'
+      );
+    } catch (e) {
+      print('Error cancelling subscription: $e');
+      return SubscriptionRequestResponse(
+        success: false,
+        message: 'Error cancelling subscription: $e'
+      );
     }
   }
 }

@@ -39,17 +39,20 @@ class _CoachMuscleGroupSelectionPageState extends State<CoachMuscleGroupSelectio
     try {
       setState(() => isLoading = true);
 
-      final List<exercise_model.TargetMuscleModel> muscles = await RoutineService.fetchTargetMuscles();
+      print('🔍 Loading muscle groups for coach routine creation');
+      final List<exercise_model.TargetMuscleModel> muscles = await RoutineService.fetchMuscleGroups();
+      print('📋 Loaded ${muscles.length} muscle groups');
 
       setState(() {
-        muscleGroups = muscles.map((muscle) =>
-            MuscleGroupModel.fromTargetMuscle(TargetMuscleModel(
-              id: muscle.id,
-              name: muscle.name,
-              description: muscle.name,
-              imageUrl: muscle.imageUrl,
-            ))
-        ).toList();
+        muscleGroups = muscles.map((muscle) {
+          print('💪 Muscle Group: ${muscle.name} - ID: ${muscle.id}');
+          return MuscleGroupModel.fromTargetMuscle(TargetMuscleModel(
+            id: muscle.id,
+            name: muscle.name,
+            description: muscle.name,
+            imageUrl: muscle.imageUrl,
+          ));
+        }).toList();
         isLoading = false;
       });
     } catch (e) {

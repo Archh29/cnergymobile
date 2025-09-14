@@ -41,26 +41,43 @@ class RoutineModel {
     return RoutineModel(
       id: json['id']?.toString() ?? '',
       name: json['name'] ?? '',
-      exercises: json['exercises'] ?? 0,
+      exercises: _parseInt(json['exercises']) ?? 0,
       duration: json['duration'] ?? '',
       difficulty: json['difficulty'] ?? '',
-      createdBy: json['createdBy']?.toString() ?? '',
+      createdBy: json['createdById']?.toString() ?? json['created_by']?.toString() ?? '',
       exerciseList: json['exerciseList'] ?? '',
       color: json['color'] ?? '0xFF96CEB4',
       lastPerformed: json['lastPerformed'] ?? 'Never',
       tags: List<String>.from(json['tags'] ?? []),
       goal: json['goal'] ?? '',
-      completionRate: json['completionRate'] ?? 0,
-      totalSessions: json['totalSessions'] ?? 0,
+      completionRate: _parseInt(json['completionRate']) ?? 0,
+      totalSessions: _parseInt(json['totalSessions']) ?? 0,
       notes: json['notes'] ?? '',
       scheduledDays: List<String>.from(json['scheduledDays'] ?? []),
-      version: (json['version'] ?? 1.0).toDouble(),
+      version: _parseDouble(json['version']) ?? 1.0,
       detailedExercises: json['detailedExercises'] != null
           ? (json['detailedExercises'] as List)
               .map((e) => ExerciseModel.fromJson(e))
               .toList()
           : null,
     );
+  }
+
+  // Helper method to safely parse integers from JSON
+  static int? _parseInt(dynamic value) {
+    if (value == null) return null;
+    if (value is int) return value;
+    if (value is String) return int.tryParse(value);
+    return null;
+  }
+
+  // Helper method to safely parse doubles from JSON
+  static double? _parseDouble(dynamic value) {
+    if (value == null) return null;
+    if (value is double) return value;
+    if (value is int) return value.toDouble();
+    if (value is String) return double.tryParse(value);
+    return null;
   }
 
   Map<String, dynamic> toJson() {
@@ -103,6 +120,7 @@ class ExerciseModel {
   final String targetMuscle; // New field for muscle group
   final String description; // Exercise description
   final String imageUrl; // Exercise image
+  final String videoUrl; // Exercise video
 
   ExerciseModel({
     this.id,
@@ -121,6 +139,7 @@ class ExerciseModel {
     this.targetMuscle = '',
     this.description = '',
     this.imageUrl = '',
+    this.videoUrl = '',
   }) : sets = sets ?? [];
 
   factory ExerciseModel.fromJson(Map<String, dynamic> json) {
@@ -150,6 +169,7 @@ class ExerciseModel {
       targetMuscle: targetMuscle,
       description: json['description'] ?? '',
       imageUrl: json['image_url'] ?? json['imageUrl'] ?? '',
+      videoUrl: json['video_url'] ?? json['videoUrl'] ?? '',
     );
   }
 

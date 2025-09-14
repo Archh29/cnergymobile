@@ -25,11 +25,9 @@ class _MeasurementsPageState extends State<MeasurementsPage> {
   final TextEditingController chestController = TextEditingController();
   final TextEditingController waistController = TextEditingController();
   final TextEditingController hipsController = TextEditingController();
-  final TextEditingController armsController = TextEditingController();
-  final TextEditingController thighsController = TextEditingController();
     
   String selectedMeasurement = 'Weight';
-  List<String> measurements = ['Weight', 'BMI', 'Chest', 'Waist', 'Hips', 'Arms', 'Thighs'];
+  List<String> measurements = ['Weight', 'BMI', 'Chest', 'Waist', 'Hips'];
   double? userHeight;
 
   @override
@@ -44,8 +42,6 @@ class _MeasurementsPageState extends State<MeasurementsPage> {
     chestController.text = widget.currentMeasurements['chest']?.toString() ?? '';
     waistController.text = widget.currentMeasurements['waist']?.toString() ?? '';
     hipsController.text = widget.currentMeasurements['hips']?.toString() ?? '';
-    armsController.text = widget.currentMeasurements['arms']?.toString() ?? '';
-    thighsController.text = widget.currentMeasurements['thighs']?.toString() ?? '';
   }
 
   Future<void> _loadUserHeight() async {
@@ -221,18 +217,6 @@ class _MeasurementsPageState extends State<MeasurementsPage> {
             .toList()
           ..sort((a, b) => a.dateRecorded.compareTo(b.dateRecorded));
         break;
-      case 'Arms':
-        sortedData = widget.progressData
-            .where((p) => p.armsCm != null && p.armsCm! > 0)
-            .toList()
-          ..sort((a, b) => a.dateRecorded.compareTo(b.dateRecorded));
-        break;
-      case 'Thighs':
-        sortedData = widget.progressData
-            .where((p) => p.thighsCm != null && p.thighsCm! > 0)
-            .toList()
-          ..sort((a, b) => a.dateRecorded.compareTo(b.dateRecorded));
-        break;
       default:
         sortedData = [];
     }
@@ -258,12 +242,6 @@ class _MeasurementsPageState extends State<MeasurementsPage> {
           break;
         case 'Hips':
           value = entry.value.hipsCm!;
-          break;
-        case 'Arms':
-          value = entry.value.armsCm!;
-          break;
-        case 'Thighs':
-          value = entry.value.thighsCm!;
           break;
         default:
           value = 0.0;
@@ -319,10 +297,6 @@ class _MeasurementsPageState extends State<MeasurementsPage> {
           _buildMeasurementInput('Waist (cm)', waistController, Icons.straighten_rounded),
           SizedBox(height: 16),
           _buildMeasurementInput('Hips (cm)', hipsController, Icons.straighten_rounded),
-          SizedBox(height: 16),
-          _buildMeasurementInput('Arms (cm)', armsController, Icons.straighten_rounded),
-          SizedBox(height: 16),
-          _buildMeasurementInput('Thighs (cm)', thighsController, Icons.straighten_rounded),
           SizedBox(height: 24),
           Container(
             width: double.infinity,
@@ -458,26 +432,6 @@ class _MeasurementsPageState extends State<MeasurementsPage> {
               ),
               SizedBox(width: 16),
               Expanded(
-                child: _buildStatItem(
-                  'Arms', 
-                  latestProgress?.armsCm?.toStringAsFixed(1) ?? '--', 
-                  Color(0xFF45B7D1)
-                ),
-              ),
-            ],
-          ),
-          SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: _buildStatItem(
-                  'Thighs', 
-                  latestProgress?.thighsCm?.toStringAsFixed(1) ?? '--', 
-                  Color(0xFF9B59B6)
-                ),
-              ),
-              SizedBox(width: 16),
-              Expanded(
                 child: Container(), // Empty space for alignment
               ),
             ],
@@ -572,8 +526,6 @@ class _MeasurementsPageState extends State<MeasurementsPage> {
         chestCm: double.tryParse(chestController.text),
         waistCm: double.tryParse(waistController.text),
         hipsCm: double.tryParse(hipsController.text),
-        armsCm: double.tryParse(armsController.text),
-        thighsCm: double.tryParse(thighsController.text),
         dateRecorded: DateTime.now(),
       );
       
@@ -596,12 +548,6 @@ class _MeasurementsPageState extends State<MeasurementsPage> {
           }
           if (progressModel.hipsCm != null) {
             widget.currentMeasurements['hips'] = progressModel.hipsCm!;
-          }
-          if (progressModel.armsCm != null) {
-            widget.currentMeasurements['arms'] = progressModel.armsCm!;
-          }
-          if (progressModel.thighsCm != null) {
-            widget.currentMeasurements['thighs'] = progressModel.thighsCm!;
           }
         });
         

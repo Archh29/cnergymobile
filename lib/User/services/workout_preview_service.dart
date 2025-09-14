@@ -4,7 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/workoutpreview_model.dart';
 
 class WorkoutPreviewService {
-  static const String baseUrl = "http://localhost/cynergy/workout_preview.php";
+  static const String baseUrl = "https://api.cnergy.site/workout_preview.php";
   
   // Get current user ID from SharedPreferences
   static Future<int> getCurrentUserId() async {

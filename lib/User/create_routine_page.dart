@@ -24,23 +24,13 @@ class _CreateRoutinePageState extends State<CreateRoutinePage> {
   final TextEditingController nameController = TextEditingController();
   final TextEditingController notesController = TextEditingController();
     
-  String selectedGoal = "General Fitness";
   String selectedDifficulty = "Beginner";
-  List<String> selectedTags = [];
   Color selectedColor = Color(0xFF96CEB4);
   List<ExerciseModel> exercises = [];
   bool isLoading = false;
 
-  final List<String> availableGoals = [
-    "General Fitness", "Muscle Building", "Strength", "Fat Loss", "Endurance"
-  ];
-    
   final List<String> availableDifficulties = [
     "Beginner", "Intermediate", "Advanced"
-  ];
-    
-  final List<String> availableTags = [
-    "Strength", "Cardio", "HIIT", "Upper Body", "Lower Body", "Full Body", "Core"
   ];
     
   final List<Color> availableColors = [
@@ -126,14 +116,6 @@ class _CreateRoutinePageState extends State<CreateRoutinePage> {
             'Routine Name *',
             nameController,
             'Enter routine name',
-          ),
-          SizedBox(height: 16),
-                    
-          _buildDropdownField(
-            'Goal *',
-            selectedGoal,
-            availableGoals,
-            (value) => setState(() => selectedGoal = value!),
           ),
           SizedBox(height: 16),
                     
@@ -324,57 +306,6 @@ class _CreateRoutinePageState extends State<CreateRoutinePage> {
               fontWeight: FontWeight.bold,
               color: Colors.white,
             ),
-          ),
-          SizedBox(height: 16),
-                    
-          // Tags Selection
-          Text(
-            'Tags',
-            style: GoogleFonts.poppins(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: Colors.white,
-            ),
-          ),
-          SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: availableTags.map((tag) {
-              final isSelected = selectedTags.contains(tag);
-              return GestureDetector(
-                onTap: () {
-                  setState(() {
-                    if (isSelected) {
-                      selectedTags.remove(tag);
-                    } else {
-                      selectedTags.add(tag);
-                    }
-                  });
-                },
-                child: Container(
-                  padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: isSelected
-                        ? selectedColor.withOpacity(0.2)
-                        : Color(0xFF2A2A2A),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: isSelected ? selectedColor : Colors.transparent,
-                      width: 1,
-                    ),
-                  ),
-                  child: Text(
-                    tag,
-                    style: GoogleFonts.poppins(
-                      fontSize: 12,
-                      color: isSelected ? selectedColor : Colors.grey[400],
-                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-                    ),
-                  ),
-                ),
-              );
-            }).toList(),
           ),
           SizedBox(height: 16),
                     
@@ -621,8 +552,8 @@ class _CreateRoutinePageState extends State<CreateRoutinePage> {
         exerciseList: exercises.map((e) => e.name).join(', '),
         color: selectedColor.value.toString(),
         lastPerformed: 'Never',
-        tags: selectedTags,
-        goal: selectedGoal,
+        tags: [], // Tags removed
+        goal: '', // Goal removed
         completionRate: 0,
         totalSessions: 0,
         notes: notesController.text.trim(),

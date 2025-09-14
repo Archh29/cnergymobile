@@ -47,20 +47,23 @@ class _CoachExerciseSelectionPageState extends State<CoachExerciseSelectionPage>
     try {
       setState(() => isLoading = true);
 
-      final exercises = await RoutineService.fetchExercisesByMuscle(widget.muscleGroup.id);
+      print('🔍 Loading exercises for muscle group: ${widget.muscleGroup.name} (ID: ${widget.muscleGroup.id})');
+      final exercises = await RoutineService.getExercisesByMuscleGroup(widget.muscleGroup.id);
+      print('📋 Loaded ${exercises.length} exercises');
 
       setState(() {
-        availableExercises = exercises.map((exercise) => 
-          ExerciseSelectionModel(
+        availableExercises = exercises.map((exercise) {
+          print('🏋️ Exercise: ${exercise.name} - ID: ${exercise.id}');
+          return ExerciseSelectionModel(
             id: exercise.id ?? 0,
             name: exercise.name,
             description: exercise.description ?? '',
             imageUrl: exercise.imageUrl ?? '',
-            targetMuscle: exercise.targetMuscle ?? widget.muscleGroup.name,
+            targetMuscle: widget.muscleGroup.name, // Use muscle group name instead
             category: exercise.category ?? 'General',
             difficulty: exercise.difficulty ?? 'Intermediate',
-          )
-        ).toList();
+          );
+        }).toList();
         isLoading = false;
       });
     } catch (e) {

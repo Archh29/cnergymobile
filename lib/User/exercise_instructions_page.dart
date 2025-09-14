@@ -48,15 +48,34 @@ class _ExerciseInstructionsPageState extends State<ExerciseInstructionsPage> {
         error = null;
       });
       
-      final data = await ExerciseInstructionService.getExerciseDetails(widget.exercise.id ?? 0);
+      print('🔍 Loading exercise data for ID: ${widget.exercise.id} (type: ${widget.exercise.id.runtimeType})');
       
-      setState(() {
-        exerciseData = data;
-        isLoading = false;
-      });
+      // Test API connection first
+      print('🔍 Testing API connection...');
+      final isApiReachable = await ExerciseInstructionService.testApiConnection();
+      print('🔍 API reachable: $isApiReachable');
       
-      _initializeVideoPlayer();
+      // Ensure we pass the ID as an int, handling both null and string cases
+      final dynamic exerciseId = widget.exercise.id ?? 0;
+      final data = await ExerciseInstructionService.getExerciseDetails(exerciseId);
+      
+      if (data != null) {
+        print('✅ Exercise data loaded successfully');
+        setState(() {
+          exerciseData = data;
+          isLoading = false;
+        });
+        
+        _initializeVideoPlayer();
+      } else {
+        print('❌ Failed to load exercise data - data is null');
+        setState(() {
+          error = 'Failed to load exercise data: No data returned from server';
+          isLoading = false;
+        });
+      }
     } catch (e) {
+      print('💥 Error loading exercise data: $e');
       setState(() {
         error = 'Failed to load exercise data: $e';
         isLoading = false;

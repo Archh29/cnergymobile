@@ -9,6 +9,9 @@ class CoachModel {
   final String imageUrl;
   final bool isAvailable;
   final double hourlyRate;
+  final double? monthlyRate;
+  final double? sessionPackageRate;
+  final int? sessionPackageCount;
   final List<String> certifications;
 
   CoachModel({
@@ -22,6 +25,9 @@ class CoachModel {
     required this.imageUrl,
     required this.isAvailable,
     required this.hourlyRate,
+    this.monthlyRate,
+    this.sessionPackageRate,
+    this.sessionPackageCount,
     required this.certifications,
   });
 
@@ -37,6 +43,9 @@ class CoachModel {
       imageUrl: json['image_url'] ?? '',
       isAvailable: json['is_available'] ?? true,
       hourlyRate: (json['hourly_rate'] ?? 0.0).toDouble(),
+      monthlyRate: json['monthly_rate'] != null ? (json['monthly_rate'] as num).toDouble() : null,
+      sessionPackageRate: json['session_package_rate'] != null ? (json['session_package_rate'] as num).toDouble() : null,
+      sessionPackageCount: json['session_package_count'],
       certifications: List<String>.from(json['certifications'] ?? []),
     );
   }
@@ -53,6 +62,9 @@ class CoachModel {
       'image_url': imageUrl,
       'is_available': isAvailable,
       'hourly_rate': hourlyRate,
+      'monthly_rate': monthlyRate,
+      'session_package_rate': sessionPackageRate,
+      'session_package_count': sessionPackageCount,
       'certifications': certifications,
     };
   }

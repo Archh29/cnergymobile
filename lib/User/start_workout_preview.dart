@@ -3,6 +3,8 @@ import 'package:google_fonts/google_fonts.dart';
 import './models/routine.models.dart';
 import './models/workoutpreview_model.dart';
 import './services/workout_preview_service.dart';
+import './services/session_tracking_service.dart';
+import './services/auth_service.dart';
 import './widgets/exercise_detail_modal.dart';
 import 'workout_session_page.dart';
 import 'exercise_instructions_page.dart';
@@ -545,7 +547,140 @@ class _StartWorkoutPreviewPageState extends State<StartWorkoutPreviewPage> {
     }
   }
 
-  void _startWorkout() {
-    _navigateToWorkoutSession();
+  void _startWorkout() async {
+    // Check if this routine was created by a coach
+    if (widget.routine.createdBy.isNotEmpty && 
+        widget.routine.createdBy != 'null' && 
+        widget.routine.createdBy != '0') {
+      await _checkSessionAndStartWorkout();
+    } else {
+      // User-created routine, no session check needed
+      _navigateToWorkoutSession();
+    }
+  }
+
+  Future<void> _checkSessionAndStartWorkout() async {
+    try {
+      final currentUserId = AuthService.getCurrentUserId();
+      if (currentUserId == null) {
+        _showErrorDialog('Please log in to start workout');
+        return;
+      }
+
+      // Debug: Print the createdBy value
+      print('🔍 DEBUG - Routine createdBy value: "${widget.routine.createdBy}"');
+      print('🔍 DEBUG - Routine createdBy type: ${widget.routine.createdBy.runtimeType}');
+      print('🔍 DEBUG - Routine createdBy isEmpty: ${widget.routine.createdBy.isEmpty}');
+      print('🔍 DEBUG - Routine createdBy == "null": ${widget.routine.createdBy == "null"}');
+
+      final coachId = int.tryParse(widget.routine.createdBy);
+      print('🔍 DEBUG - Parsed coachId: $coachId');
+      
+      if (coachId == null) {
+        _showErrorDialog('Invalid coach information. CreatedBy: "${widget.routine.createdBy}"');
+        return;
+      }
+
+      // Show loading dialog
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          content: Row(
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(width: 16),
+              Text('Checking session availability...'),
+            ],
+          ),
+        ),
+      );
+
+      // Check session availability
+      final sessionStatus = await SessionTrackingService.checkSessionAvailability(
+        userId: currentUserId,
+        coachId: coachId,
+      );
+
+      // Close loading dialog
+      Navigator.of(context).pop();
+
+      if (!sessionStatus.canStartWorkout) {
+        _showSessionErrorDialog(sessionStatus.reason);
+        return;
+      }
+
+      // Deduct session if needed
+      final deductionResult = await SessionTrackingService.deductSession(
+        userId: currentUserId,
+        coachId: coachId,
+      );
+
+      if (!deductionResult.success) {
+        _showErrorDialog(deductionResult.message);
+        return;
+      }
+
+      // Show success message if session was deducted
+      if (!deductionResult.alreadyDeductedToday) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Session deducted. ${deductionResult.remainingSessions} sessions remaining.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+
+      // Start the workout
+      _navigateToWorkoutSession();
+
+    } catch (e) {
+      // Close loading dialog if still open
+      if (Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
+      _showErrorDialog('Error checking session: $e');
+    }
+  }
+
+  void _showSessionErrorDialog(String message) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Cannot Start Workout'),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text('OK'),
+          ),
+          if (message.contains('No sessions remaining') || message.contains('expired'))
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                // Navigate to subscription page
+                Navigator.pushNamed(context, '/manage-subscriptions');
+              },
+              child: Text('Manage Subscription'),
+            ),
+        ],
+      ),
+    );
+  }
+
+  void _showErrorDialog(String message) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Error'),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text('OK'),
+          ),
+        ],
+      ),
+    );
   }
 }

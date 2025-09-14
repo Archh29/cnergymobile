@@ -4,7 +4,7 @@ import '../models/muscle_analytics_model.dart';
 import 'auth_service.dart';
 
 class MuscleAnalyticsService {
-  static const String baseUrl = 'http://localhost/cynergy';
+  static const String baseUrl = 'https://api.cnergy.site';
   
   // Get weekly muscle group statistics
   static Future<MuscleAnalyticsData> getWeeklyStats() async {

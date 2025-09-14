@@ -6,7 +6,7 @@ import '../models/member_model.dart';
 import './coach_service.dart';
 
 class ProgramTemplateService {
-  static const String baseUrl = 'http://localhost/cynergy/coach_api.php';
+  static const String baseUrl = 'https://api.cnergy.site/coach_api.php';
 
   // Get coach's program templates
   static Future<List<ProgramTemplateModel>> getCoachProgramTemplates() async {

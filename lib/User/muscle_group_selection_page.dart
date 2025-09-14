@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'models/exercise_selection_model.dart';
 import 'services/routine_services.dart';
 import 'services/exercises_selection_service.dart'; // Corrected import
+import 'services/enhanced_muscle_group_service.dart'; // New service for primary parts logic
 import 'package:gym/User/exercise_selection_page.dart'; // Assuming this is the correct path to your ExerciseSelectionPage
 
 class MuscleGroupSelectionPage extends StatefulWidget {
@@ -21,6 +22,7 @@ class MuscleGroupSelectionPage extends StatefulWidget {
 
 class _MuscleGroupSelectionPageState extends State<MuscleGroupSelectionPage> {
   List<MuscleGroupModel> muscleGroups = [];
+  List<MuscleGroupWithParts> muscleGroupsWithParts = []; // New list for primary parts logic
   bool isLoading = true;
   List<SelectedExerciseWithConfig> selectedExercises = []; // This holds the GLOBAL list of selected exercises
 
@@ -39,12 +41,15 @@ class _MuscleGroupSelectionPageState extends State<MuscleGroupSelectionPage> {
     try {
       setState(() => isLoading = true);
 
+      // Load both the old format and new format
       final muscles = await RoutineService.fetchTargetMuscles();
+      final musclesWithParts = await EnhancedMuscleGroupService.fetchMuscleGroupsWithParts();
 
       setState(() {
         muscleGroups = muscles.map((muscle) =>
             MuscleGroupModel.fromTargetMuscle(muscle)
         ).toList();
+        muscleGroupsWithParts = musclesWithParts;
         isLoading = false;
       });
     } catch (e) {
@@ -62,65 +67,59 @@ class _MuscleGroupSelectionPageState extends State<MuscleGroupSelectionPage> {
     );
   }
 
-  // Helper to calculate muscle activation percentage for a specific muscle group
-  double _getMuscleActivationPercentage(String muscleName) {
-    if (selectedExercises.isEmpty) return 0.0;
+  // Helper to calculate muscle group completion percentage based on primary parts
+  double _getMuscleGroupCompletionPercentage(String muscleName) {
+    if (selectedExercises.isEmpty || muscleGroupsWithParts.isEmpty) return 0.0;
     
-    double totalActivation = 0.0;
-    double muscleActivation = 0.0;
+    return EnhancedMuscleGroupService.calculateMuscleGroupCompletion(
+      muscleName, 
+      selectedExercises, 
+      muscleGroupsWithParts
+    );
+  }
+
+  // Helper to get muscle parts status (hit/missed) for a muscle group
+  String _getMusclePartsStatus(String muscleName) {
+    if (selectedExercises.isEmpty || muscleGroupsWithParts.isEmpty) return '';
     
+    final muscleGroup = muscleGroupsWithParts.firstWhere(
+      (group) => group.name.toLowerCase() == muscleName.toLowerCase(),
+      orElse: () => MuscleGroupWithParts(id: 0, name: '', imageUrl: '', primaryParts: []),
+    );
+    
+    if (muscleGroup.primaryParts.isEmpty) return '';
+    
+    // Get all primary muscle part IDs that are being targeted
+    final targetedPartIds = <int>{};
     for (var exercise in selectedExercises) {
-      final exerciseMuscle = exercise.exercise.targetMuscle.toLowerCase().trim();
-      
-      // Parse muscle roles and calculate activation points
-      final muscleParts = exerciseMuscle.split(',');
-      
-      for (var part in muscleParts) {
-        final cleanPart = part.trim();
-        if (cleanPart.isEmpty) continue;
-        
-        // Extract muscle name and role
-        final muscleMatch = RegExp(r'^([^(]+)\s*\(([^)]+)\)').firstMatch(cleanPart);
-        if (muscleMatch != null) {
-          final muscle = muscleMatch.group(1)!.trim().toLowerCase();
-          final role = muscleMatch.group(2)!.trim().toLowerCase();
-          
-          // Calculate activation points based on role
-          double activationPoints = 0.0;
-          switch (role) {
-            case 'primary':
-              activationPoints = 3.0;
-              break;
-            case 'secondary':
-              activationPoints = 2.0;
-              break;
-            case 'stabilizer':
-              activationPoints = 1.0;
-              break;
-            default:
-              activationPoints = 1.0;
-          }
-          
-          totalActivation += activationPoints;
-          
-          // Check if this muscle matches our target muscle
-          if (muscle == muscleName.toLowerCase().trim()) {
-            muscleActivation += activationPoints;
-          }
+      // Parse target muscle string to find primary parts
+      final targetMuscle = exercise.exercise.targetMuscle.toLowerCase();
+      for (var part in muscleGroup.primaryParts) {
+        if (targetMuscle.contains(part.name.toLowerCase()) && 
+            targetMuscle.contains('(primary)')) {
+          targetedPartIds.add(part.id);
         }
       }
     }
     
-    if (totalActivation == 0) return 0.0;
+    final hitParts = muscleGroup.primaryParts.where((part) => targetedPartIds.contains(part.id)).toList();
+    final missedParts = muscleGroup.primaryParts.where((part) => !targetedPartIds.contains(part.id)).toList();
     
-    final percentage = (muscleActivation / totalActivation) * 100;
-    print('Muscle "$muscleName": $muscleActivation/$totalActivation = ${percentage.toStringAsFixed(1)}%');
-    return percentage;
+    String status = '';
+    if (hitParts.isNotEmpty) {
+      status += 'Hit: ${hitParts.map((p) => p.name).join(', ')}';
+    }
+    if (missedParts.isNotEmpty) {
+      if (status.isNotEmpty) status += '\n';
+      status += 'Missed: ${missedParts.map((p) => p.name).join(', ')}';
+    }
+    
+    return status;
   }
 
   // Helper to get the percentage for a specific muscle group from the GLOBAL list
   String _getMuscleGroupPercentage(String muscleName) {
-    final double percentage = _getMuscleActivationPercentage(muscleName);
+    final double percentage = _getMuscleGroupCompletionPercentage(muscleName);
     return '${percentage.toStringAsFixed(1)}%';
   }
 
@@ -135,14 +134,14 @@ class _MuscleGroupSelectionPageState extends State<MuscleGroupSelectionPage> {
             children: [
               Icon(Icons.info_outline, color: Colors.blue, size: 24),
               SizedBox(width: 8),
-              Text(
-                'How Percentages Work',
-                style: GoogleFonts.poppins(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
+                Text(
+                  'How Muscle Group Completion Works',
+                  style: GoogleFonts.poppins(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
-              ),
             ],
           ),
           content: SingleChildScrollView(
@@ -151,16 +150,21 @@ class _MuscleGroupSelectionPageState extends State<MuscleGroupSelectionPage> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  'Muscle activation is calculated based on exercise roles:',
+                  'Each muscle group is made up of several primary muscle parts. The percentage shows how many of these primary parts are being targeted by your selected exercises.',
                   style: GoogleFonts.poppins(
                     color: Colors.white70,
                     fontSize: 14,
                   ),
                 ),
-                SizedBox(height: 16),
-                _buildInfoRow('Primary', '3 points', Colors.red),
-                _buildInfoRow('Secondary', '2 points', Colors.orange),
-                _buildInfoRow('Stabilizer', '1 point', Colors.yellow),
+                SizedBox(height: 12),
+                Text(
+                  'Only exercises that target muscles as "primary" are counted. Secondary and stabilizer muscles are ignored.',
+                  style: GoogleFonts.poppins(
+                    color: Colors.orange,
+                    fontSize: 12,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
                 SizedBox(height: 16),
                 Container(
                   padding: EdgeInsets.all(12),
@@ -173,7 +177,7 @@ class _MuscleGroupSelectionPageState extends State<MuscleGroupSelectionPage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Example: Barbell Curl',
+                        'Example: Arms Muscle Group',
                         style: GoogleFonts.poppins(
                           color: Colors.blue,
                           fontSize: 14,
@@ -182,7 +186,7 @@ class _MuscleGroupSelectionPageState extends State<MuscleGroupSelectionPage> {
                       ),
                       SizedBox(height: 8),
                       Text(
-                        '• Back (primary) = 3 points\n• Forearm (primary) = 3 points\n• Brachialis (secondary) = 2 points\n• Brachioradialis (stabilizer) = 1 point',
+                        'Primary Parts: Biceps, Triceps, Forearms (3 total)\n\nSelected Exercises:\n• Barbell Curl (hits Biceps)\n• Tricep Extension (hits Triceps)',
                         style: GoogleFonts.poppins(
                           color: Colors.white70,
                           fontSize: 12,
@@ -190,7 +194,7 @@ class _MuscleGroupSelectionPageState extends State<MuscleGroupSelectionPage> {
                       ),
                       SizedBox(height: 8),
                       Text(
-                        'Total: 9 points\nBack: 3/9 = 33.3%',
+                        'Result: 2/3 = 66.7% completion',
                         style: GoogleFonts.poppins(
                           color: Colors.green,
                           fontSize: 12,
@@ -202,7 +206,7 @@ class _MuscleGroupSelectionPageState extends State<MuscleGroupSelectionPage> {
                 ),
                 SizedBox(height: 16),
                 Text(
-                  'The percentage shows how much each muscle group is being worked relative to your total workout.',
+                  'The percentage shows how many primary muscle parts are being targeted within each muscle group.',
                   style: GoogleFonts.poppins(
                     color: Colors.white70,
                     fontSize: 12,
@@ -336,23 +340,31 @@ class _MuscleGroupSelectionPageState extends State<MuscleGroupSelectionPage> {
             ),
           ),
           Expanded(
-            child: GridView.builder(
-              key: ValueKey(selectedExercises.length), // Force rebuild when exercises change
-              padding: EdgeInsets.symmetric(horizontal: 20),
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 3,
-                childAspectRatio: 0.75,
-                crossAxisSpacing: 16,
-                mainAxisSpacing: 16,
-              ),
-              itemCount: muscleGroups.length,
-              itemBuilder: (context, index) {
-                final muscle = muscleGroups[index];
-                print('Building card for muscle: ${muscle.name}');
-                final activationPercentage = _getMuscleActivationPercentage(muscle.name);
-                final percentage = _getMuscleGroupPercentage(muscle.name);
-                return _buildMuscleGroupCard(muscle, activationPercentage, percentage);
-              },
+            child: Column(
+              children: [
+                Expanded(
+                  child: GridView.builder(
+                    key: ValueKey(selectedExercises.length), // Force rebuild when exercises change
+                    padding: EdgeInsets.symmetric(horizontal: 20),
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 3,
+                      childAspectRatio: 0.75,
+                      crossAxisSpacing: 16,
+                      mainAxisSpacing: 16,
+                    ),
+                    itemCount: muscleGroups.length,
+                    itemBuilder: (context, index) {
+                      final muscle = muscleGroups[index];
+                      print('Building card for muscle: ${muscle.name}');
+                      final completionPercentage = _getMuscleGroupCompletionPercentage(muscle.name);
+                      final percentage = _getMuscleGroupPercentage(muscle.name);
+                      return _buildMuscleGroupCard(muscle, completionPercentage, percentage);
+                    },
+                  ),
+                ),
+                // Muscle Parts Status Section
+                if (selectedExercises.isNotEmpty) _buildMusclePartsStatusCard(),
+              ],
             ),
           ),
         ],
@@ -360,9 +372,9 @@ class _MuscleGroupSelectionPageState extends State<MuscleGroupSelectionPage> {
     );
   }
 
-  Widget _buildMuscleGroupCard(MuscleGroupModel muscle, double activationPercentage, String percentage) {
-    final hasExercises = activationPercentage > 0;
-    print('Building card for ${muscle.name}: activation=${activationPercentage.toStringAsFixed(1)}%, percentage=$percentage, hasExercises=$hasExercises');
+  Widget _buildMuscleGroupCard(MuscleGroupModel muscle, double completionPercentage, String percentage) {
+    final hasExercises = completionPercentage > 0;
+    print('Building card for ${muscle.name}: completion=${completionPercentage.toStringAsFixed(1)}%, percentage=$percentage, hasExercises=$hasExercises');
 
     return GestureDetector(
       onTap: () => _navigateToExerciseSelection(muscle),
@@ -406,7 +418,7 @@ class _MuscleGroupSelectionPageState extends State<MuscleGroupSelectionPage> {
                 size: 30,
               ),
             ),
-            SizedBox(height: 12),
+            SizedBox(height: 8),
 
             // Muscle name
             Text(
@@ -418,7 +430,7 @@ class _MuscleGroupSelectionPageState extends State<MuscleGroupSelectionPage> {
               ),
               textAlign: TextAlign.center,
             ),
-            SizedBox(height: 8),
+            SizedBox(height: 6),
 
             // Percentage display
             Container(
@@ -438,6 +450,7 @@ class _MuscleGroupSelectionPageState extends State<MuscleGroupSelectionPage> {
                 ),
               ),
             ),
+            
           ],
         ),
       ),
@@ -466,5 +479,89 @@ class _MuscleGroupSelectionPageState extends State<MuscleGroupSelectionPage> {
         }
       });
     }
+  }
+
+  Widget _buildMusclePartsStatusCard() {
+    // Get all muscle groups that have exercises
+    final muscleGroupsWithExercises = muscleGroups.where((muscle) {
+      final completionPercentage = _getMuscleGroupCompletionPercentage(muscle.name);
+      return completionPercentage > 0;
+    }).toList();
+
+    if (muscleGroupsWithExercises.isEmpty) {
+      return SizedBox.shrink();
+    }
+
+    return Container(
+      margin: EdgeInsets.all(20),
+      padding: EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Color(0xFF1A1A1A),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: widget.selectedColor.withOpacity(0.3),
+          width: 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.info_outline,
+                color: widget.selectedColor,
+                size: 20,
+              ),
+              SizedBox(width: 8),
+              Text(
+                'Muscle Parts Status',
+                style: GoogleFonts.poppins(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: 12),
+          ...muscleGroupsWithExercises.map((muscle) {
+            final musclePartsStatus = _getMusclePartsStatus(muscle.name);
+            if (musclePartsStatus.isEmpty) return SizedBox.shrink();
+            
+            return Container(
+              margin: EdgeInsets.only(bottom: 8),
+              padding: EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Color(0xFF2A2A2A),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    muscle.name,
+                    style: GoogleFonts.poppins(
+                      color: widget.selectedColor,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    musclePartsStatus,
+                    style: GoogleFonts.poppins(
+                      color: Colors.grey[300],
+                      fontSize: 12,
+                      height: 1.3,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }).toList(),
+        ],
+      ),
+    );
   }
 }

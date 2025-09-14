@@ -3,7 +3,7 @@ import 'package:http/http.dart' as http;
 import '../models/message_model.dart';
 
 class MessageService {
-  static const String baseUrl = 'http://localhost/cynergy/messages.php';
+  static const String baseUrl = 'https://api.cnergy.site/messages.php';
 
   static Future<List<Message>> getMessages({
     required int conversationId,

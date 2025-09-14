@@ -3,8 +3,8 @@ import 'package:http/http.dart' as http;
 import 'auth_service.dart';
 
 class ProfileService {
-  static const String baseUrl = 'http://localhost/cynergy/';
-  static const String profileEndpoint = '${baseUrl}profile_management.php';
+  static const String baseUrl = 'https://api.cnergy.site';
+  static const String profileEndpoint = '$baseUrl/profile_management.php';
 
   // Change password
   static Future<Map<String, dynamic>> changePassword({

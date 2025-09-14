@@ -1,5 +1,5 @@
 class ImageService {
-  static const String baseUrl = 'http://localhost/cynergy';
+  static const String baseUrl = 'https://api.cnergy.site';
   
   static String getImageUrl(String imagePath) {
     if (imagePath.isEmpty) return '';

@@ -146,6 +146,17 @@ class _PersonalTrainingPageState extends State<PersonalTrainingPage>
     return ['All', 'Available', ...specialties];
   }
 
+  bool _hasActiveCoach() {
+    if (_remoteCoachRequest == null) return false;
+    
+    final coachApproval = (_remoteCoachRequest!['coach_approval'] ?? '').toString();
+    final staffApproval = (_remoteCoachRequest!['staff_approval'] ?? '').toString();
+    final status = (_remoteCoachRequest!['status'] ?? '').toString();
+    
+    // Check if user has an active coach (both coach and staff approved)
+    return coachApproval == 'approved' && staffApproval == 'approved';
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -161,8 +172,9 @@ class _PersonalTrainingPageState extends State<PersonalTrainingPage>
                 _buildCoachStatusSection(),
                 if (widget.currentUser != null && !widget.currentUser!.isPremium) _buildUpgradeSection(),
                 _buildAboutSection(),
-                if (widget.currentUser != null && widget.currentUser!.isPremium) _buildFilterSection(),
-                if (widget.currentUser != null && widget.currentUser!.isPremium) _buildCoachesSection(),
+                if (widget.currentUser != null && widget.currentUser!.isPremium && !_hasActiveCoach()) _buildFilterSection(),
+                if (widget.currentUser != null && widget.currentUser!.isPremium && !_hasActiveCoach()) _buildCoachesSection(),
+                if (widget.currentUser != null && widget.currentUser!.isPremium && _hasActiveCoach()) _buildActiveCoachSection(),
               ],
             ),
           ),
@@ -209,6 +221,9 @@ class _PersonalTrainingPageState extends State<PersonalTrainingPage>
     final status = (_remoteCoachRequest!['status'] ?? '').toString();
     final coachName = (_remoteCoachRequest!['coach_name'] ?? 'Coach').toString();
     final requestedAt = (_remoteCoachRequest!['requested_at'] ?? '').toString();
+    final rateType = (_remoteCoachRequest!['rate_type'] ?? 'hourly').toString();
+    final remainingSessions = _remoteCoachRequest!['remaining_sessions'];
+    final expiresAt = _remoteCoachRequest!['expires_at'];
 
     String title;
     String subtitle;
@@ -222,7 +237,15 @@ class _PersonalTrainingPageState extends State<PersonalTrainingPage>
       icon = Icons.cancel;
     } else if (coachApproval == 'approved' && staffApproval == 'approved') {
       title = 'Coach Assigned';
-      subtitle = 'You are assigned to $coachName.';
+      String sessionInfo = '';
+      if (rateType == 'package' && remainingSessions != null) {
+        sessionInfo = '\nRemaining sessions: $remainingSessions';
+      } else if (rateType == 'monthly' && expiresAt != null) {
+        sessionInfo = '\nExpires: $expiresAt';
+      } else if (rateType == 'hourly' && expiresAt != null) {
+        sessionInfo = '\nExpires: $expiresAt';
+      }
+      subtitle = 'You are assigned to $coachName.$sessionInfo';
       color = Color(0xFF4ECDC4);
       icon = Icons.verified;
     } else if (coachApproval == 'approved' && staffApproval != 'approved') {
@@ -457,6 +480,241 @@ class _PersonalTrainingPageState extends State<PersonalTrainingPage>
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildPricingSection(CoachModel coach) {
+    List<Widget> pricingOptions = [];
+    
+    // Hourly rate (always available)
+    pricingOptions.add(
+      Container(
+        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: Color(0xFF2A2A2A),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Color(0xFF4ECDC4).withOpacity(0.3)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.access_time, color: Color(0xFF4ECDC4), size: 14),
+            SizedBox(width: 4),
+            Text(
+              '₱${coach.hourlyRate.toInt()}/hr',
+              style: GoogleFonts.poppins(
+                color: Color(0xFF4ECDC4),
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    // Monthly rate (if available)
+    if (coach.monthlyRate != null && coach.monthlyRate! > 0) {
+      pricingOptions.add(
+        Container(
+          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: Color(0xFF2A2A2A),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Color(0xFF4ECDC4).withOpacity(0.3)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.calendar_month, color: Color(0xFF4ECDC4), size: 14),
+              SizedBox(width: 4),
+              Text(
+                '₱${coach.monthlyRate!.toInt()}/mo',
+                style: GoogleFonts.poppins(
+                  color: Color(0xFF4ECDC4),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // Session package (if available)
+    if (coach.sessionPackageRate != null && coach.sessionPackageCount != null && 
+        coach.sessionPackageRate! > 0 && coach.sessionPackageCount! > 0) {
+      pricingOptions.add(
+        Container(
+          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: Color(0xFF2A2A2A),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Color(0xFF4ECDC4).withOpacity(0.3)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.fitness_center, color: Color(0xFF4ECDC4), size: 14),
+              SizedBox(width: 4),
+              Text(
+                '₱${coach.sessionPackageRate!.toInt()}/${coach.sessionPackageCount} sessions',
+                style: GoogleFonts.poppins(
+                  color: Color(0xFF4ECDC4),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Wrap(
+      spacing: 8,
+      runSpacing: 4,
+      children: pricingOptions,
+    );
+  }
+
+  Widget _buildRateSelection({
+    required CoachModel coach,
+    required String selectedRateType,
+    required double selectedRate,
+    required int? selectedSessionCount,
+    required Function(String, double, int?) onRateChanged,
+  }) {
+    List<Widget> rateOptions = [];
+
+    // Hourly rate option
+    rateOptions.add(
+      _buildRateOption(
+        title: 'Hourly Rate',
+        subtitle: 'Pay per session',
+        price: '₱${coach.hourlyRate.toInt()}/hr',
+        icon: Icons.access_time,
+        isSelected: selectedRateType == 'hourly',
+        onTap: () => onRateChanged('hourly', coach.hourlyRate, null),
+      ),
+    );
+
+    // Monthly rate option (if available)
+    if (coach.monthlyRate != null && coach.monthlyRate! > 0) {
+      rateOptions.add(
+        _buildRateOption(
+          title: 'Monthly Package',
+          subtitle: 'Unlimited sessions for 1 month',
+          price: '₱${coach.monthlyRate!.toInt()}/mo',
+          icon: Icons.calendar_month,
+          isSelected: selectedRateType == 'monthly',
+          onTap: () => onRateChanged('monthly', coach.monthlyRate!, null),
+        ),
+      );
+    }
+
+    // Session package option (if available)
+    if (coach.sessionPackageRate != null && coach.sessionPackageCount != null && 
+        coach.sessionPackageRate! > 0 && coach.sessionPackageCount! > 0) {
+      rateOptions.add(
+        _buildRateOption(
+          title: 'Session Package',
+          subtitle: '${coach.sessionPackageCount} sessions',
+          price: '₱${coach.sessionPackageRate!.toInt()}/${coach.sessionPackageCount} sessions',
+          icon: Icons.fitness_center,
+          isSelected: selectedRateType == 'package',
+          onTap: () => onRateChanged('package', coach.sessionPackageRate!, coach.sessionPackageCount),
+        ),
+      );
+    }
+
+    return Column(
+      children: rateOptions,
+    );
+  }
+
+  Widget _buildRateOption({
+    required String title,
+    required String subtitle,
+    required String price,
+    required IconData icon,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return Container(
+      margin: EdgeInsets.only(bottom: 12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: isSelected ? Color(0xFF4ECDC4).withOpacity(0.1) : Color(0xFF2A2A2A),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isSelected ? Color(0xFF4ECDC4) : Colors.grey[700]!,
+              width: isSelected ? 2 : 1,
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: isSelected ? Color(0xFF4ECDC4) : Colors.grey[600],
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  icon,
+                  color: Colors.white,
+                  size: 20,
+                ),
+              ),
+              SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: GoogleFonts.poppins(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: GoogleFonts.poppins(
+                        color: Colors.grey[400],
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Text(
+                price,
+                style: GoogleFonts.poppins(
+                  color: isSelected ? Color(0xFF4ECDC4) : Colors.grey[300],
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              if (isSelected) ...[
+                SizedBox(width: 8),
+                Icon(
+                  Icons.check_circle,
+                  color: Color(0xFF4ECDC4),
+                  size: 20,
+                ),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -740,17 +998,10 @@ class _PersonalTrainingPageState extends State<PersonalTrainingPage>
                     fontSize: 12,
                   ),
                 ),
-                Spacer(),
-                Text(
-                  '\$${coach.hourlyRate.toInt()}/hr',
-                  style: GoogleFonts.poppins(
-                    color: Color(0xFF4ECDC4),
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
               ],
             ),
+            SizedBox(height: 8),
+            _buildPricingSection(coach),
             if (coach.certifications.isNotEmpty) ...[
               SizedBox(height: 12),
               Wrap(
@@ -778,17 +1029,17 @@ class _PersonalTrainingPageState extends State<PersonalTrainingPage>
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: coach.isAvailable ? () => _showHireDialog(coach) : null,
+                onPressed: (coach.isAvailable && !_hasActiveCoach()) ? () => _showHireDialog(coach) : null,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: coach.isAvailable ? Color(0xFF4ECDC4) : Colors.grey[700],
-                  foregroundColor: coach.isAvailable ? Colors.white : Colors.grey[400],
+                  backgroundColor: (coach.isAvailable && !_hasActiveCoach()) ? Color(0xFF4ECDC4) : Colors.grey[700],
+                  foregroundColor: (coach.isAvailable && !_hasActiveCoach()) ? Colors.white : Colors.grey[400],
                   padding: EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
                 ),
                 child: Text(
-                  coach.isAvailable ? 'Hire Coach' : 'Currently Unavailable',
+                  _hasActiveCoach() ? 'Already Have Coach' : (coach.isAvailable ? 'Hire Coach' : 'Currently Unavailable'),
                   style: GoogleFonts.poppins(
                     fontWeight: FontWeight.w600,
                     fontSize: 14,
@@ -803,107 +1054,117 @@ class _PersonalTrainingPageState extends State<PersonalTrainingPage>
   }
 
   void _showHireDialog(CoachModel coach) {
-    final messageController = TextEditingController();
+    String selectedRateType = 'hourly';
+    double selectedRate = coach.hourlyRate;
+    int? selectedSessionCount;
     
     showDialog(
       context: context,
-      builder: (context) => Dialog(
-        backgroundColor: Colors.transparent,
-        child: Container(
-          padding: EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: Color(0xFF1A1A1A),
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                padding: EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Color(0xFF4ECDC4).withOpacity(0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(Icons.send, color: Color(0xFF4ECDC4), size: 32),
-              ),
-              SizedBox(height: 16),
-              Text(
-                'Hire ${coach.name}?',
-                style: GoogleFonts.poppins(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-              ),
-              SizedBox(height: 8),
-              Text(
-                'Send a request to hire this coach as your personal trainer.',
-                style: GoogleFonts.poppins(
-                  fontSize: 14,
-                  color: Colors.grey[400],
-                ),
-                textAlign: TextAlign.center,
-              ),
-              SizedBox(height: 20),
-              TextField(
-                controller: messageController,
-                style: GoogleFonts.poppins(color: Colors.white),
-                maxLines: 3,
-                decoration: InputDecoration(
-                  hintText: 'Add a message (optional)',
-                  hintStyle: GoogleFonts.poppins(color: Colors.grey[500]),
-                  enabledBorder: OutlineInputBorder(
-                    borderSide: BorderSide(color: Colors.grey[700]!),
-                    borderRadius: BorderRadius.circular(12),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => Dialog(
+          backgroundColor: Colors.transparent,
+          child: Container(
+            padding: EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Color(0xFF1A1A1A),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Color(0xFF4ECDC4).withOpacity(0.1),
+                    shape: BoxShape.circle,
                   ),
-                  focusedBorder: OutlineInputBorder(
-                    borderSide: BorderSide(color: Color(0xFF4ECDC4)),
-                    borderRadius: BorderRadius.circular(12),
+                  child: Icon(Icons.fitness_center, color: Color(0xFF4ECDC4), size: 32),
+                ),
+                SizedBox(height: 16),
+                Text(
+                  'Choose Training Package',
+                  style: GoogleFonts.poppins(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
                   ),
                 ),
-              ),
-              SizedBox(height: 24),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => Navigator.pop(context),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.white54,
-                        side: BorderSide(color: Colors.grey[700]!),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                SizedBox(height: 8),
+                Text(
+                  'Select your preferred training package with ${coach.name}',
+                  style: GoogleFonts.poppins(
+                    fontSize: 14,
+                    color: Colors.grey[400],
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                SizedBox(height: 20),
+                _buildRateSelection(
+                  coach: coach,
+                  selectedRateType: selectedRateType,
+                  selectedRate: selectedRate,
+                  selectedSessionCount: selectedSessionCount,
+                  onRateChanged: (rateType, rate, sessionCount) {
+                    setState(() {
+                      selectedRateType = rateType;
+                      selectedRate = rate;
+                      selectedSessionCount = sessionCount;
+                    });
+                  },
+                ),
+                SizedBox(height: 24),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.pop(context),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white54,
+                          side: BorderSide(color: Colors.grey[700]!),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                         ),
-                      ),
-                      child: Text('Cancel', style: GoogleFonts.poppins()),
-                    ),
-                  ),
-                  SizedBox(width: 16),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () => _sendCoachRequest(coach, messageController.text),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Color(0xFF4ECDC4),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      child: Text(
-                        'Send Request',
-                        style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+                        child: Text('Cancel', style: GoogleFonts.poppins()),
                       ),
                     ),
-                  ),
-                ],
-              ),
-            ],
+                    SizedBox(width: 16),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () => _sendCoachRequest(
+                          coach, 
+                          selectedRateType, 
+                          selectedRate, 
+                          selectedSessionCount
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Color(0xFF4ECDC4),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: Text(
+                          'Hire Coach',
+                          style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  Future<void> _sendCoachRequest(CoachModel coach, String message) async {
+  Future<void> _sendCoachRequest(
+    CoachModel coach, 
+    String rateType, 
+    double rate, 
+    int? sessionCount
+  ) async {
     Navigator.pop(context);
     
     if (widget.currentUser == null) return;
@@ -920,15 +1181,17 @@ class _PersonalTrainingPageState extends State<PersonalTrainingPage>
     );
 
     try {
-      final success = await CoachService.sendCoachRequest(
+      final result = await CoachService.sendCoachRequest(
         userId: widget.currentUser!.id,
         coachId: coach.id,
-        message: message,
+        rateType: rateType,
+        rate: rate,
+        sessionCount: sessionCount,
       );
 
       Navigator.pop(context); // Close loading dialog
 
-      if (success) {
+      if (result['success'] == true) {
         setState(() {
           coachRequestStatus = 'pending';
           selectedCoachId = coach.id;
@@ -937,10 +1200,23 @@ class _PersonalTrainingPageState extends State<PersonalTrainingPage>
         });
         await _saveCoachRequestStatus();
 
+        String packageText = '';
+        switch (rateType) {
+          case 'hourly':
+            packageText = 'Hourly rate (₱${rate.toInt()}/hr)';
+            break;
+          case 'monthly':
+            packageText = 'Monthly package (₱${rate.toInt()}/mo)';
+            break;
+          case 'package':
+            packageText = 'Session package (₱${rate.toInt()}/${sessionCount} sessions)';
+            break;
+        }
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Coach request sent successfully! Visit the front desk to complete payment.',
+              'Coach request sent successfully!\nPackage: $packageText\nVisit the front desk to complete payment.',
               style: GoogleFonts.poppins(),
             ),
             backgroundColor: Color(0xFF4ECDC4),
@@ -948,22 +1224,30 @@ class _PersonalTrainingPageState extends State<PersonalTrainingPage>
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(10),
             ),
+            duration: Duration(seconds: 4),
           ),
         );
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Failed to send coach request. Please try again.',
-              style: GoogleFonts.poppins(),
+        // Check if it's a premium membership error
+        String errorMessage = result['message'] ?? 'Failed to send coach request. Please try again.';
+        
+        if (errorMessage.toLowerCase().contains('premium membership required')) {
+          _showPremiumMembershipDialog();
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                errorMessage,
+                style: GoogleFonts.poppins(),
+              ),
+              backgroundColor: Colors.red,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
             ),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
-            ),
-          ),
-        );
+          );
+        }
       }
     } catch (e) {
       Navigator.pop(context); // Close loading dialog
@@ -981,5 +1265,232 @@ class _PersonalTrainingPageState extends State<PersonalTrainingPage>
         ),
       );
     }
+  }
+
+  Widget _buildActiveCoachSection() {
+    if (_remoteCoachRequest == null) return SizedBox.shrink();
+    
+    final coachName = (_remoteCoachRequest!['coach_name'] ?? 'Coach').toString();
+    final rateType = (_remoteCoachRequest!['rate_type'] ?? 'hourly').toString();
+    final remainingSessions = _remoteCoachRequest!['remaining_sessions'];
+    final expiresAt = _remoteCoachRequest!['expires_at'];
+    
+    String sessionInfo = '';
+    if (rateType == 'package' && remainingSessions != null) {
+      sessionInfo = 'Remaining sessions: $remainingSessions';
+    } else if (rateType == 'monthly' && expiresAt != null) {
+      sessionInfo = 'Expires: $expiresAt';
+    } else if (rateType == 'hourly' && expiresAt != null) {
+      sessionInfo = 'Expires: $expiresAt';
+    }
+    
+    return SliverToBoxAdapter(
+      child: Container(
+        margin: EdgeInsets.all(20),
+        padding: EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFF4ECDC4).withOpacity(0.1), Color(0xFF2A2A2A)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Color(0xFF4ECDC4).withOpacity(0.3), width: 1),
+        ),
+        child: Column(
+          children: [
+            Container(
+              padding: EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Color(0xFF4ECDC4).withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.verified, color: Color(0xFF4ECDC4), size: 32),
+            ),
+            SizedBox(height: 16),
+            Text(
+              'Active Coach Connection',
+              style: GoogleFonts.poppins(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
+            SizedBox(height: 8),
+            Text(
+              'You are currently assigned to $coachName',
+              style: GoogleFonts.poppins(
+                fontSize: 14,
+                color: Colors.grey[400],
+              ),
+              textAlign: TextAlign.center,
+            ),
+            if (sessionInfo.isNotEmpty) ...[
+              SizedBox(height: 12),
+              Container(
+                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Color(0xFF4ECDC4).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  sessionInfo,
+                  style: GoogleFonts.poppins(
+                    fontSize: 12,
+                    color: Color(0xFF4ECDC4),
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+            SizedBox(height: 20),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () {
+                      // TODO: Navigate to coach chat or profile
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Coach communication feature coming soon!'),
+                          backgroundColor: Color(0xFF4ECDC4),
+                        ),
+                      );
+                    },
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Color(0xFF4ECDC4),
+                      side: BorderSide(color: Color(0xFF4ECDC4)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: Text(
+                      'Message Coach',
+                      style: GoogleFonts.poppins(fontWeight: FontWeight.w500),
+                    ),
+                  ),
+                ),
+                SizedBox(width: 16),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () {
+                      // TODO: Navigate to workout routines assigned by coach
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Coach routines feature coming soon!'),
+                          backgroundColor: Color(0xFF4ECDC4),
+                        ),
+                      );
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Color(0xFF4ECDC4),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: Text(
+                      'View Routines',
+                      style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showPremiumMembershipDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: Container(
+          padding: EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: Color(0xFF1A1A1A),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Color(0xFFFFD700).withOpacity(0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.lock, color: Color(0xFFFFD700), size: 32),
+              ),
+              SizedBox(height: 16),
+              Text(
+                'Premium Membership Required',
+                style: GoogleFonts.poppins(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+              SizedBox(height: 8),
+              Text(
+                'Personal training with coaches is a premium feature. Upgrade your membership to access this service.',
+                style: GoogleFonts.poppins(
+                  fontSize: 14,
+                  color: Colors.grey[400],
+                ),
+                textAlign: TextAlign.center,
+              ),
+              SizedBox(height: 20),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      style: TextButton.styleFrom(
+                        foregroundColor: Colors.grey[400],
+                        padding: EdgeInsets.symmetric(vertical: 12),
+                      ),
+                      child: Text(
+                        'Cancel',
+                        style: GoogleFonts.poppins(fontWeight: FontWeight.w500),
+                      ),
+                    ),
+                  ),
+                  SizedBox(width: 16),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => ManageSubscriptionsPage(),
+                          ),
+                        );
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Color(0xFFFFD700),
+                        foregroundColor: Colors.black,
+                        padding: EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: Text(
+                        'Upgrade Now',
+                        style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }

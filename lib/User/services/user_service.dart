@@ -2,10 +2,11 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/user_model.dart';
 import '../services/auth_service.dart'; // Import AuthService
+import 'api_error_handler.dart'; // Import error handler
 
 class UserService {
   // Replace with your actual backend URL
-  static const String baseUrl = 'http://localhost/cynergy/user.php';
+  static const String baseUrl = 'https://api.cnergy.site/user.php';
   static const String userEndpoint = baseUrl; // Fixed: was pointing to baseUrl/user.php
 
   // HTTP client configuration similar to axios
@@ -14,7 +15,7 @@ class UserService {
     'Accept': 'application/json',
   };
 
-  // Axios-style GET request
+  // Axios-style GET request with better error handling
   static Future<Map<String, dynamic>?> _get(String url, {Map<String, String>? params}) async {
     try {
       Uri uri = Uri.parse(url);
@@ -23,47 +24,36 @@ class UserService {
       }
       print('GET Request: $uri');
       
-      final response = await http.get(uri, headers: _headers);
-      
-      print('Response Status: ${response.statusCode}');
-      print('Response Body: ${response.body}');
-      
-      if (response.statusCode == 200) {
-        return json.decode(response.body);
-      } else {
-        print('HTTP Error: ${response.statusCode} - ${response.reasonPhrase}');
-        return null;
-      }
+      return await ApiErrorHandler.makeRequest(uri.toString(), headers: _headers);
     } catch (e) {
       print('GET Exception: $e');
-      return null;
+      return {
+        'success': false,
+        'message': 'Request failed: ${e.toString()}',
+        'error': 'REQUEST_EXCEPTION'
+      };
     }
   }
 
-  // Axios-style POST request
+  // Axios-style POST request with better error handling
   static Future<Map<String, dynamic>?> _post(String url, Map<String, dynamic> data) async {
     try {
       print('POST Request: $url');
       print('POST Data: ${json.encode(data)}');
       
-      final response = await http.post(
-        Uri.parse(url),
+      return await ApiErrorHandler.makeRequest(
+        url,
         headers: _headers,
         body: json.encode(data),
+        method: 'POST',
       );
-      
-      print('Response Status: ${response.statusCode}');
-      print('Response Body: ${response.body}');
-      
-      if (response.statusCode == 200) {
-        return json.decode(response.body);
-      } else {
-        print('HTTP Error: ${response.statusCode} - ${response.reasonPhrase}');
-        return null;
-      }
     } catch (e) {
       print('POST Exception: $e');
-      return null;
+      return {
+        'success': false,
+        'message': 'POST request failed: ${e.toString()}',
+        'error': 'POST_EXCEPTION'
+      };
     }
   }
 

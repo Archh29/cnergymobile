@@ -9,8 +9,8 @@ import '../models/personal_record_model.dart';
 import '../models/routine.models.dart';
 
 class EnhancedProgressService {
-  static const String baseUrl = "http://localhost/cynergy/userprogress.php";
-  static const String routinesUrl = "http://localhost/cynergy/routines.php";
+  static const String baseUrl = "https://api.cnergy.site/userprogress.php";
+  static const String routinesUrl = "https://api.cnergy.site/routines.php";
 
   // Get current user ID
   static Future<int> getCurrentUserId() async {

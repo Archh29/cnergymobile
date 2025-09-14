@@ -7,7 +7,7 @@ import '../models/workout_session_model.dart';
 import '../models/goal_model.dart';
 
 class CoachService {
-  static const String baseUrl = 'http://localhost/cynergy/coach_api.php';
+  static const String baseUrl = 'https://api.cnergy.site/coach_api.php';
 
   // Enhanced helper method to safely convert values to int
   static int? _safeParseInt(dynamic value) {
@@ -310,6 +310,34 @@ class CoachService {
       return false;
     } catch (e) {
       print('Error approving member request: $e');
+      return false;
+    }
+  }
+
+  // Staff approves a pending member request
+  static Future<bool> approveMemberRequestByStaff(int requestId, int staffId) async {
+    try {
+      print('Debug: Staff approving request ID: $requestId with staff ID: $staffId');
+      
+      final response = await http.post(
+        Uri.parse('$baseUrl?action=approve-member-request-staff'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'request_id': requestId,
+          'staff_id': staffId,
+        }),
+      );
+      
+      print('Debug: Staff approval response status: ${response.statusCode}');
+      print('Debug: Staff approval response body: ${response.body}');
+      
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return data['success'] == true;
+      }
+      return false;
+    } catch (e) {
+      print('Error approving member request by staff: $e');
       return false;
     }
   }

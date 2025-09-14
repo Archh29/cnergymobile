@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 class HomeService {
-  static const String baseUrl = 'http://localhost/cynergy';
+  static const String baseUrl = 'https://api.cnergy.site/';
   static const String homeEndpoint = '$baseUrl/user_home.php';
 
   // Fetch all home data from single API endpoint

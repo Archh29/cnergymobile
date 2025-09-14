@@ -3,7 +3,7 @@ import 'package:http/http.dart' as http;
 import '../models/attendance_model.dart';
 
 class AttendanceService {
-  static const String baseUrl = 'http://localhost/cynergy/api/attendance_api.php';
+  static const String baseUrl = 'https://api.cnergy.site/attendance_api.php';
     
   // Scan QR code and handle check-in/check-out automatically
   static Future<AttendanceResponse> scanQRCode(String qrData) async {

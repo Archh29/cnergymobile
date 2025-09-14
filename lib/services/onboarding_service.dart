@@ -4,7 +4,7 @@ import 'package:http/http.dart' as http;
 import '../models/onboarding_model.dart';
 
 class OnboardingService {
-  static const String baseUrl = 'http://localhost/cynergy/onboarding_api.php'; // Replace with your actual URL
+  static const String baseUrl = 'https://api.cnergy.site/onboarding_api.php'; // Replace with your actual URL
   static const Duration timeoutDuration = Duration(seconds: 30);
 
   // Headers for API requests

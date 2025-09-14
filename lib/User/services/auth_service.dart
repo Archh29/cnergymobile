@@ -9,7 +9,7 @@ class AuthService {
   static const String _userIdKey = 'current_user_id';
   static const String _userDataKey = 'current_user_data';
   static const String _profileCompletedKey = 'profile_completed';
-  static const String baseUrl = 'http://localhost/cynergy/user.php';
+  static const String baseUrl = 'https://api.cnergy.site/user.php';
     
   // Add initialization status tracking
   static bool _isInitialized = false;
@@ -433,6 +433,24 @@ class AuthService {
     await prefs.setBool('isLoggedIn', false);
     await prefs.remove('role');
     await prefs.remove('jwt_token');
+    
+    // Clear routine service cache
+    try {
+      final currentUserId = getCurrentUserId();
+      if (currentUserId != null) {
+        String membershipKey = 'is_pro_member_$currentUserId';
+        String subscriptionKey = 'subscription_details_$currentUserId';
+        String lastCheckedKey = 'membership_last_checked_$currentUserId';
+        
+        await prefs.remove(membershipKey);
+        await prefs.remove(subscriptionKey);
+        await prefs.remove(lastCheckedKey);
+        
+        print('🗑️ Cleared routine service cache on logout');
+      }
+    } catch (e) {
+      print('⚠️ Error clearing routine service cache: $e');
+    }
         
     print('✅ User logged out successfully');
   }
@@ -445,12 +463,14 @@ class AuthService {
 
   static bool isUserMember() {
     if (_currentUser == null) return false;
+    // Only check for actual membership indicators, not just customer status
     return _currentUser!['user_type'] == 'member' ||
            _currentUser!['is_member'] == true ||
            _currentUser!['is_member'] == 1 ||
            _currentUser!['membership_status'] == 'active' ||
            _currentUser!['member_status'] == 'active' ||
-           isCustomer(); // Customers are considered members
+           _currentUser!['has_active_membership'] == true ||
+           _currentUser!['has_active_membership'] == 1;
   }
 
   static String getMembershipStatus() {

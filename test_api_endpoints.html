@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>API Endpoint Tester</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .endpoint { margin: 10px 0; padding: 10px; border: 1px solid #ccc; }
+        .success { background-color: #d4edda; }
+        .error { background-color: #f8d7da; }
+        .warning { background-color: #fff3cd; }
+        button { padding: 5px 10px; margin: 5px; }
+        pre { background: #f8f9fa; padding: 10px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <h1>CNERGY API Endpoint Tester</h1>
+    <p>This tool tests all your API endpoints to identify which ones are returning HTML instead of JSON.</p>
+    
+    <button onclick="testAllEndpoints()">Test All Endpoints</button>
+    <button onclick="clearResults()">Clear Results</button>
+    
+    <div id="results"></div>
+
+    <script>
+        const endpoints = [
+            { name: 'User Fetch', url: 'https://api.cnergy.site/user.php?action=fetch&user_id=7' },
+            { name: 'Membership Info', url: 'https://api.cnergy.site/membership_info.php?action=get_membership&user_id=7' },
+            { name: 'Coaches', url: 'https://api.cnergy.site/coach_api.php?action=coaches' },
+            { name: 'Achievements', url: 'https://api.cnergy.site/achievements.php?action=get_achievements&user_id=7' },
+            { name: 'Messages', url: 'https://api.cnergy.site/messages.php?action=get_conversations&user_id=7' },
+            { name: 'Genders', url: 'https://api.cnergy.site/loginapp.php?action=get_genders' },
+            { name: 'User Home', url: 'https://api.cnergy.site/user_home.php' },
+            { name: 'Announcements', url: 'https://api.cnergy.site/get_announcements.php' },
+            { name: 'Merchandise', url: 'https://api.cnergy.site/get_merchandise.php' },
+            { name: 'Promotions', url: 'https://api.cnergy.site/get_promotions.php' }
+        ];
+
+        async function testEndpoint(endpoint) {
+            try {
+                console.log(`Testing: ${endpoint.name} - ${endpoint.url}`);
+                
+                const response = await fetch(endpoint.url, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    }
+                });
+
+                const responseText = await response.text();
+                
+                let result = {
+                    name: endpoint.name,
+                    url: endpoint.url,
+                    status: response.status,
+                    statusText: response.statusText,
+                    contentType: response.headers.get('content-type'),
+                    response: responseText,
+                    isJson: false,
+                    isHtml: false
+                };
+
+                // Check if response is HTML
+                if (responseText.trim().startsWith('<!DOCTYPE') || 
+                    responseText.trim().startsWith('<html') ||
+                    responseText.trim().startsWith('<')) {
+                    result.isHtml = true;
+                    result.error = 'Returns HTML instead of JSON';
+                } else {
+                    // Try to parse as JSON
+                    try {
+                        JSON.parse(responseText);
+                        result.isJson = true;
+                    } catch (e) {
+                        result.error = 'Invalid JSON format';
+                    }
+                }
+
+                return result;
+            } catch (error) {
+                return {
+                    name: endpoint.name,
+                    url: endpoint.url,
+                    error: error.message,
+                    isError: true
+                };
+            }
+        }
+
+        async function testAllEndpoints() {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '<h2>Testing Endpoints...</h2>';
+
+            for (const endpoint of endpoints) {
+                const result = await testEndpoint(endpoint);
+                displayResult(result);
+            }
+        }
+
+        function displayResult(result) {
+            const resultsDiv = document.getElementById('results');
+            const div = document.createElement('div');
+            div.className = 'endpoint';
+
+            if (result.isError) {
+                div.className += ' error';
+                div.innerHTML = `
+                    <h3>❌ ${result.name}</h3>
+                    <p><strong>URL:</strong> ${result.url}</p>
+                    <p><strong>Error:</strong> ${result.error}</p>
+                `;
+            } else if (result.isHtml) {
+                div.className += ' error';
+                div.innerHTML = `
+                    <h3>⚠️ ${result.name} - HTML Response</h3>
+                    <p><strong>URL:</strong> ${result.url}</p>
+                    <p><strong>Status:</strong> ${result.status} ${result.statusText}</p>
+                    <p><strong>Content-Type:</strong> ${result.contentType}</p>
+                    <p><strong>Issue:</strong> ${result.error}</p>
+                    <details>
+                        <summary>Response Preview</summary>
+                        <pre>${result.response.substring(0, 500)}...</pre>
+                    </details>
+                `;
+            } else if (result.isJson) {
+                div.className += ' success';
+                div.innerHTML = `
+                    <h3>✅ ${result.name} - JSON Response</h3>
+                    <p><strong>URL:</strong> ${result.url}</p>
+                    <p><strong>Status:</strong> ${result.status} ${result.statusText}</p>
+                    <p><strong>Content-Type:</strong> ${result.contentType}</p>
+                    <details>
+                        <summary>Response Preview</summary>
+                        <pre>${result.response.substring(0, 500)}...</pre>
+                    </details>
+                `;
+            } else {
+                div.className += ' warning';
+                div.innerHTML = `
+                    <h3>⚠️ ${result.name} - Unknown Format</h3>
+                    <p><strong>URL:</strong> ${result.url}</p>
+                    <p><strong>Status:</strong> ${result.status} ${result.statusText}</p>
+                    <p><strong>Content-Type:</strong> ${result.contentType}</p>
+                    <p><strong>Issue:</strong> ${result.error}</p>
+                    <details>
+                        <summary>Response Preview</summary>
+                        <pre>${result.response.substring(0, 500)}...</pre>
+                    </details>
+                `;
+            }
+
+            resultsDiv.appendChild(div);
+        }
+
+        function clearResults() {
+            document.getElementById('results').innerHTML = '';
+        }
+    </script>
+</body>
+</html>
+
+
+
+
+
+

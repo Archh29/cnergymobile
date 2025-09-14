@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'dart:ui';
-import 'package:image_picker/image_picker.dart';
-import 'dart:io';
 import 'services/profile_service.dart';
 
 class ManageProfilePage extends StatefulWidget {
@@ -11,17 +9,11 @@ class ManageProfilePage extends StatefulWidget {
 }
 
 class _ManageProfilePageState extends State<ManageProfilePage> with TickerProviderStateMixin {
-  File? _profileImage;
-  final ImagePicker _picker = ImagePicker();
   
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
   
-  // Profile data
-  Map<String, dynamic>? _profileData;
-  bool _isLoading = true;
-  String? _error;
   
   final List<Map<String, dynamic>> profileSettings = [
     {
@@ -37,8 +29,6 @@ class _ManageProfilePageState extends State<ManageProfilePage> with TickerProvid
       'route': 'ChangePasswordPage',
     },
   ];
-  
-  final List<Map<String, dynamic>> accountSettings = [];
 
   @override
   void initState() {
@@ -53,7 +43,7 @@ class _ManageProfilePageState extends State<ManageProfilePage> with TickerProvid
     _slideAnimation = Tween<Offset>(begin: Offset(0, 0.1), end: Offset.zero).animate(
       CurvedAnimation(parent: _animationController, curve: Curves.easeOutCubic),
     );
-    _loadProfile();
+    _animationController.forward();
   }
 
   @override
@@ -62,50 +52,7 @@ class _ManageProfilePageState extends State<ManageProfilePage> with TickerProvid
     super.dispose();
   }
 
-  Future<void> _loadProfile() async {
-    try {
-      setState(() {
-        _isLoading = true;
-        _error = null;
-      });
 
-      final profileData = await ProfileService.getProfile();
-      
-      setState(() {
-        _profileData = profileData;
-        _isLoading = false;
-      });
-
-      _animationController.forward();
-    } catch (e) {
-      setState(() {
-        _error = e.toString();
-        _isLoading = false;
-      });
-    }
-  }
-
-  Future<void> _pickImage() async {
-    final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
-    if (image != null) {
-      setState(() {
-        _profileImage = File(image.path);
-      });
-      
-      // Show success snackbar
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Profile picture updated!',
-            style: GoogleFonts.poppins(),
-          ),
-          backgroundColor: Color(0xFF4ECDC4),
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        ),
-      );
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -153,105 +100,6 @@ class _ManageProfilePageState extends State<ManageProfilePage> with TickerProvid
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Profile Header with Gradient Background
-                Container(
-                  padding: EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [Color(0xFF4ECDC4).withOpacity(0.8), Color(0xFF44A08D).withOpacity(0.8)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Color(0xFF4ECDC4).withOpacity(0.3),
-                        blurRadius: 15,
-                        offset: Offset(0, 8),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    children: [
-                      Stack(
-                        children: [
-                          Container(
-                            padding: EdgeInsets.all(4),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.2),
-                              shape: BoxShape.circle,
-                            ),
-                            child: CircleAvatar(
-                              radius: 60,
-                              backgroundColor: Colors.white.withOpacity(0.1),
-                              backgroundImage: _profileImage != null 
-                                  ? FileImage(_profileImage!) 
-                                  : null,
-                              child: _profileImage == null 
-                                  ? Icon(Icons.person, size: 60, color: Colors.white)
-                                  : null,
-                            ),
-                          ),
-                          Positioned(
-                            bottom: 0,
-                            right: 0,
-                            child: GestureDetector(
-                              onTap: _pickImage,
-                              child: Container(
-                                padding: EdgeInsets.all(10),
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  shape: BoxShape.circle,
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withOpacity(0.2),
-                                      blurRadius: 8,
-                                      offset: Offset(0, 2),
-                                    ),
-                                  ],
-                                ),
-                                child: Icon(
-                                  Icons.camera_alt,
-                                  color: Color(0xFF4ECDC4),
-                                  size: 20,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      SizedBox(height: 16),
-                      Text(
-                        _profileData != null 
-                            ? '${_profileData!['fname'] ?? ''} ${_profileData!['mname'] ?? ''} ${_profileData!['lname'] ?? ''}'.trim()
-                            : 'Loading...',
-                        style: GoogleFonts.poppins(
-                          color: Colors.white,
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      SizedBox(height: 4),
-                      Text(
-                        _profileData?['email'] ?? 'Loading...',
-                        style: GoogleFonts.poppins(
-                          color: Colors.white.withOpacity(0.8),
-                          fontSize: 14,
-                        ),
-                      ),
-                      SizedBox(height: 16),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          _buildStatBadge('Premium', Icons.star, Color(0xFFFFD700)),
-                          SizedBox(width: 16),
-                          _buildStatBadge('Member since 2023', Icons.calendar_today, Colors.white),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                SizedBox(height: 24),
                 
                 // Profile Settings Section
                 _buildSectionTitle('Profile Settings'),
@@ -299,30 +147,6 @@ class _ManageProfilePageState extends State<ManageProfilePage> with TickerProvid
     );
   }
 
-  Widget _buildStatBadge(String text, IconData icon, Color color) {
-    return Container(
-      padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.2),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: color, size: 16),
-          SizedBox(width: 6),
-          Text(
-            text,
-            style: GoogleFonts.poppins(
-              color: Colors.white,
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _buildSectionTitle(String title, {Color color = const Color(0xFF4ECDC4)}) {
     return Row(

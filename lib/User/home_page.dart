@@ -511,7 +511,20 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           _buildLoadingCard(isSmallScreen, isThinScreen)
         else if (announcements.isEmpty)
           _buildEmptyCard('No announcements available', isSmallScreen, isThinScreen)
+        else if (announcements.length >= 4)
+          // Make scrollable when 4 or more items
+          SizedBox(
+            height: isSmallScreen ? 200 : 220,
+            child: ListView.builder(
+              scrollDirection: Axis.vertical,
+              itemCount: announcements.length,
+              itemBuilder: (context, index) {
+                return _buildAnnouncementCard(announcements[index], isSmallScreen, isThinScreen);
+              },
+            ),
+          )
         else
+          // Show all items when less than 4
           ...announcements.map((announcement) => _buildAnnouncementCard(announcement, isSmallScreen, isThinScreen)),
       ],
     );
@@ -746,7 +759,20 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           _buildLoadingCard(isSmallScreen, isThinScreen)
         else if (promotions.isEmpty)
           _buildEmptyCard('No promotions available', isSmallScreen, isThinScreen)
+        else if (promotions.length >= 4)
+          // Make scrollable when 4 or more items
+          SizedBox(
+            height: isSmallScreen ? 200 : 220,
+            child: ListView.builder(
+              scrollDirection: Axis.vertical,
+              itemCount: promotions.length,
+              itemBuilder: (context, index) {
+                return _buildPromotionCard(promotions[index], isSmallScreen, isThinScreen);
+              },
+            ),
+          )
         else
+          // Show all items when less than 4
           ...promotions.map((promotion) => _buildPromotionCard(promotion, isSmallScreen, isThinScreen)),
       ],
     );

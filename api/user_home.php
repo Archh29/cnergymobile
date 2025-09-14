@@ -3,9 +3,46 @@
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
-require_once 'db.php';
+// Database configuration
+$host = "localhost";
+$dbname = "u773938685_cnergydb";
+$username = "u773938685_archh29";
+$password = "Gwapoko385@";
+
+// CORS headers - MUST be set before any output
+header('Access-Control-Allow-Origin: *');
+header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With, Accept, Origin');
+header('Access-Control-Max-Age: 86400'); // Cache preflight for 24 hours
+header('Content-Type: application/json; charset=utf-8');
+
+// Handle preflight requests - MUST be handled first
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    // Return 200 OK for preflight requests
+    http_response_code(200);
+    exit();
+}
+
+// Function to send JSON response
+function sendResponse($data, $statusCode = 200) {
+    http_response_code($statusCode);
+    echo json_encode($data, JSON_UNESCAPED_UNICODE);
+    exit();
+}
+
+// Function to send error response
+function sendError($message, $statusCode = 400) {
+    http_response_code($statusCode);
+    echo json_encode(['error' => $message], JSON_UNESCAPED_UNICODE);
+    exit();
+}
 
 try {
+    // Database connection
+    $pdo = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8", $username, $password);
+    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+    
     // Fetch all data in parallel using prepared statements
     $announcementsStmt = $pdo->prepare("
         SELECT 
@@ -36,6 +73,7 @@ try {
         ORDER BY created_at DESC
     ");
     
+    // Updated promotions query - show all active promotions regardless of date
     $promotionsStmt = $pdo->prepare("
         SELECT 
             id,
@@ -47,7 +85,6 @@ try {
             created_at
         FROM promotions 
         WHERE is_active = 1 
-        AND CURDATE() BETWEEN start_date AND end_date
         ORDER BY created_at DESC
     ");
     
@@ -64,19 +101,25 @@ try {
     $formattedAnnouncements = array_map(function($announcement) {
         $isImportant = $announcement['priority'] === 'high';
         
-        $color = match($announcement['priority']) {
-            'high' => '#FF6B35',
-            'medium' => '#4ECDC4', 
-            'low' => '#96CEB4',
-            default => '#96CEB4'
-        };
-        
-        $icon = match($announcement['priority']) {
-            'high' => 'fitness_center',
-            'medium' => 'schedule',
-            'low' => 'group',
-            default => 'info'
-        };
+        // Use switch instead of match for PHP 7.x compatibility
+        switch($announcement['priority']) {
+            case 'high':
+                $color = '#FF6B35';
+                $icon = 'fitness_center';
+                break;
+            case 'medium':
+                $color = '#4ECDC4';
+                $icon = 'schedule';
+                break;
+            case 'low':
+                $color = '#96CEB4';
+                $icon = 'group';
+                break;
+            default:
+                $color = '#96CEB4';
+                $icon = 'info';
+                break;
+        }
         
         return [
             'id' => (int)$announcement['id'],
@@ -111,7 +154,7 @@ try {
     
     // Transform promotions data
     $promoColors = ['#FF6B35', '#4ECDC4', '#96CEB4', '#45B7D1', '#F7DC6F', '#BB8FCE'];
-    $promoIcons = ['local_fire_department', 'school', 'people', 'star', 'gift', 'celebration'];
+    $promoIcons = ['local_fire_department', 'school', 'people', 'star', 'card_giftcard', 'celebration'];
     
     $formattedPromotions = array_map(function($promotion, $index) use ($promoColors, $promoIcons) {
         $colorIndex = $index % count($promoColors);
@@ -132,9 +175,19 @@ try {
             $discount = 'SAVE';
         }
         
-        $validUntil = $daysRemaining > 0 
-            ? "Valid for {$daysRemaining} more days"
-            : "Ends today";
+        // Check if promotion is currently active based on dates
+        $startDate = new DateTime($promotion['start_date']);
+        $isCurrentlyActive = ($today >= $startDate && $today <= $endDate);
+        
+        if ($isCurrentlyActive) {
+            $validUntil = $daysRemaining > 0 
+                ? "Valid for {$daysRemaining} more days"
+                : "Ends today";
+        } else if ($today < $startDate) {
+            $validUntil = "Starts on " . $startDate->format('M d, Y');
+        } else {
+            $validUntil = "Expired";
+        }
             
         return [
             'id' => (int)$promotion['id'],
@@ -146,7 +199,8 @@ try {
             'icon' => $promoIcons[$iconIndex],
             'startDate' => $promotion['start_date'],
             'endDate' => $promotion['end_date'],
-            'createdAt' => $promotion['created_at']
+            'createdAt' => $promotion['created_at'],
+            'isActive' => $isCurrentlyActive
         ];
     }, $promotions, array_keys($promotions));
     

@@ -9,7 +9,7 @@ import '../models/exercise_model.dart' as exercise_model;
 import '../models/exercise_selection_model.dart' as selection_model;
 
 class RoutineService {
-  static const String baseUrl = 'http://localhost/cynergy/coach_routine.php';
+  static const String baseUrl = 'https://api.cnergy.site/coach_routine.php';
 
   static int? _parseId(String? id, String fieldName) {
     if (id == null || id.isEmpty) {
@@ -34,56 +34,83 @@ class RoutineService {
     return parsed;
   }
 
-  static Future<List<Map<String, dynamic>>> getTargetMuscles() async {
+  static Future<List<Map<String, dynamic>>> getMuscleGroups() async {
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl/target-muscles'),
+        Uri.parse('$baseUrl?action=fetchMuscles'),
         headers: {'Content-Type': 'application/json'},
       );
 
       if (response.statusCode == 200) {
-        final List<dynamic> data = json.decode(response.body);
-        return data.cast<Map<String, dynamic>>();
+        final Map<String, dynamic> data = json.decode(response.body);
+        if (data['success'] == true) {
+          final List<dynamic> muscleGroups = data['data'];
+          return muscleGroups.cast<Map<String, dynamic>>();
+        } else {
+          throw Exception(data['message'] ?? 'Failed to load muscle groups');
+        }
       } else {
-        throw Exception('Failed to load target muscles');
+        throw Exception('Failed to load muscle groups');
       }
     } catch (e) {
-      throw Exception('Error fetching target muscles: $e');
+      throw Exception('Error fetching muscle groups: $e');
     }
   }
 
-  static Future<List<exercise_model.TargetMuscleModel>> fetchTargetMuscles() async {
+  static Future<List<exercise_model.TargetMuscleModel>> fetchMuscleGroups() async {
     try {
+      print('🌐 Fetching muscle groups from: $baseUrl?action=fetchMuscles');
       final response = await http.get(
-        Uri.parse('$baseUrl/target-muscles'),
+        Uri.parse('$baseUrl?action=fetchMuscles'),
         headers: {'Content-Type': 'application/json'},
       );
 
+      print('📡 Response status: ${response.statusCode}');
+      print('📄 Response body: ${response.body}');
+
       if (response.statusCode == 200) {
-        final List<dynamic> data = json.decode(response.body);
-        return data.map((json) => exercise_model.TargetMuscleModel.fromJson(json)).toList();
+        final Map<String, dynamic> data = json.decode(response.body);
+        if (data['success'] == true) {
+          final List<dynamic> muscleGroups = data['data'];
+          print('✅ Successfully parsed ${muscleGroups.length} muscle groups');
+          return muscleGroups.map((json) => exercise_model.TargetMuscleModel.fromJson(json)).toList();
+        } else {
+          throw Exception(data['message'] ?? 'Failed to load muscle groups');
+        }
       } else {
-        throw Exception('Failed to load target muscles');
+        throw Exception('Failed to load muscle groups - HTTP ${response.statusCode}');
       }
     } catch (e) {
-      throw Exception('Error fetching target muscles: $e');
+      print('❌ Error fetching muscle groups: $e');
+      throw Exception('Error fetching muscle groups: $e');
     }
   }
 
-  static Future<List<exercise_model.ExerciseModel>> getExercisesByMuscleGroup(String muscleGroup) async {
+  static Future<List<exercise_model.ExerciseModel>> getExercisesByMuscleGroup(int muscleGroupId) async {
     try {
+      print('🌐 Fetching exercises for muscle group ID: $muscleGroupId');
       final response = await http.get(
-        Uri.parse('$baseUrl/exercises?muscle_group=$muscleGroup'),
+        Uri.parse('$baseUrl?action=fetchExercises&muscle_group_id=$muscleGroupId'),
         headers: {'Content-Type': 'application/json'},
       );
 
+      print('📡 Response status: ${response.statusCode}');
+      print('📄 Response body: ${response.body}');
+
       if (response.statusCode == 200) {
-        final List<dynamic> data = json.decode(response.body);
-        return data.map((json) => exercise_model.ExerciseModel.fromJson(json)).toList();
+        final Map<String, dynamic> data = json.decode(response.body);
+        if (data['success'] == true) {
+          final List<dynamic> exercises = data['data'];
+          print('✅ Successfully parsed ${exercises.length} exercises');
+          return exercises.map((json) => exercise_model.ExerciseModel.fromJson(json)).toList();
+        } else {
+          throw Exception(data['message'] ?? 'Failed to load exercises');
+        }
       } else {
-        throw Exception('Failed to load exercises');
+        throw Exception('Failed to load exercises - HTTP ${response.statusCode}');
       }
     } catch (e) {
+      print('❌ Error fetching exercises: $e');
       throw Exception('Error fetching exercises: $e');
     }
   }
@@ -172,10 +199,16 @@ class RoutineService {
 
       print('DEBUG - Sending routine data: ${json.encode(routineData)}');
 
+      // Add action to the request body
+      final requestData = {
+        'action': 'createRoutine',
+        ...routineData,
+      };
+
       final response = await http.post(
-        Uri.parse('$baseUrl/create-routine'),
+        Uri.parse(baseUrl),
         headers: {'Content-Type': 'application/json'},
-        body: json.encode(routineData),
+        body: json.encode(requestData),
       );
 
       print('DEBUG - Response status: ${response.statusCode}');
@@ -384,23 +417,6 @@ class RoutineService {
     }
   }
 
-  static Future<List<exercise_model.ExerciseModel>> fetchExercisesByMuscle(int muscleGroupId) async {
-    try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/exercises?muscle_group_id=$muscleGroupId'),
-        headers: {'Content-Type': 'application/json'},
-      );
-
-      if (response.statusCode == 200) {
-        final List<dynamic> data = json.decode(response.body);
-        return data.map((json) => exercise_model.ExerciseModel.fromJson(json)).toList();
-      } else {
-        throw Exception('Failed to load exercises for muscle group');
-      }
-    } catch (e) {
-      throw Exception('Error fetching exercises by muscle: $e');
-    }
-  }
 
   static bool validateRoutineData({
     required String clientUserId,

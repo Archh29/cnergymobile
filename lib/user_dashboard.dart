@@ -11,6 +11,7 @@ import './User/services/auth_service.dart';
 import './User/services/notification_service.dart';
 import './User/models/notification_model.dart';
 import './User/manage_subscriptions_page.dart';
+import './User/pages/subscription_history_page.dart';
 
 class UserDashboard extends StatefulWidget {
   @override
@@ -903,15 +904,10 @@ class _UserDashboardState extends State<UserDashboard> with TickerProviderStateM
                   ),
                   onTap: () {
                     Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: const Text('Subscription history coming soon!'),
-                        backgroundColor: const Color(0xFF45B7D1),
-                        behavior: SnackBarBehavior.floating,
-                        margin: const EdgeInsets.all(16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const SubscriptionHistoryPage(),
                       ),
                     );
                   },

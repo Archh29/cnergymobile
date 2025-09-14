@@ -5,6 +5,7 @@ import './models/routine.models.dart';
 import './services/routine_services.dart';
 import './create_routine_page.dart';
 import './start_workout_preview.dart';
+import './widgets/session_status_widget.dart';
 
 class RoutinePage extends StatefulWidget {
   @override
@@ -32,6 +33,7 @@ class _RoutinePageState extends State<RoutinePage> with SingleTickerProviderStat
       if (!mounted) return;
       setState(() {
         _showFab = _tabController.index == 0 && _canCreateRoutine();
+        print('🔄 Tab changed to ${_tabController.index}, show FAB: $_showFab');
       });
     });
     _loadData();
@@ -39,9 +41,11 @@ class _RoutinePageState extends State<RoutinePage> with SingleTickerProviderStat
 
   bool _canCreateRoutine() {
     if (isProMember) {
+      print('🔓 Premium user - can create unlimited routines');
       return true;
     }
     bool canCreate = myRoutines.length < 1;
+    print('🔒 Basic user - has ${myRoutines.length} routines, can create: $canCreate');
     return canCreate;
   }
 
@@ -55,23 +59,44 @@ class _RoutinePageState extends State<RoutinePage> with SingleTickerProviderStat
 
     try {
       final userId = await RoutineService.getCurrentUserId();
-      final routineResponse = await RoutineService.fetchUserRoutinesWithStatus();
+      
+      // Force refresh membership status to get latest from server
+      print('🔄 Force refreshing membership status...');
+      await RoutineService.forceRefreshMembershipStatus();
+      
+      // Load data from separate endpoints for each tab
+      print('🔄 Loading data from separate endpoints...');
+      
+      // Load user-created routines (Tab 1)
+      final userRoutinesResponse = await RoutineService.fetchUserCreatedRoutines();
+      
+      // Load coach-created routines (Tab 2)
+      final coachRoutinesResponse = await RoutineService.fetchCoachCreatedRoutines();
+      
+      // Load workout history
       final history = await RoutineService.getWorkoutHistory();
       
       if (!mounted) return;
       
       setState(() {
-        myRoutines = routineResponse.myRoutines.isNotEmpty
-            ? routineResponse.myRoutines
-            : routineResponse.routines;
-        coachAssignedRoutines = routineResponse.coachAssigned;
-        templateRoutines = routineResponse.templateRoutines;
+        // Use separate endpoints for each tab
+        myRoutines = userRoutinesResponse.myRoutines;
+        coachAssignedRoutines = coachRoutinesResponse.coachAssigned;
+        templateRoutines = coachRoutinesResponse.templateRoutines;
         workoutHistory = history;
-        isProMember = routineResponse.isPremium;
-        _totalRoutines = routineResponse.totalRoutines;
-        _membershipDetails = routineResponse.membershipStatus;
+        isProMember = userRoutinesResponse.isPremium; // Use user routines for membership status
+        _totalRoutines = userRoutinesResponse.totalRoutines + coachRoutinesResponse.totalRoutines;
+        _membershipDetails = userRoutinesResponse.membershipStatus;
         _isLoading = false;
         _showFab = _tabController.index == 0 && _canCreateRoutine();
+        
+        print('📊 Routine data loaded from separate endpoints:');
+        print('   - My routines (Tab 1): ${myRoutines.length}');
+        print('   - Coach assigned (Tab 2): ${coachAssignedRoutines.length}');
+        print('   - Template routines (Tab 3): ${templateRoutines.length}');
+        print('   - Is premium: $isProMember');
+        print('   - Can create routine: ${_canCreateRoutine()}');
+        print('   - Show FAB: $_showFab');
       });
     } catch (e) {
       if (!mounted) return;
@@ -140,14 +165,14 @@ class _RoutinePageState extends State<RoutinePage> with SingleTickerProviderStat
         id: DateTime.now().millisecondsSinceEpoch.toString(),
         name: '${routine.name} (Copy)',
         exercises: routine.exercises,
-        duration: routine.duration,
+        duration: '', // Duration removed
         difficulty: routine.difficulty,
         createdBy: 'user',
         exerciseList: routine.exerciseList,
         color: routine.color,
         lastPerformed: 'Never',
-        tags: List.from(routine.tags),
-        goal: routine.goal,
+        tags: [], // Tags removed
+        goal: '', // Goal removed
         completionRate: 0,
         totalSessions: 0,
         notes: routine.notes,
@@ -1284,36 +1309,12 @@ class _RoutinePageState extends State<RoutinePage> with SingleTickerProviderStat
               ],
             ),
             SizedBox(height: 20),
-            if (routine.tags.isNotEmpty)
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: routine.tags.map<Widget>((tag) => Container(
-                  padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: routineColor.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: routineColor.withOpacity(0.3)),
-                  ),
-                  child: Text(
-                    tag,
-                    style: GoogleFonts.poppins(
-                      color: routineColor,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                )).toList(),
-              ),
-            if (routine.tags.isNotEmpty) SizedBox(height: 16),
             Wrap(
               spacing: 10,
               runSpacing: 10,
               children: [
-                _buildInfoChip(Icons.timer_rounded, routine.duration, routineColor),
                 _buildInfoChip(Icons.format_list_numbered_rounded, "${routine.exercises} exercises", routineColor),
                 _buildInfoChip(Icons.trending_up_rounded, routine.difficulty, routineColor),
-                _buildInfoChip(Icons.flag_rounded, routine.goal, routineColor),
               ],
             ),
             SizedBox(height: 20),
@@ -1328,6 +1329,30 @@ class _RoutinePageState extends State<RoutinePage> with SingleTickerProviderStat
               overflow: TextOverflow.ellipsis,
             ),
             SizedBox(height: 24),
+            // Show session status for coach-created routines
+            if (routine.createdBy.isNotEmpty && routine.createdBy != 'null' && routine.createdBy != '0') ...[
+              Builder(
+                builder: (context) {
+                  final coachId = int.tryParse(routine.createdBy);
+                  if (coachId != null) {
+                    return SessionStatusWidget(
+                      coachId: coachId,
+                      onSessionExpired: () {
+                        // Optionally refresh the page or show a message
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Session expired. Please manage your subscription.'),
+                            backgroundColor: Colors.orange,
+                          ),
+                        );
+                      },
+                    );
+                  }
+                  return SizedBox.shrink();
+                },
+              ),
+              SizedBox(height: 16),
+            ],
             Container(
               width: double.infinity,
               decoration: BoxDecoration(
