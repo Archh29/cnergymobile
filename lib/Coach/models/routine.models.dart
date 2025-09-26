@@ -297,7 +297,7 @@ class RoutineModel {
         (e) => e.toString().split('.').last == json['status'],
         orElse: () => RoutineStatus.active,
       ),
-      exercises: json['exercises'] ?? 0,
+      exercises: json['exercise_count'] ?? json['exercises'] ?? 0,
       duration: json['duration'] ?? '',
       exerciseList: json['exercise_list'] ?? '',
       createdBy: json['created_by']?.toString() ?? '',
@@ -314,7 +314,7 @@ class RoutineModel {
           ? List<String>.from(json['scheduled_days']) 
           : [],
       version: json['version']?.toDouble() ?? 1.0,
-      createdDate: DateTime.tryParse(json['created_date'] ?? '') ?? DateTime.now(),
+      createdDate: DateTime.tryParse(json['created_at'] ?? json['created_date'] ?? '') ?? DateTime.now(),
       lastModified: json['last_modified'] != null 
           ? DateTime.tryParse(json['last_modified']) 
           : null,

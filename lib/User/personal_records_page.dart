@@ -11,8 +11,11 @@ class PersonalRecordsPage extends StatefulWidget {
 class _PersonalRecordsPageState extends State<PersonalRecordsPage> {
   List<PersonalRecordModel> personalRecords = [];
   List<Map<String, dynamic>> exercises = [];
+  List<Map<String, dynamic>> muscleGroups = [];
   bool isLoading = true;
   String searchQuery = '';
+  int? selectedMuscleGroupId;
+  String selectedMuscleGroupName = 'All Muscle Groups';
 
   @override
   void initState() {
@@ -25,14 +28,16 @@ class _PersonalRecordsPageState extends State<PersonalRecordsPage> {
     
     try {
       final futures = await Future.wait([
-        EnhancedProgressService.fetchPersonalRecords(),
+        EnhancedProgressService.fetchPersonalRecords(muscleGroupId: selectedMuscleGroupId),
         EnhancedProgressService.fetchExercises(),
+        EnhancedProgressService.fetchMuscleGroups(),
       ]);
       
       if (mounted) {
         setState(() {
           personalRecords = futures[0] as List<PersonalRecordModel>;
           exercises = futures[1] as List<Map<String, dynamic>>;
+          muscleGroups = futures[2] as List<Map<String, dynamic>>;
           isLoading = false;
         });
       }
@@ -77,6 +82,7 @@ class _PersonalRecordsPageState extends State<PersonalRecordsPage> {
           : Column(
               children: [
                 _buildSearchBar(),
+                _buildMuscleGroupFilter(),
                 Expanded(child: _buildRecordsList()),
               ],
             ),
@@ -85,7 +91,7 @@ class _PersonalRecordsPageState extends State<PersonalRecordsPage> {
 
   Widget _buildSearchBar() {
     return Container(
-      margin: EdgeInsets.all(20),
+      margin: EdgeInsets.fromLTRB(20, 20, 20, 10),
       padding: EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
         color: Color(0xFF1A1A1A),
@@ -104,6 +110,57 @@ class _PersonalRecordsPageState extends State<PersonalRecordsPage> {
             searchQuery = value.toLowerCase();
           });
         },
+      ),
+    );
+  }
+
+  Widget _buildMuscleGroupFilter() {
+    return Container(
+      margin: EdgeInsets.fromLTRB(20, 0, 20, 20),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            _buildFilterChip('All Muscle Groups', null, selectedMuscleGroupId == null),
+            SizedBox(width: 8),
+            ...muscleGroups.map((group) => _buildFilterChip(
+              group['name'],
+              group['id'],
+              selectedMuscleGroupId == group['id'],
+            )).toList(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFilterChip(String label, int? muscleGroupId, bool isSelected) {
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          selectedMuscleGroupId = muscleGroupId;
+          selectedMuscleGroupName = label;
+        });
+        _loadData();
+      },
+      child: Container(
+        padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? Color(0xFF4ECDC4) : Color(0xFF1A1A1A),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected ? Color(0xFF4ECDC4) : Colors.grey[600]!,
+            width: 1,
+          ),
+        ),
+        child: Text(
+          label,
+          style: GoogleFonts.poppins(
+            color: isSelected ? Colors.white : Colors.grey[400],
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
       ),
     );
   }
@@ -151,15 +208,17 @@ class _PersonalRecordsPageState extends State<PersonalRecordsPage> {
   }
 
   Widget _buildRecordCard(PersonalRecordModel record) {
-    return Container(
-      margin: EdgeInsets.only(bottom: 16),
-      padding: EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Color(0xFF1A1A1A),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Color(0xFF4ECDC4).withOpacity(0.3)),
-      ),
-      child: Row(
+    return GestureDetector(
+      onTap: () => _showExerciseHistory(record),
+      child: Container(
+        margin: EdgeInsets.only(bottom: 16),
+        padding: EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Color(0xFF1A1A1A),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Color(0xFF4ECDC4).withOpacity(0.3)),
+        ),
+        child: Row(
         children: [
           Container(
             padding: EdgeInsets.all(12),
@@ -187,12 +246,34 @@ class _PersonalRecordsPageState extends State<PersonalRecordsPage> {
                   ),
                 ),
                 SizedBox(height: 4),
-                Text(
-                  'Achieved ${record.formattedDate}',
-                  style: GoogleFonts.poppins(
-                    color: Colors.grey[400],
-                    fontSize: 12,
-                  ),
+                Row(
+                  children: [
+                    if (record.primaryMuscleGroup != null) ...[
+                      Container(
+                        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Color(0xFF4ECDC4).withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          record.primaryMuscleGroup!,
+                          style: GoogleFonts.poppins(
+                            color: Color(0xFF4ECDC4),
+                            fontSize: 10,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                      SizedBox(width: 8),
+                    ],
+                    Text(
+                      'Achieved ${record.formattedDate}',
+                      style: GoogleFonts.poppins(
+                        color: Colors.grey[400],
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -219,7 +300,140 @@ class _PersonalRecordsPageState extends State<PersonalRecordsPage> {
           ),
         ],
       ),
+    ),
     );
+  }
+
+  void _showExerciseHistory(PersonalRecordModel record) async {
+    try {
+      final history = await EnhancedProgressService.fetchExerciseHistory(record.exerciseId);
+      
+      if (!mounted) return;
+      
+      showModalBottomSheet(
+        context: context,
+        backgroundColor: Color(0xFF0F0F0F),
+        isScrollControlled: true,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        builder: (context) => Container(
+          height: MediaQuery.of(context).size.height * 0.7,
+          padding: EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header
+              Row(
+                children: [
+                  Icon(Icons.history, color: Color(0xFF4ECDC4), size: 24),
+                  SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      '${record.exerciseName} - History',
+                      style: GoogleFonts.poppins(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: Icon(Icons.close, color: Colors.grey[400]),
+                  ),
+                ],
+              ),
+              SizedBox(height: 20),
+              
+              // History List
+              Expanded(
+                child: history.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.fitness_center_outlined, color: Colors.grey[600], size: 64),
+                            SizedBox(height: 16),
+                            Text(
+                              'No history found',
+                              style: GoogleFonts.poppins(
+                                color: Colors.grey[400],
+                                fontSize: 18,
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    : ListView.builder(
+                        itemCount: history.length,
+                        itemBuilder: (context, index) {
+                          final historyRecord = history[index];
+                          return Container(
+                            margin: EdgeInsets.only(bottom: 12),
+                            padding: EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: Color(0xFF1A1A1A),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: Color(0xFF4ECDC4).withOpacity(0.2)),
+                            ),
+                            child: Row(
+                              children: [
+                                Container(
+                                  padding: EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: Color(0xFF4ECDC4).withOpacity(0.2),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Icon(
+                                    Icons.emoji_events_rounded,
+                                    color: Color(0xFF4ECDC4),
+                                    size: 20,
+                                  ),
+                                ),
+                                SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        historyRecord.formattedWeight,
+                                        style: GoogleFonts.poppins(
+                                          color: Colors.white,
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                      Text(
+                                        historyRecord.formattedDate,
+                                        style: GoogleFonts.poppins(
+                                          color: Colors.grey[400],
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error loading exercise history: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   void _showAddRecordDialog() {
@@ -227,6 +441,7 @@ class _PersonalRecordsPageState extends State<PersonalRecordsPage> {
       context: context,
       builder: (context) => _AddRecordDialog(
         exercises: exercises,
+        muscleGroups: muscleGroups,
         onRecordAdded: () {
           _loadData();
         },
@@ -237,11 +452,13 @@ class _PersonalRecordsPageState extends State<PersonalRecordsPage> {
 
 class _AddRecordDialog extends StatefulWidget {
   final List<Map<String, dynamic>> exercises;
+  final List<Map<String, dynamic>> muscleGroups;
   final VoidCallback onRecordAdded;
 
   const _AddRecordDialog({
     Key? key,
     required this.exercises,
+    required this.muscleGroups,
     required this.onRecordAdded,
   }) : super(key: key);
 
@@ -254,6 +471,35 @@ class _AddRecordDialogState extends State<_AddRecordDialog> {
   final TextEditingController weightController = TextEditingController();
   DateTime selectedDate = DateTime.now();
   bool isLoading = false;
+  int? selectedMuscleGroupId;
+  String selectedMuscleGroupName = 'All Muscle Groups';
+  List<Map<String, dynamic>> filteredExercises = [];
+
+  @override
+  void initState() {
+    super.initState();
+    filteredExercises = widget.exercises;
+  }
+
+  Future<void> _filterExercisesByMuscleGroup(int? muscleGroupId) async {
+    setState(() {
+      isLoading = true;
+    });
+
+    try {
+      final exercises = await EnhancedProgressService.fetchExercises(muscleGroupId: muscleGroupId);
+      setState(() {
+        filteredExercises = exercises;
+        selectedExercise = null; // Reset selected exercise when filter changes
+        isLoading = false;
+      });
+    } catch (e) {
+      print('Error filtering exercises: $e');
+      setState(() {
+        isLoading = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -270,6 +516,68 @@ class _AddRecordDialogState extends State<_AddRecordDialog> {
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          // Muscle Group Filter Dropdown
+          Container(
+            margin: EdgeInsets.only(bottom: 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Filter by Muscle Group',
+                  style: GoogleFonts.poppins(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                SizedBox(height: 8),
+                Container(
+                  width: double.infinity,
+                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Color(0xFF2A2A2A),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey[600]!, width: 1),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<int?>(
+                      value: selectedMuscleGroupId,
+                      isExpanded: true,
+                      dropdownColor: Color(0xFF2A2A2A),
+                      style: GoogleFonts.poppins(color: Colors.white),
+                      items: [
+                        DropdownMenuItem<int?>(
+                          value: null,
+                          child: Text(
+                            'All Muscle Groups',
+                            style: GoogleFonts.poppins(color: Colors.white),
+                          ),
+                        ),
+                        ...widget.muscleGroups.map((group) => DropdownMenuItem<int?>(
+                          value: group['id'],
+                          child: Text(
+                            group['name'],
+                            style: GoogleFonts.poppins(color: Colors.white),
+                          ),
+                        )).toList(),
+                      ],
+                      onChanged: (value) {
+                        setState(() {
+                          selectedMuscleGroupId = value;
+                          selectedMuscleGroupName = value == null 
+                              ? 'All Muscle Groups' 
+                              : widget.muscleGroups.firstWhere((g) => g['id'] == value)['name'];
+                        });
+                        _filterExercisesByMuscleGroup(value);
+                      },
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          
+          // Exercise Dropdown
           DropdownButtonFormField<Map<String, dynamic>>(
             value: selectedExercise,
             decoration: InputDecoration(
@@ -283,7 +591,7 @@ class _AddRecordDialogState extends State<_AddRecordDialog> {
               ),
             ),
             dropdownColor: Color(0xFF2A2A2A),
-            items: widget.exercises.map((exercise) {
+            items: filteredExercises.map((exercise) {
               return DropdownMenuItem<Map<String, dynamic>>(
                 value: exercise,
                 child: Text(
@@ -363,6 +671,7 @@ class _AddRecordDialogState extends State<_AddRecordDialog> {
       ],
     );
   }
+
 
   Future<void> _selectDate() async {
     final DateTime? picked = await showDatePicker(

@@ -6,6 +6,7 @@ class PersonalRecordModel {
   final DateTime? achievedOn;
   final String? exerciseName;
   final String? exerciseDescription;
+  final String? primaryMuscleGroup;
 
   PersonalRecordModel({
     this.id,
@@ -15,6 +16,7 @@ class PersonalRecordModel {
     this.achievedOn,
     this.exerciseName,
     this.exerciseDescription,
+    this.primaryMuscleGroup,
   });
 
   factory PersonalRecordModel.fromJson(Map<String, dynamic> json) {
@@ -26,6 +28,7 @@ class PersonalRecordModel {
       achievedOn: json['achieved_on'] != null ? DateTime.parse(json['achieved_on']) : null,
       exerciseName: json['exercise_name']?.toString(),
       exerciseDescription: json['exercise_description']?.toString(),
+      primaryMuscleGroup: json['primary_muscle_group']?.toString(),
     );
   }
 

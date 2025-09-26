@@ -1,15 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import './models/workout_session_model.dart';
+import './models/attendance_model.dart';
 
 class WorkoutHeatmapPage extends StatefulWidget {
   final Map<DateTime, int> heatmapData;
   final List<WorkoutSessionModel> workoutSessions;
+  final List<AttendanceModel> attendanceData;
 
   const WorkoutHeatmapPage({
     Key? key, 
     required this.heatmapData,
     required this.workoutSessions,
+    required this.attendanceData,
   }) : super(key: key);
 
   @override
@@ -39,39 +42,6 @@ class _WorkoutHeatmapPageState extends State<WorkoutHeatmapPage> {
             fontWeight: FontWeight.w600,
           ),
         ),
-        actions: [
-          // Month selector
-          PopupMenuButton<int>(
-            icon: Icon(Icons.calendar_view_month_rounded, color: Colors.white),
-            color: Color(0xFF2A2A2A),
-            onSelected: (month) {
-              setState(() {
-                selectedMonth = month;
-              });
-            },
-            itemBuilder: (context) => List.generate(12, (i) => i + 1)
-                .map((m) => PopupMenuItem(
-                      value: m,
-                      child: Text(_monthName(m), style: GoogleFonts.poppins(color: Colors.white)),
-                    ))
-                .toList(),
-          ),
-          // Year selector
-          PopupMenuButton<int>(
-            icon: Icon(Icons.calendar_today_rounded, color: Colors.white),
-            color: Color(0xFF2A2A2A),
-            onSelected: (year) {
-              setState(() {
-                selectedYear = year;
-              });
-            },
-            itemBuilder: (context) => [
-              PopupMenuItem(value: DateTime.now().year, child: Text('${DateTime.now().year}', style: GoogleFonts.poppins(color: Colors.white))),
-              PopupMenuItem(value: DateTime.now().year - 1, child: Text('${DateTime.now().year - 1}', style: GoogleFonts.poppins(color: Colors.white))),
-              PopupMenuItem(value: DateTime.now().year - 2, child: Text('${DateTime.now().year - 2}', style: GoogleFonts.poppins(color: Colors.white))),
-            ],
-          ),
-        ],
       ),
       body: SingleChildScrollView(
         padding: EdgeInsets.all(20),
@@ -99,13 +69,225 @@ class _WorkoutHeatmapPageState extends State<WorkoutHeatmapPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            '${_monthName(selectedMonth)} $selectedYear Activity',
-            style: GoogleFonts.poppins(
-              color: Colors.white,
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
+          // Responsive layout - stack on small screens, row on larger screens
+          LayoutBuilder(
+            builder: (context, constraints) {
+              if (constraints.maxWidth < 600) {
+                // Small screens - stack vertically
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${_monthName(selectedMonth)} $selectedYear Activity',
+                      style: GoogleFonts.poppins(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    SizedBox(height: 12),
+                    Row(
+                      children: [
+                        // Month selector
+                        Expanded(
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: Color(0xFF2A2A2A),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: PopupMenuButton<int>(
+                              icon: Padding(
+                                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(Icons.calendar_view_month_rounded, color: Colors.white, size: 16),
+                                    SizedBox(width: 6),
+                                    Flexible(
+                                      child: Text(
+                                        _monthName(selectedMonth),
+                                        style: GoogleFonts.poppins(
+                                          color: Colors.white,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    Icon(Icons.arrow_drop_down, color: Colors.white, size: 16),
+                                  ],
+                                ),
+                              ),
+                              color: Color(0xFF2A2A2A),
+                              onSelected: (month) {
+                                setState(() {
+                                  selectedMonth = month;
+                                });
+                              },
+                              itemBuilder: (context) => List.generate(12, (i) => i + 1)
+                                  .map((m) => PopupMenuItem(
+                                        value: m,
+                                        child: Text(_monthName(m), style: GoogleFonts.poppins(color: Colors.white)),
+                                      ))
+                                  .toList(),
+                            ),
+                          ),
+                        ),
+                        SizedBox(width: 8),
+                        // Year selector
+                        Expanded(
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: Color(0xFF2A2A2A),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: PopupMenuButton<int>(
+                              icon: Padding(
+                                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(Icons.calendar_today_rounded, color: Colors.white, size: 16),
+                                    SizedBox(width: 6),
+                                    Flexible(
+                                      child: Text(
+                                        '$selectedYear',
+                                        style: GoogleFonts.poppins(
+                                          color: Colors.white,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    Icon(Icons.arrow_drop_down, color: Colors.white, size: 16),
+                                  ],
+                                ),
+                              ),
+                              color: Color(0xFF2A2A2A),
+                              onSelected: (year) {
+                                setState(() {
+                                  selectedYear = year;
+                                });
+                              },
+                              itemBuilder: (context) => [
+                                PopupMenuItem(value: DateTime.now().year, child: Text('${DateTime.now().year}', style: GoogleFonts.poppins(color: Colors.white))),
+                                PopupMenuItem(value: DateTime.now().year - 1, child: Text('${DateTime.now().year - 1}', style: GoogleFonts.poppins(color: Colors.white))),
+                                PopupMenuItem(value: DateTime.now().year - 2, child: Text('${DateTime.now().year - 2}', style: GoogleFonts.poppins(color: Colors.white))),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                );
+              } else {
+                // Large screens - horizontal layout
+                return Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        '${_monthName(selectedMonth)} $selectedYear Activity',
+                        style: GoogleFonts.poppins(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    SizedBox(width: 16),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Month selector
+                        Container(
+                          decoration: BoxDecoration(
+                            color: Color(0xFF2A2A2A),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: PopupMenuButton<int>(
+                            icon: Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.calendar_view_month_rounded, color: Colors.white, size: 16),
+                                  SizedBox(width: 6),
+                                  Text(
+                                    _monthName(selectedMonth),
+                                    style: GoogleFonts.poppins(
+                                      color: Colors.white,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                  Icon(Icons.arrow_drop_down, color: Colors.white, size: 16),
+                                ],
+                              ),
+                            ),
+                            color: Color(0xFF2A2A2A),
+                            onSelected: (month) {
+                              setState(() {
+                                selectedMonth = month;
+                              });
+                            },
+                            itemBuilder: (context) => List.generate(12, (i) => i + 1)
+                                .map((m) => PopupMenuItem(
+                                      value: m,
+                                      child: Text(_monthName(m), style: GoogleFonts.poppins(color: Colors.white)),
+                                    ))
+                                .toList(),
+                          ),
+                        ),
+                        SizedBox(width: 8),
+                        // Year selector
+                        Container(
+                          decoration: BoxDecoration(
+                            color: Color(0xFF2A2A2A),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: PopupMenuButton<int>(
+                            icon: Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.calendar_today_rounded, color: Colors.white, size: 16),
+                                  SizedBox(width: 6),
+                                  Text(
+                                    '$selectedYear',
+                                    style: GoogleFonts.poppins(
+                                      color: Colors.white,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                  Icon(Icons.arrow_drop_down, color: Colors.white, size: 16),
+                                ],
+                              ),
+                            ),
+                            color: Color(0xFF2A2A2A),
+                            onSelected: (year) {
+                              setState(() {
+                                selectedYear = year;
+                              });
+                            },
+                            itemBuilder: (context) => [
+                              PopupMenuItem(value: DateTime.now().year, child: Text('${DateTime.now().year}', style: GoogleFonts.poppins(color: Colors.white))),
+                              PopupMenuItem(value: DateTime.now().year - 1, child: Text('${DateTime.now().year - 1}', style: GoogleFonts.poppins(color: Colors.white))),
+                              PopupMenuItem(value: DateTime.now().year - 2, child: Text('${DateTime.now().year - 2}', style: GoogleFonts.poppins(color: Colors.white))),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                );
+              }
+            },
           ),
           SizedBox(height: 20),
           _buildMonthGrid(selectedYear, selectedMonth),
@@ -277,7 +459,7 @@ class _WorkoutHeatmapPageState extends State<WorkoutHeatmapPage> {
                 ),
               ),
               Row(
-                children: List.generate(5, (index) => Container(
+                children: List.generate(3, (index) => Container(
                   margin: EdgeInsets.only(left: 4),
                   width: 16,
                   height: 16,
@@ -296,38 +478,91 @@ class _WorkoutHeatmapPageState extends State<WorkoutHeatmapPage> {
               ),
             ],
           ),
+          SizedBox(height: 16),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildLegendItem('Attendance Only', 1, 'Light shading for gym attendance'),
+              SizedBox(height: 8),
+              _buildLegendItem('Attendance + Completed Program', 2, 'Dark shading for full activity'),
+              SizedBox(height: 12),
+              Text(
+                'Note: Only days with gym attendance will show shading',
+                style: GoogleFonts.poppins(
+                  color: Colors.orange[300],
+                  fontSize: 11,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );
   }
 
+  Widget _buildLegendItem(String title, int intensity, String description) {
+    return Row(
+      children: [
+        Container(
+          width: 16,
+          height: 16,
+          decoration: BoxDecoration(
+            color: _getHeatmapColor(intensity),
+            borderRadius: BorderRadius.circular(4),
+          ),
+        ),
+        SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: GoogleFonts.poppins(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              Text(
+                description,
+                style: GoogleFonts.poppins(
+                  color: Colors.grey[400],
+                  fontSize: 10,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   Color _getHeatmapColor(int intensity) {
     switch (intensity) {
-      case 0: return Color(0xFF2A2A2A);
-      case 1: return Color(0xFF4ECDC4).withOpacity(0.3);
-      case 2: return Color(0xFF4ECDC4).withOpacity(0.6);
-      case 3: return Color(0xFF4ECDC4).withOpacity(0.8);
-      case 4: return Color(0xFF4ECDC4);
+      case 0: return Color(0xFF2A2A2A); // No activity
+      case 1: return Color(0xFF4ECDC4).withOpacity(0.4); // Attendance only (light)
+      case 2: return Color(0xFF4ECDC4); // Attendance + completed program (dark)
       default: return Color(0xFF2A2A2A);
     }
   }
 
   int _calculateMaxStreak() {
-    if (widget.workoutSessions.isEmpty) return 0;
+    if (widget.attendanceData.isEmpty) return 0;
     
-    final completedSessions = widget.workoutSessions
-        .where((session) => session.completed)
-        .toList()
-      ..sort((a, b) => a.sessionDate.compareTo(b.sessionDate));
+    // Sort attendance by date
+    final sortedAttendance = List<AttendanceModel>.from(widget.attendanceData)
+      ..sort((a, b) => a.checkIn.compareTo(b.checkIn));
     
-    if (completedSessions.isEmpty) return 0;
+    if (sortedAttendance.isEmpty) return 0;
     
     int maxStreak = 1;
     int currentStreak = 1;
     
-    for (int i = 1; i < completedSessions.length; i++) {
-      final daysDiff = completedSessions[i].sessionDate
-          .difference(completedSessions[i - 1].sessionDate)
+    for (int i = 1; i < sortedAttendance.length; i++) {
+      final daysDiff = sortedAttendance[i].checkIn
+          .difference(sortedAttendance[i - 1].checkIn)
           .inDays;
       
       if (daysDiff <= 2) {
@@ -342,29 +577,28 @@ class _WorkoutHeatmapPageState extends State<WorkoutHeatmapPage> {
   }
 
   int _calculateCurrentStreak() {
-    if (widget.workoutSessions.isEmpty) return 0;
+    if (widget.attendanceData.isEmpty) return 0;
     
     final now = DateTime.now();
-    final recentSessions = widget.workoutSessions
-        .where((session) => session.completed && 
-               session.sessionDate.isAfter(now.subtract(Duration(days: 30))))
+    final recentAttendance = widget.attendanceData
+        .where((attendance) => attendance.checkIn.isAfter(now.subtract(Duration(days: 30))))
         .toList()
-      ..sort((a, b) => b.sessionDate.compareTo(a.sessionDate));
+      ..sort((a, b) => b.checkIn.compareTo(a.checkIn));
     
-    if (recentSessions.isEmpty) return 0;
+    if (recentAttendance.isEmpty) return 0;
     
     int streak = 0;
-    DateTime? lastWorkoutDate;
+    DateTime? lastAttendanceDate;
     
-    for (final session in recentSessions) {
-      if (lastWorkoutDate == null) {
+    for (final attendance in recentAttendance) {
+      if (lastAttendanceDate == null) {
         streak = 1;
-        lastWorkoutDate = session.sessionDate;
+        lastAttendanceDate = attendance.checkIn;
       } else {
-        final daysDiff = lastWorkoutDate.difference(session.sessionDate).inDays;
+        final daysDiff = lastAttendanceDate.difference(attendance.checkIn).inDays;
         if (daysDiff <= 2) {
           streak++;
-          lastWorkoutDate = session.sessionDate;
+          lastAttendanceDate = attendance.checkIn;
         } else {
           break;
         }
@@ -373,4 +607,5 @@ class _WorkoutHeatmapPageState extends State<WorkoutHeatmapPage> {
     
     return streak;
   }
+
 }

@@ -10,8 +10,15 @@ import 'login_screen.dart';
 import 'user_dashboard.dart';
 import 'coach_dashboard.dart';
 import 'first_time_setup_screen.dart';
+import 'welcome_onboarding_screen.dart';
 import 'forgot_pass.dart';
 import 'account_verification_page.dart';
+
+// Coach Pages
+import 'Coach/coach_messages_page.dart';
+import 'Coach/session_management_page.dart';
+import 'Coach/coach_routine_page.dart';
+import 'Coach/models/member_model.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -133,6 +140,27 @@ class MyApp extends StatelessWidget {
         '/FirstTimeSetup': (context) => const FirstTimeSetupScreenRoute(),
         '/forgotPassword': (context) => ForgotPasswordScreen(),
         '/accountVerification': (context) => const AccountVerificationScreen(),
+        '/coach-messages': (context) {
+          final args = ModalRoute.of(context)?.settings.arguments;
+          if (args is MemberModel) {
+            return CoachMessagesPage(selectedMember: args);
+          }
+          return CoachMessagesPage();
+        },
+        '/coach-session-management': (context) {
+          final args = ModalRoute.of(context)?.settings.arguments;
+          if (args is MemberModel) {
+            return SessionManagementPage(selectedMember: args);
+          }
+          return SessionManagementPage();
+        },
+        '/coach-routines': (context) {
+          final args = ModalRoute.of(context)?.settings.arguments;
+          if (args is MemberModel) {
+            return CoachRoutinePage(selectedMember: args);
+          }
+          return CoachRoutinePage();
+        },
       },
     );
   }
@@ -181,6 +209,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
   @override
   Widget build(BuildContext context) {
+    print('🚀 BUILD METHOD CALLED - TEMPORARY FIX ACTIVE');
     if (_isChecking) {
       return _buildLoadingScreen();
     }
@@ -199,71 +228,33 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
     final userId = AuthService.getCurrentUserId()!;
     print('✅ User logged in - ID: $userId, Type: ${AuthService.getUserType()}');
+    print('🔍 User type checks - isCustomer: ${AuthService.isCustomer()}, isCoach: ${AuthService.isCoach()}, isAdmin: ${AuthService.isAdmin()}, isStaff: ${AuthService.isStaff()}');
 
-    // Check user type first and route accordingly
-    if (AuthService.isCoach()) {
-      print('👨‍🏫 User is coach, showing CoachDashboard');
-      return CoachDashboard();
-    } else if (AuthService.isAdmin()) {
-      print('👑 User is admin, showing UserDashboard (or AdminDashboard)');
-      return UserDashboard(); // or AdminDashboard()
-    } else if (AuthService.isStaff()) {
-      print('👷 User is staff, showing UserDashboard (or StaffDashboard)');
-      return UserDashboard(); // or StaffDashboard()
-    } else if (AuthService.isCustomer()) {
-      print('👤 User is customer, checking account status...');
-      
-      // Check account verification status
-      final accountStatus = AuthService.getAccountStatus();
-      print('🔐 Account status: $accountStatus');
-      
-      if (accountStatus == 'pending') {
-        print('⏳ Account pending verification, showing AccountVerificationScreen');
-        return const AccountVerificationScreen();
-      } else if (accountStatus == 'rejected') {
-        print('❌ Account rejected, logging out and showing LoginScreen');
-        // Schedule logout for next frame to avoid state changes during build
-        WidgetsBinding.instance.addPostFrameCallback((_) async {
-          await AuthService.logout();
-          Get.snackbar(
-            "Account Rejected",
-            "Your account has been rejected. Please contact support.",
-            snackPosition: SnackPosition.BOTTOM,
-            backgroundColor: Colors.red,
-            colorText: Colors.white,
-          );
-        });
-        return const LoginScreen();
-      } else if (accountStatus == 'approved') {
-        print('✅ Account approved, checking profile completion...');
+    // TEMPORARY FIX: Force show first-time setup if profile is not completed
+    print('🔧 TEMPORARY FIX: Checking profile completion for all users...');
+    print('🔧 TEMPORARY FIX: User ID: $userId, User Type: ${AuthService.getUserType()}');
+    return FutureBuilder<bool>(
+      future: AuthService.isProfileCompleted(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return _buildLoadingScreen();
+        }
         
-        // Use FutureBuilder for async profile completion check
-        return FutureBuilder<bool>(
-          future: AuthService.isProfileCompleted(),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return _buildLoadingScreen();
-            }
-            
-            final profileCompleted = snapshot.data ?? false;
-            print('📋 Profile completed: $profileCompleted');
-            
-            if (!profileCompleted) {
-              print('🔧 Customer needs profile setup, showing FirstTimeSetupScreen');
-              return FirstTimeSetupScreen(userId: userId);
-            } else {
-              print('✅ Customer profile completed, showing UserDashboard');
-              return UserDashboard();
-            }
-          },
-        );
-      }
-    }
-
-    // Fallback - if user type is unknown, show login
-    print('⚠️ Unknown user type, redirecting to login');
-    return const LoginScreen();
+        final profileCompleted = snapshot.data ?? false;
+        print('📋 Profile completed (temp fix): $profileCompleted');
+        print('🔧 TEMPORARY FIX: About to show FirstTimeSetupScreen for user $userId');
+        
+        if (!profileCompleted) {
+          print('🔧 User needs profile setup (temp fix), showing WelcomeOnboardingScreen');
+          return WelcomeOnboardingScreen(userId: userId);
+        } else {
+          print('✅ Profile completed (temp fix), routing based on user type');
+          return _getHomeScreen();
+        }
+      },
+    );
   }
+
 
   Widget _buildLoadingScreen() {
     return Scaffold(

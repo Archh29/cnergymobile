@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import './models/member_model.dart';
-import './models/routine.models.dart';
 import './models/exercise_selection_model.dart';
 import './models/exercise_model.dart';
 import './services/routine_service.dart';
@@ -9,13 +8,15 @@ import './services/exercise_selection_service.dart';
 import 'coach_selection_muscle_group_page.dart';
 
 class CoachCreateRoutinePage extends StatefulWidget {
-  final MemberModel selectedClient;
+  final MemberModel? selectedClient;
   final Color selectedColor;
+  final bool isTemplate;
 
   const CoachCreateRoutinePage({
     Key? key,
-    required this.selectedClient,
+    this.selectedClient,
     this.selectedColor = const Color(0xFF4ECDC4),
+    this.isTemplate = false,
   }) : super(key: key);
 
   @override
@@ -45,8 +46,14 @@ class _CoachCreateRoutinePageState extends State<CoachCreateRoutinePage> {
   void initState() {
     super.initState();
     selectedColor = widget.selectedColor;
-    // Pre-fill routine name with client's name
-    nameController.text = "${widget.selectedClient.fname}'s Routine";
+    // Pre-fill routine name based on whether it's a template or for a specific client
+    if (widget.isTemplate) {
+      nameController.text = "My Workout Template";
+    } else if (widget.selectedClient != null) {
+      nameController.text = "${widget.selectedClient!.fname}'s Routine";
+    } else {
+      nameController.text = "New Routine";
+    }
   }
 
   @override
@@ -64,7 +71,7 @@ class _CoachCreateRoutinePageState extends State<CoachCreateRoutinePage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Create Routine',
+              widget.isTemplate ? 'Create Template' : 'Create Routine',
               style: GoogleFonts.poppins(
                 color: Colors.white,
                 fontSize: 18,
@@ -72,7 +79,9 @@ class _CoachCreateRoutinePageState extends State<CoachCreateRoutinePage> {
               ),
             ),
             Text(
-              'For ${widget.selectedClient.fullName}',
+              widget.isTemplate 
+                  ? 'Create a reusable workout template'
+                  : 'For ${widget.selectedClient?.fullName ?? 'Client'}',
               style: GoogleFonts.poppins(
                 fontSize: 12,
                 color: selectedColor,
@@ -125,16 +134,16 @@ class _CoachCreateRoutinePageState extends State<CoachCreateRoutinePage> {
                 width: 2,
               ),
             ),
-            child: widget.selectedClient.profileImage != null && widget.selectedClient.profileImage!.isNotEmpty
+            child: widget.selectedClient?.profileImage != null && widget.selectedClient!.profileImage!.isNotEmpty
                 ? ClipRRect(
                     borderRadius: BorderRadius.circular(23),
                     child: Image.network(
-                      widget.selectedClient.profileImage!,
+                      widget.selectedClient!.profileImage!,
                       fit: BoxFit.cover,
                       errorBuilder: (context, error, stackTrace) {
                         return Center(
                           child: Text(
-                            widget.selectedClient.initials,
+                            widget.selectedClient?.initials ?? 'T',
                             style: GoogleFonts.poppins(
                               color: selectedColor,
                               fontSize: 16,
@@ -147,7 +156,7 @@ class _CoachCreateRoutinePageState extends State<CoachCreateRoutinePage> {
                   )
                 : Center(
                     child: Text(
-                      widget.selectedClient.initials,
+                      widget.selectedClient?.initials ?? 'T',
                       style: GoogleFonts.poppins(
                         color: selectedColor,
                         fontSize: 16,
@@ -162,7 +171,7 @@ class _CoachCreateRoutinePageState extends State<CoachCreateRoutinePage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  widget.selectedClient.fullName,
+                  widget.selectedClient?.fullName ?? 'Template',
                   style: GoogleFonts.poppins(
                     color: Colors.white,
                     fontSize: 18,
@@ -170,7 +179,7 @@ class _CoachCreateRoutinePageState extends State<CoachCreateRoutinePage> {
                   ),
                 ),
                 Text(
-                  widget.selectedClient.email,
+                  widget.selectedClient?.email ?? 'template@example.com',
                   style: GoogleFonts.poppins(
                     color: Colors.grey[400],
                     fontSize: 14,
@@ -180,13 +189,13 @@ class _CoachCreateRoutinePageState extends State<CoachCreateRoutinePage> {
                 Container(
                   padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                   decoration: BoxDecoration(
-                    color: widget.selectedClient.statusColor.withOpacity(0.1),
+                    color: (widget.selectedClient?.statusColor ?? Colors.green).withOpacity(0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
-                    widget.selectedClient.status.toUpperCase(),
+                    (widget.selectedClient?.status ?? 'TEMPLATE').toUpperCase(),
                     style: GoogleFonts.poppins(
-                      color: widget.selectedClient.statusColor,
+                      color: widget.selectedClient?.statusColor ?? Colors.green,
                       fontSize: 10,
                       fontWeight: FontWeight.w600,
                     ),
@@ -307,7 +316,7 @@ class _CoachCreateRoutinePageState extends State<CoachCreateRoutinePage> {
                   ),
                   SizedBox(height: 8),
                   Text(
-                    'Select muscle groups and exercises for ${widget.selectedClient.fname}',
+                    'Select muscle groups and exercises for ${widget.selectedClient?.fname ?? 'this template'}',
                     style: GoogleFonts.poppins(
                       color: Colors.grey[500],
                       fontSize: 14,
@@ -483,7 +492,7 @@ class _CoachCreateRoutinePageState extends State<CoachCreateRoutinePage> {
           SizedBox(height: 16),
                     
           _buildInputField(
-            'Notes for ${widget.selectedClient.fname} (Optional)',
+            'Notes for ${widget.selectedClient?.fname ?? 'this template'} (Optional)',
             notesController,
             'Add any specific instructions or notes for your client',
             maxLines: 3,
@@ -598,7 +607,7 @@ class _CoachCreateRoutinePageState extends State<CoachCreateRoutinePage> {
                 ),
               )
             : Text(
-                'Create Routine for ${widget.selectedClient.fname}',
+                widget.isTemplate ? 'Create Template' : 'Create Routine for ${widget.selectedClient?.fname ?? 'Client'}',
                 style: GoogleFonts.poppins(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
@@ -617,7 +626,15 @@ class _CoachCreateRoutinePageState extends State<CoachCreateRoutinePage> {
       final result = await Navigator.push<List<SelectedExerciseWithConfig>>(context,
         MaterialPageRoute(
           builder: (context) => CoachMuscleGroupSelectionPage(
-            selectedClient: widget.selectedClient,
+            selectedClient: widget.selectedClient ?? MemberModel(
+              id: 0,
+              firstName: 'Template',
+              lastName: 'User',
+              email: 'template@example.com',
+              phone: '',
+              profileImage: null,
+              status: 'active',
+            ),
             selectedColor: selectedColor,
             currentSelections: currentSelections,
           ),
@@ -648,7 +665,7 @@ class _CoachCreateRoutinePageState extends State<CoachCreateRoutinePage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              '${result.length} exercises configured for ${widget.selectedClient.fname} • Est. ${duration}min workout',
+              '${result.length} exercises configured for ${widget.selectedClient?.fname ?? 'this template'} • Est. ${duration}min workout',
             ),
             backgroundColor: selectedColor,
           ),
@@ -668,7 +685,7 @@ class _CoachCreateRoutinePageState extends State<CoachCreateRoutinePage> {
   Future<void> _createRoutine() async {
     // Validation
     if (nameController.text.trim().isEmpty) {
-      _showError('Please enter a routine name');
+      _showError('Please enter a ${widget.isTemplate ? 'template' : 'routine'} name');
       return;
     }
     if (exercises.isEmpty) {
@@ -678,19 +695,43 @@ class _CoachCreateRoutinePageState extends State<CoachCreateRoutinePage> {
 
     setState(() => isLoading = true);
     try {
-      final success = await RoutineService.createRoutineForClient(
-        routineName: nameController.text.trim(),
-        clientId: widget.selectedClient.id.toString(),
-        coachId: 'current_coach_id',
-        exercises: exercises,
-        description: notesController.text.trim(),
-        duration: '', // Duration removed to match user routine creation
-        goal: '', // Goal removed to match user routine creation
-        difficulty: selectedDifficulty,
-        color: selectedColor.value.toString(),
-        tags: [], // Tags removed to match user routine creation
-        notes: notesController.text.trim(),
-      );
+      bool success;
+      
+      if (widget.isTemplate) {
+        // Create template
+        success = await RoutineService.createCoachTemplate(
+          templateName: nameController.text.trim(),
+          coachId: 'current_coach_id',
+          exercises: exercises,
+          description: notesController.text.trim(),
+          duration: '30',
+          goal: 'General Fitness',
+          difficulty: selectedDifficulty,
+          color: selectedColor.value.toString(),
+          tags: [],
+          notes: notesController.text.trim(),
+        );
+      } else {
+        // Create routine for client
+        if (widget.selectedClient == null) {
+          _showError('No client selected');
+          return;
+        }
+        
+        success = await RoutineService.createRoutineForClient(
+          routineName: nameController.text.trim(),
+          clientId: widget.selectedClient!.id.toString(),
+          coachId: 'current_coach_id',
+          exercises: exercises,
+          description: notesController.text.trim(),
+          duration: '30',
+          goal: 'General Fitness',
+          difficulty: selectedDifficulty,
+          color: selectedColor.value.toString(),
+          tags: [],
+          notes: notesController.text.trim(),
+        );
+      }
 
       if (!mounted) return;
 
@@ -698,16 +739,18 @@ class _CoachCreateRoutinePageState extends State<CoachCreateRoutinePage> {
         Navigator.pop(context, true);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Routine created successfully for ${widget.selectedClient.fname}!'),
+            content: Text(widget.isTemplate 
+                ? 'Template created successfully!' 
+                : 'Routine created successfully for ${widget.selectedClient!.fname}!'),
             backgroundColor: Color(0xFF4ECDC4),
           ),
         );
       } else {
-        throw Exception('Failed to create routine');
+        throw Exception('Failed to create ${widget.isTemplate ? 'template' : 'routine'}');
       }
     } catch (e) {
       if (!mounted) return;
-      _showError('Error creating routine: ${e.toString()}');
+      _showError('Error creating ${widget.isTemplate ? 'template' : 'routine'}: ${e.toString()}');
     } finally {
       if (mounted) {
         setState(() => isLoading = false);

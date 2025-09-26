@@ -22,6 +22,9 @@ class _ExerciseConfigurationPageState extends State<ExerciseConfigurationPage> {
   Map<int, TextEditingController> repsControllers = {};
   Map<int, TextEditingController> weightControllers = {};
   Map<int, TextEditingController> restControllers = {};
+  Map<String, TextEditingController> setRepsControllers = {}; // For individual set reps
+  Map<String, TextEditingController> setWeightControllers = {}; // For individual set weights
+  Map<int, bool> expandedExercises = {}; // Track which exercises are expanded
 
   @override
   void initState() {
@@ -35,6 +38,13 @@ class _ExerciseConfigurationPageState extends State<ExerciseConfigurationPage> {
       repsControllers[id] = TextEditingController(text: exercise.reps);
       weightControllers[id] = TextEditingController(text: exercise.weight);
       restControllers[id] = TextEditingController(text: exercise.restTime.toString());
+      
+      // Initialize individual set controllers
+      for (int i = 0; i < exercise.setConfigs.length; i++) {
+        final setKey = '${id}_${i}';
+        setRepsControllers[setKey] = TextEditingController(text: exercise.setConfigs[i].reps);
+        setWeightControllers[setKey] = TextEditingController(text: exercise.setConfigs[i].weight);
+      }
     }
   }
 
@@ -45,7 +55,42 @@ class _ExerciseConfigurationPageState extends State<ExerciseConfigurationPage> {
     repsControllers.values.forEach((controller) => controller.dispose());
     weightControllers.values.forEach((controller) => controller.dispose());
     restControllers.values.forEach((controller) => controller.dispose());
+    setRepsControllers.values.forEach((controller) => controller.dispose());
+    setWeightControllers.values.forEach((controller) => controller.dispose());
     super.dispose();
+  }
+
+  void _onSetCountChanged(int exerciseId, String newValue) {
+    final newSetCount = int.tryParse(newValue) ?? 1;
+    if (newSetCount < 1) return;
+    
+    setState(() {
+      // Find the exercise and update its set count
+      final exerciseIndex = configuredExercises.indexWhere((e) => e.exercise.id == exerciseId);
+      if (exerciseIndex != -1) {
+        final exercise = configuredExercises[exerciseIndex];
+        final updatedExercise = exercise.updateSetCount(newSetCount);
+        configuredExercises[exerciseIndex] = updatedExercise;
+        
+        // Update controllers for new sets
+        for (int i = 0; i < newSetCount; i++) {
+          final setKey = '${exerciseId}_${i}';
+          if (!setRepsControllers.containsKey(setKey)) {
+            setRepsControllers[setKey] = TextEditingController(text: updatedExercise.setConfigs[i].reps);
+            setWeightControllers[setKey] = TextEditingController(text: updatedExercise.setConfigs[i].weight);
+          }
+        }
+        
+        // Clean up excess controllers
+        for (int i = newSetCount; i < 10; i++) {
+          final setKey = '${exerciseId}_${i}';
+          setRepsControllers[setKey]?.dispose();
+          setWeightControllers[setKey]?.dispose();
+          setRepsControllers.remove(setKey);
+          setWeightControllers.remove(setKey);
+        }
+      }
+    });
   }
 
   void _removeExercise(int index) {
@@ -60,10 +105,20 @@ class _ExerciseConfigurationPageState extends State<ExerciseConfigurationPage> {
       weightControllers[exerciseId]?.dispose();
       restControllers[exerciseId]?.dispose();
       
+      // Dispose and remove set controllers
+      for (int i = 0; i < 10; i++) { // Clean up potential set controllers
+        final setKey = '${exerciseId}_${i}';
+        setRepsControllers[setKey]?.dispose();
+        setWeightControllers[setKey]?.dispose();
+        setRepsControllers.remove(setKey);
+        setWeightControllers.remove(setKey);
+      }
+      
       setsControllers.remove(exerciseId);
       repsControllers.remove(exerciseId);
       weightControllers.remove(exerciseId);
       restControllers.remove(exerciseId);
+      expandedExercises.remove(exerciseId);
     });
   }
 
@@ -71,11 +126,28 @@ class _ExerciseConfigurationPageState extends State<ExerciseConfigurationPage> {
     // Update configurations from controllers
     final updatedExercises = configuredExercises.map((exercise) {
       final id = exercise.exercise.id;
+      final newSetCount = int.tryParse(setsControllers[id]?.text ?? '3') ?? 3;
+      
+      // Update set configurations
+      List<SetConfig> updatedSetConfigs = [];
+      for (int i = 0; i < newSetCount; i++) {
+        final setKey = '${id}_${i}';
+        final reps = setRepsControllers[setKey]?.text ?? '10';
+        final weight = setWeightControllers[setKey]?.text ?? '';
+        
+        updatedSetConfigs.add(SetConfig(
+          setNumber: i + 1,
+          reps: reps,
+          weight: weight,
+        ));
+      }
+      
       return exercise.copyWith(
-        sets: int.tryParse(setsControllers[id]?.text ?? '3') ?? 3,
-        reps: repsControllers[id]?.text ?? '10',
-        weight: weightControllers[id]?.text ?? '',
+        sets: newSetCount,
+        reps: repsControllers[id]?.text ?? '10', // Keep for backward compatibility
+        weight: weightControllers[id]?.text ?? '', // Keep for backward compatibility
         restTime: int.tryParse(restControllers[id]?.text ?? '60') ?? 60,
+        setConfigs: updatedSetConfigs,
       );
     }).toList();
 
@@ -255,51 +327,221 @@ class _ExerciseConfigurationPageState extends State<ExerciseConfigurationPage> {
           
           SizedBox(height: 20),
           
-          // Configuration inputs
-          Row(
-            children: [
-              Expanded(
-                child: _buildConfigField(
-                  'Sets',
-                  setsControllers[exerciseId]!,
-                  TextInputType.number,
-                ),
-              ),
-              SizedBox(width: 12),
-              Expanded(
-                child: _buildConfigField(
-                  'Reps',
-                  repsControllers[exerciseId]!,
-                  TextInputType.text,
-                ),
-              ),
-            ],
-          ),
-          
-          SizedBox(height: 16),
-          
-          Row(
-            children: [
-              Expanded(
-                child: _buildConfigField(
-                  'Weight (kg)',
-                  weightControllers[exerciseId]!,
-                  TextInputType.text,
-                  isOptional: true,
-                ),
-              ),
-              SizedBox(width: 12),
-              Expanded(
-                child: _buildConfigField(
-                  'Rest (sec)',
-                  restControllers[exerciseId]!,
-                  TextInputType.number,
-                ),
-              ),
-            ],
-          ),
+          // Compact configuration view
+          _buildCompactConfiguration(exerciseId),
         ],
       ),
+    );
+  }
+
+  Widget _buildCompactConfiguration(int exerciseId) {
+    final exercise = configuredExercises.firstWhere((e) => e.exercise.id == exerciseId);
+    final isExpanded = expandedExercises[exerciseId] ?? false;
+    
+    return Column(
+      children: [
+        // Compact view - always visible
+        Row(
+          children: [
+            Expanded(
+              child: _buildConfigField(
+                'Sets',
+                setsControllers[exerciseId]!,
+                TextInputType.number,
+                onChanged: (value) => _onSetCountChanged(exerciseId, value),
+              ),
+            ),
+            SizedBox(width: 12),
+            Expanded(
+              child: _buildConfigField(
+                'Default Reps',
+                repsControllers[exerciseId]!,
+                TextInputType.text,
+              ),
+            ),
+          ],
+        ),
+        
+        SizedBox(height: 12),
+        
+        Row(
+          children: [
+            Expanded(
+              child: _buildConfigField(
+                'Default Weight (kg)',
+                weightControllers[exerciseId]!,
+                TextInputType.text,
+                isOptional: true,
+              ),
+            ),
+            SizedBox(width: 12),
+            Expanded(
+              child: _buildConfigField(
+                'Rest (sec)',
+                restControllers[exerciseId]!,
+                TextInputType.number,
+              ),
+            ),
+          ],
+        ),
+        
+        SizedBox(height: 12),
+        
+        // Expandable section
+        Container(
+          width: double.infinity,
+          child: InkWell(
+            onTap: () {
+              setState(() {
+                expandedExercises[exerciseId] = !isExpanded;
+              });
+            },
+            child: Container(
+              padding: EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+              decoration: BoxDecoration(
+                color: Color(0xFF2A2A2A),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Color(0xFF3A3A3A), width: 1),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Customize Individual Sets',
+                    style: GoogleFonts.poppins(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.white,
+                    ),
+                  ),
+                  Icon(
+                    isExpanded ? Icons.expand_less : Icons.expand_more,
+                    color: Colors.grey[400],
+                    size: 20,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        
+        // Expandable content
+        if (isExpanded) ...[
+          SizedBox(height: 12),
+          _buildSetConfigurations(exerciseId),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildSetConfigurations(int exerciseId) {
+    final exercise = configuredExercises.firstWhere((e) => e.exercise.id == exerciseId);
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Individual Set Configurations',
+          style: GoogleFonts.poppins(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: Colors.white,
+          ),
+        ),
+        SizedBox(height: 8),
+        ...exercise.setConfigs.asMap().entries.map((entry) {
+          final setIndex = entry.key;
+          final setConfig = entry.value;
+          final setKey = '${exerciseId}_${setIndex}';
+          
+          return Container(
+            margin: EdgeInsets.only(bottom: 12),
+            padding: EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Color(0xFF2A2A2A),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Color(0xFF3A3A3A), width: 1),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Set ${setIndex + 1}',
+                  style: GoogleFonts.poppins(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey[400],
+                  ),
+                ),
+                SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildSetInputField(
+                        'Reps',
+                        setRepsControllers[setKey]!,
+                        TextInputType.text,
+                      ),
+                    ),
+                    SizedBox(width: 12),
+                    Expanded(
+                      child: _buildSetInputField(
+                        'Weight (kg)',
+                        setWeightControllers[setKey]!,
+                        TextInputType.text,
+                        isOptional: true,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          );
+        }).toList(),
+      ],
+    );
+  }
+
+  Widget _buildSetInputField(
+    String label,
+    TextEditingController controller,
+    TextInputType keyboardType, {
+    bool isOptional = false,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '$label${isOptional ? ' (optional)' : ''}',
+          style: GoogleFonts.poppins(
+            fontSize: 10,
+            fontWeight: FontWeight.w500,
+            color: Colors.grey[400],
+          ),
+        ),
+        SizedBox(height: 4),
+        TextField(
+          controller: controller,
+          keyboardType: keyboardType,
+          style: GoogleFonts.poppins(
+            color: Colors.white,
+            fontSize: 14,
+          ),
+          decoration: InputDecoration(
+            filled: true,
+            fillColor: Color(0xFF1A1A1A),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(6),
+              borderSide: BorderSide(color: Color(0xFF3A3A3A), width: 1),
+            ),
+            contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            hintStyle: GoogleFonts.poppins(
+              color: Colors.grey[600],
+              fontSize: 12,
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -308,6 +550,7 @@ class _ExerciseConfigurationPageState extends State<ExerciseConfigurationPage> {
     TextEditingController controller,
     TextInputType keyboardType, {
     bool isOptional = false,
+    Function(String)? onChanged,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -324,6 +567,7 @@ class _ExerciseConfigurationPageState extends State<ExerciseConfigurationPage> {
         TextField(
           controller: controller,
           keyboardType: keyboardType,
+          onChanged: onChanged,
           style: GoogleFonts.poppins(color: Colors.white),
           decoration: InputDecoration(
             filled: true,

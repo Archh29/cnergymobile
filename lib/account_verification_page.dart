@@ -3,6 +3,9 @@ import 'package:google_fonts/google_fonts.dart';
 import './User/services/auth_service.dart';
 import 'login_screen.dart';
 import 'user_dashboard.dart';
+import 'coach_dashboard.dart';
+import 'first_time_setup_screen.dart';
+import 'welcome_onboarding_screen.dart';
 
 class AccountVerificationScreen extends StatefulWidget {
   const AccountVerificationScreen({super.key});
@@ -21,19 +24,58 @@ class _AccountVerificationScreenState extends State<AccountVerificationScreen> {
   }
 
   Future<void> _checkIfVerificationNeeded() async {
-    // If user doesn't need account verification, redirect to dashboard
+    // If user doesn't need account verification, check profile completion
     if (!AuthService.needsAccountVerification()) {
-      print('✅ User does not need account verification, redirecting to dashboard');
-      if (mounted) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (context) => UserDashboard()),
-        );
-      }
+      print('✅ User does not need account verification, checking profile completion');
+      await _navigateBasedOnProfileCompletion();
       return;
     }
     
     // If user needs verification, check current status
     await _checkAccountStatus();
+  }
+
+  Future<void> _navigateBasedOnProfileCompletion() async {
+    try {
+      final userId = AuthService.getCurrentUserId();
+      if (userId == null) {
+        print('❌ No user ID found, redirecting to login');
+        if (mounted) {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(builder: (context) => const LoginScreen()),
+          );
+        }
+        return;
+      }
+
+      print('🔧 VERIFICATION: Checking profile completion for user $userId');
+      final profileCompleted = await AuthService.isProfileCompleted();
+      print('🔧 VERIFICATION: Profile completed: $profileCompleted');
+      
+      if (!profileCompleted) {
+        print('🔧 VERIFICATION: User needs profile setup, navigating to WelcomeOnboardingScreen');
+        if (mounted) {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(builder: (context) => WelcomeOnboardingScreen(userId: userId)),
+          );
+        }
+      } else {
+        print('🔧 VERIFICATION: Profile completed, navigating to UserDashboard');
+        if (mounted) {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(builder: (context) => _getHomeScreen()),
+          );
+        }
+      }
+    } catch (e) {
+      print('❌ Error checking profile completion: $e');
+      // Fallback to UserDashboard if there's an error
+      if (mounted) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (context) => _getHomeScreen()),
+        );
+      }
+    }
   }
 
   Future<void> _checkAccountStatus() async {
@@ -43,11 +85,9 @@ class _AccountVerificationScreenState extends State<AccountVerificationScreen> {
 
     try {
       if (!AuthService.needsAccountVerification()) {
-        print('✅ User no longer needs verification, navigating to dashboard');
+        print('✅ User no longer needs verification, checking profile completion');
         if (mounted) {
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (context) => UserDashboard()),
-          );
+          await _navigateBasedOnProfileCompletion();
         }
         return;
       }
@@ -59,12 +99,10 @@ class _AccountVerificationScreenState extends State<AccountVerificationScreen> {
       print('📊 Current account status: $accountStatus');
       
       if (accountStatus == 'approved') {
-        // Account approved, navigate to dashboard
+        // Account approved, check profile completion
         if (mounted) {
-          print('✅ Account approved, navigating to dashboard');
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (context) => UserDashboard()),
-          );
+          print('✅ Account approved, checking profile completion');
+          await _navigateBasedOnProfileCompletion();
         }
       } else if (accountStatus == 'rejected') {
         // Account rejected, show dialog and logout
@@ -322,7 +360,7 @@ class _AccountVerificationScreenState extends State<AccountVerificationScreen> {
                     _buildInstructionStep(
                       icon: Icons.badge_outlined,
                       title: 'Bring Valid ID',
-                      description: 'Present a government-issued photo ID for verification',
+                      description: 'Present any valid photo ID for verification',
                     ),
                     
                     const SizedBox(height: 16),
@@ -526,5 +564,26 @@ class _AccountVerificationScreenState extends State<AccountVerificationScreen> {
         ),
       ],
     );
+  }
+
+  Widget _getHomeScreen() {
+    print('🏠 Determining home screen for user type: ${AuthService.getUserType()}');
+    
+    if (AuthService.isCoach()) {
+      print('👨‍🏫 Routing coach to CoachDashboard');
+      return CoachDashboard();
+    } else if (AuthService.isCustomer()) {
+      print('👤 Routing customer to UserDashboard');
+      return UserDashboard();
+    } else if (AuthService.isAdmin()) {
+      print('👑 Routing admin to UserDashboard');
+      return UserDashboard(); // or AdminDashboard()
+    } else if (AuthService.isStaff()) {
+      print('👷 Routing staff to UserDashboard');
+      return UserDashboard(); // or StaffDashboard()
+    } else {
+      print('⚠️ Unknown user type, redirecting to login');
+      return const LoginScreen();
+    }
   }
 }

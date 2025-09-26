@@ -13,6 +13,12 @@ import 'first_time_setup_screen.dart';
 import 'forgot_pass.dart';
 import 'account_verification_page.dart';
 
+// Coach Pages
+import 'Coach/coach_messages_page.dart';
+import 'Coach/session_management_page.dart';
+import 'Coach/coach_routine_page.dart';
+import 'Coach/models/member_model.dart';
+
 void main() async {
   try {
     WidgetsFlutterBinding.ensureInitialized();
@@ -208,6 +214,27 @@ class MyApp extends StatelessWidget {
         '/FirstTimeSetup': (context) => const FirstTimeSetupScreenRoute(),
         '/forgotPassword': (context) => ForgotPasswordScreen(),
         '/accountVerification': (context) => const AccountVerificationScreen(),
+        '/coach-messages': (context) {
+          final args = ModalRoute.of(context)?.settings.arguments;
+          if (args is MemberModel) {
+            return CoachMessagesPage(selectedMember: args);
+          }
+          return CoachMessagesPage();
+        },
+        '/coach-session-management': (context) {
+          final args = ModalRoute.of(context)?.settings.arguments;
+          if (args is MemberModel) {
+            return SessionManagementPage(selectedMember: args);
+          }
+          return SessionManagementPage();
+        },
+        '/coach-routines': (context) {
+          final args = ModalRoute.of(context)?.settings.arguments;
+          if (args is MemberModel) {
+            return CoachRoutinePage(selectedMember: args);
+          }
+          return CoachRoutinePage();
+        },
       },
     );
   }
@@ -498,6 +525,10 @@ class _SafeAuthWrapperState extends State<SafeAuthWrapper> {
     );
   }
 }
+
+
+
+
 
 
 

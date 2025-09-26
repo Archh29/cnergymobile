@@ -1,9 +1,9 @@
 <?php
 // Database configuration
-$host = 'localhost';
-$dbname = 'cnergydb';
-$username = 'root';
-$password = '';
+$host = '127.0.0.1:3306';
+$dbname = 'u773938685_cnergydb';
+$username = 'u773938685_cnergydb';
+$password = 'Cnergy2025!';
 
 try {
     $pdo = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8", $username, $password);

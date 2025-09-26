@@ -142,31 +142,51 @@ class AuthService {
 
   // Helper method to get user type as integer
   static int _getUserTypeAsInt(Map<String, dynamic> user) {
+    print('🔍 _getUserTypeAsInt - user data keys: ${user.keys.toList()}');
+    print('🔍 _getUserTypeAsInt - user_type_id: ${user['user_type_id']}, user_type: ${user['user_type']}');
+    
     var userType = user['user_type_id'];
     if (userType != null) {
-      if (userType is int) return userType;
+      if (userType is int) {
+        print('🔍 _getUserTypeAsInt - returning user_type_id as int: $userType');
+        return userType;
+      }
       if (userType is String) {
         int? parsed = int.tryParse(userType);
-        if (parsed != null) return parsed;
+        if (parsed != null) {
+          print('🔍 _getUserTypeAsInt - returning parsed user_type_id: $parsed');
+          return parsed;
+        }
       }
     }
         
     userType = user['user_type'];
     if (userType != null) {
-      if (userType is int) return userType;
+      if (userType is int) {
+        print('🔍 _getUserTypeAsInt - returning user_type as int: $userType');
+        return userType;
+      }
       if (userType is String) {
         int? parsed = int.tryParse(userType);
-        if (parsed != null) return parsed;
+        if (parsed != null) {
+          print('🔍 _getUserTypeAsInt - returning parsed user_type: $parsed');
+          return parsed;
+        }
         
-        return _getUserTypeFromString(userType);
+        int stringResult = _getUserTypeFromString(userType);
+        print('🔍 _getUserTypeAsInt - returning from string conversion: $stringResult');
+        return stringResult;
       }
     }
 
     userType = user['user_role'];
     if (userType != null && userType is String) {
-      return _getUserTypeFromString(userType);
+      int stringResult = _getUserTypeFromString(userType);
+      print('🔍 _getUserTypeAsInt - returning from user_role string conversion: $stringResult');
+      return stringResult;
     }
         
+    print('🔍 _getUserTypeAsInt - no user type found, returning 0');
     return 0;
   }
 
@@ -259,12 +279,14 @@ class AuthService {
       // Check local storage first
       final prefs = await SharedPreferences.getInstance();
       final localProfileCompleted = prefs.getBool(_profileCompletedKey) ?? false;
+      print('🔍 Local profile completed: $localProfileCompleted');
             
       // Also check user data for profile completion flags
       final userProfileCompleted = _currentUser!['profile_completed'] == true ||
                                   _currentUser!['profile_completed'] == 1 ||
                                   _currentUser!['profileCompleted'] == true ||
                                   _currentUser!['profileCompleted'] == 1;
+      print('🔍 User data profile completed: $userProfileCompleted');
             
       if (localProfileCompleted || userProfileCompleted) {
         print('✅ Profile marked as completed in local storage or user data');
@@ -299,13 +321,19 @@ class AuthService {
             return isCompleted;
           } else {
             print('❌ Failed to check profile completion with backend: ${response.message}');
+            // If backend fails, assume profile is not completed (show first-time setup)
+            print('🔧 Backend check failed, assuming profile needs completion');
+            return false;
           }
         } catch (e) {
           print('❌ Error calling onboarding service: $e');
+          // If backend fails, assume profile is not completed (show first-time setup)
+          print('🔧 Backend error, assuming profile needs completion');
+          return false;
         }
       }
             
-      print('❌ Profile completion check failed, defaulting to false');
+      print('❌ Profile completion check failed, defaulting to false (show first-time setup)');
       return false;
     } catch (e) {
       print('❌ Error checking profile completion: $e');
@@ -332,6 +360,42 @@ class AuthService {
     }
   }
 
+  // Reset profile completion status (for testing/debugging)
+  static Future<void> resetProfileCompletion() async {
+    try {
+      print('🔄 Resetting profile completion status');
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_profileCompletedKey);
+      print('🗑️ Removed profile completion from local storage');
+            
+      // Update current user data
+      if (_currentUser != null) {
+        _currentUser!['profile_completed'] = false;
+        _currentUser!['profileCompleted'] = false;
+        await _saveUserToStorage();
+        print('💾 Profile completion status reset in user data');
+      }
+
+      // Also reset on backend
+      final userId = _currentUserId;
+      if (userId != null) {
+        try {
+          final onboardingService = OnboardingService();
+          final response = await onboardingService.resetProfileCompletion(userId);
+          if (response.success) {
+            print('✅ Profile completion reset on backend');
+          } else {
+            print('❌ Failed to reset profile completion on backend: ${response.message}');
+          }
+        } catch (e) {
+          print('❌ Error resetting profile completion on backend: $e');
+        }
+      }
+    } catch (e) {
+      print('❌ Error resetting profile completion: $e');
+    }
+  }
+
   // Get user type as string
   static String getUserType() {
     if (_currentUser == null) return 'unknown';
@@ -348,7 +412,9 @@ class AuthService {
 
   // Check if user is customer
   static bool isCustomer() {
-    return _getUserTypeAsInt(_currentUser ?? {}) == 4;
+    final userTypeId = _getUserTypeAsInt(_currentUser ?? {});
+    print('🔍 isCustomer check - userTypeId: $userTypeId, isCustomer: ${userTypeId == 4}');
+    return userTypeId == 4;
   }
 
   // Check if user is coach
@@ -377,6 +443,12 @@ class AuthService {
         
     print('🔍 User needs first-time setup: $needsSetup');
     return needsSetup;
+  }
+
+  // Debug method to force show first-time setup (for testing)
+  static bool shouldForceFirstTimeSetup() {
+    // You can temporarily return true here to force show the first-time setup screen
+    return true; // Change to true for testing
   }
 
   static int? getCurrentUserId() => _currentUserId;

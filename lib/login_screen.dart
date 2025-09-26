@@ -3,6 +3,7 @@ import 'package:gym/SignUp.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:get/get.dart';
+import 'guest_registration_screen.dart';
 import 'package:flutter/gestures.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -11,6 +12,9 @@ import './User/services/auth_service.dart';
 import 'user_dashboard.dart';
 import 'account_verification_page.dart';
 import 'coach_dashboard.dart'; // Import CoachDashboard
+import 'first_time_setup_screen.dart';
+import 'welcome_onboarding_screen.dart';
+// import 'guest_registration_screen.dart'; // Import GuestRegistrationScreen - File deleted
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -197,7 +201,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
             colorText: Colors.white,
           );
           Navigator.of(context).pushAndRemoveUntil(
-            MaterialPageRoute(builder: (context) => UserDashboard()),
+            MaterialPageRoute(builder: (context) => _getHomeScreen()),
             (Route<dynamic> route) => false,
           );
           return;
@@ -215,10 +219,25 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                 backgroundColor: Colors.green,
                 colorText: Colors.white,
               );
-              Navigator.of(context).pushAndRemoveUntil(
-                MaterialPageRoute(builder: (context) => UserDashboard()),
-                (Route<dynamic> route) => false,
-              );
+              
+              // Check profile completion before navigating
+              print('🔧 LOGIN: Checking profile completion for user $userId');
+              final profileCompleted = await AuthService.isProfileCompleted();
+              print('🔧 LOGIN: Profile completed: $profileCompleted');
+              
+              if (!profileCompleted) {
+                print('🔧 LOGIN: User needs profile setup, navigating to WelcomeOnboardingScreen');
+                Navigator.of(context).pushAndRemoveUntil(
+                  MaterialPageRoute(builder: (context) => WelcomeOnboardingScreen(userId: userId)),
+                  (Route<dynamic> route) => false,
+                );
+              } else {
+                print('🔧 LOGIN: Profile completed, navigating to UserDashboard');
+                Navigator.of(context).pushAndRemoveUntil(
+                  MaterialPageRoute(builder: (context) => _getHomeScreen()),
+                  (Route<dynamic> route) => false,
+                );
+              }
               break;
             case 'rejected':
               // Show rejection dialog and logout
@@ -500,6 +519,16 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     );
   }
 
+  // Navigate to guest registration
+  void _navigateToGuest() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => GuestRegistrationScreen(),
+      ),
+    );
+  }
+
   @override
   void dispose() {
     emailController.dispose();
@@ -709,7 +738,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                       ),
                     ],
                   ),
-                  const SizedBox(height: 32),
+                  const SizedBox(height: 24),
                   
                   // Login button
                   Container(
@@ -750,13 +779,77 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                               ),
                             )
                           : Text(
-                              'SIGN IN',
+                              'LOG IN',
                               style: GoogleFonts.poppins(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w600,
                                 letterSpacing: 1.2,
                               ),
                             ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  
+                  // Divider
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Container(
+                          height: 1,
+                          color: Colors.grey[700],
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Text(
+                          'OR',
+                          style: GoogleFonts.poppins(
+                            color: Colors.grey[400],
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: Container(
+                          height: 1,
+                          color: Colors.grey[700],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  
+                  // Guest button
+                  Container(
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      color: Colors.transparent,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: const Color(0xFFFF6B35),
+                        width: 2,
+                      ),
+                    ),
+                    child: ElevatedButton(
+                      onPressed: isLoading ? null : _navigateToGuest,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.transparent,
+                        foregroundColor: const Color(0xFFFF6B35),
+                        elevation: 0,
+                        minimumSize: const Size(double.infinity, 56),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      child: Text(
+                        'GUEST ACCESS',
+                        style: GoogleFonts.poppins(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 1.2,
+                        ),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 32),
@@ -821,5 +914,26 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
         ),
       ),
     );
+  }
+
+  Widget _getHomeScreen() {
+    print('🏠 Determining home screen for user type: ${AuthService.getUserType()}');
+    
+    if (AuthService.isCoach()) {
+      print('👨‍🏫 Routing coach to CoachDashboard');
+      return CoachDashboard();
+    } else if (AuthService.isCustomer()) {
+      print('👤 Routing customer to UserDashboard');
+      return UserDashboard();
+    } else if (AuthService.isAdmin()) {
+      print('👑 Routing admin to UserDashboard');
+      return UserDashboard(); // or AdminDashboard()
+    } else if (AuthService.isStaff()) {
+      print('👷 Routing staff to UserDashboard');
+      return UserDashboard(); // or StaffDashboard()
+    } else {
+      print('⚠️ Unknown user type, redirecting to login');
+      return const LoginScreen();
+    }
   }
 }

@@ -4,7 +4,7 @@ import 'auth_service.dart';
 
 class NotificationService {
   static const String baseUrl = 'https://api.cnergy.site';
-  static const String notificationEndpoint = '${baseUrl}notifications.php';
+  static const String notificationEndpoint = '${baseUrl}/notifications.php';
 
   // Get notifications with pagination
   static Future<Map<String, dynamic>> getNotifications({

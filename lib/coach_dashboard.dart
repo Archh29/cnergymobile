@@ -8,6 +8,7 @@ import './Coach/coach_messages_page.dart' as CoachMessages;
 import './Coach/coach_profile_page.dart';
 import './Coach/coach_progress_page.dart';
 import './Coach/coach_routine_page.dart';
+import './Coach/session_management_page.dart';
 import './Coach/models/member_model.dart';
 import './Coach/services/coach_service.dart';
 
@@ -44,6 +45,12 @@ class _CoachDashboardState extends State<CoachDashboard> with TickerProviderStat
       activeIcon: Icons.people,
       label: 'Members',
       color: Color(0xFF45B7D1),
+    ),
+    NavigationItem(
+      icon: Icons.timer_outlined,
+      activeIcon: Icons.timer,
+      label: 'Sessions',
+      color: Color(0xFF4ECDC4),
     ),
     NavigationItem(
       icon: Icons.person_outline,
@@ -146,6 +153,7 @@ class _CoachDashboardState extends State<CoachDashboard> with TickerProviderStat
           onMemberSelected: _onMemberSelected,
           isLoading: isLoadingMembers,
         ),
+        _buildSelectMemberPrompt(),
         CoachProfilePage(),
       ];
     }
@@ -159,6 +167,7 @@ class _CoachDashboardState extends State<CoachDashboard> with TickerProviderStat
         onMemberSelected: _onMemberSelected,
         isLoading: isLoadingMembers,
       ),
+      SessionManagementPage(selectedMember: selectedMember!),
       CoachProfilePage(),
     ];
   }

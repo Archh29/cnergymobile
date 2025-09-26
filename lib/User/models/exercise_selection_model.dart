@@ -103,14 +103,44 @@ class ExerciseSelectionModel {
   }
 }
 
+// Individual set configuration
+class SetConfig {
+  final int setNumber;
+  final String reps;
+  final String weight;
+  final bool isCompleted;
+
+  SetConfig({
+    required this.setNumber,
+    this.reps = '10',
+    this.weight = '',
+    this.isCompleted = false,
+  });
+
+  SetConfig copyWith({
+    int? setNumber,
+    String? reps,
+    String? weight,
+    bool? isCompleted,
+  }) {
+    return SetConfig(
+      setNumber: setNumber ?? this.setNumber,
+      reps: reps ?? this.reps,
+      weight: weight ?? this.weight,
+      isCompleted: isCompleted ?? this.isCompleted,
+    );
+  }
+}
+
 // Exercise with configuration (sets, reps, weight)
 class SelectedExerciseWithConfig {
   final ExerciseSelectionModel exercise;
   final int sets;
-  final String reps;
-  final String weight;
+  final String reps; // Default reps for new sets
+  final String weight; // Default weight for new sets
   final int restTime;
   final String notes;
+  final List<SetConfig> setConfigs; // Individual set configurations
 
   SelectedExerciseWithConfig({
     required this.exercise,
@@ -119,7 +149,17 @@ class SelectedExerciseWithConfig {
     this.weight = '',
     this.restTime = 60,
     this.notes = '',
-  });
+    List<SetConfig>? setConfigs,
+  }) : setConfigs = setConfigs ?? _generateDefaultSetConfigs(3, '10', '');
+
+  // Helper function to generate default set configurations
+  static List<SetConfig> _generateDefaultSetConfigs(int sets, String defaultReps, String defaultWeight) {
+    return List.generate(sets, (index) => SetConfig(
+      setNumber: index + 1,
+      reps: defaultReps,
+      weight: defaultWeight,
+    ));
+  }
 
   SelectedExerciseWithConfig copyWith({
     ExerciseSelectionModel? exercise,
@@ -128,6 +168,7 @@ class SelectedExerciseWithConfig {
     String? weight,
     int? restTime,
     String? notes,
+    List<SetConfig>? setConfigs,
   }) {
     return SelectedExerciseWithConfig(
       exercise: exercise ?? this.exercise,
@@ -136,17 +177,63 @@ class SelectedExerciseWithConfig {
       weight: weight ?? this.weight,
       restTime: restTime ?? this.restTime,
       notes: notes ?? this.notes,
+      setConfigs: setConfigs ?? this.setConfigs,
     );
+  }
+
+  // Update set count and regenerate set configs if needed
+  SelectedExerciseWithConfig updateSetCount(int newSetCount) {
+    if (newSetCount == sets) return this;
+    
+    List<SetConfig> newSetConfigs = List.from(setConfigs);
+    
+    if (newSetCount > sets) {
+      // Add new sets with default values
+      for (int i = sets; i < newSetCount; i++) {
+        newSetConfigs.add(SetConfig(
+          setNumber: i + 1,
+          reps: reps,
+          weight: weight,
+        ));
+      }
+    } else if (newSetCount < sets) {
+      // Remove excess sets
+      newSetConfigs = newSetConfigs.take(newSetCount).toList();
+    }
+    
+    return copyWith(
+      sets: newSetCount,
+      setConfigs: newSetConfigs,
+    );
+  }
+
+  // Update individual set configuration
+  SelectedExerciseWithConfig updateSetConfig(int setIndex, SetConfig newConfig) {
+    if (setIndex < 0 || setIndex >= setConfigs.length) return this;
+    
+    List<SetConfig> newSetConfigs = List.from(setConfigs);
+    newSetConfigs[setIndex] = newConfig;
+    
+    return copyWith(setConfigs: newSetConfigs);
   }
 
   // Convert to ExerciseModel for routine creation
   ExerciseModel toExerciseModel(Color selectedColor) {
+    // Create exercise sets from setConfigs
+    List<ExerciseSet> exerciseSets = setConfigs.map((setConfig) => ExerciseSet(
+      reps: setConfig.reps,
+      weight: setConfig.weight,
+      rpe: 0,
+      duration: '',
+      timestamp: DateTime.now(),
+    )).toList();
+
     return ExerciseModel(
       id: exercise.id,
       name: exercise.name,
       targetSets: sets,
-      targetReps: reps,
-      targetWeight: weight,
+      targetReps: reps, // Keep for backward compatibility
+      targetWeight: weight, // Keep for backward compatibility
       category: exercise.category,
       difficulty: exercise.difficulty,
       color: selectedColor.value.toString(),
@@ -155,6 +242,7 @@ class SelectedExerciseWithConfig {
       targetMuscle: exercise.targetMuscle,
       description: exercise.description,
       imageUrl: exercise.imageUrl,
+      sets: exerciseSets, // Individual set configurations
     );
   }
 }

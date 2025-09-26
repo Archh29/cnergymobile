@@ -30,8 +30,12 @@ class _UserDashboardState extends State<UserDashboard> with TickerProviderStateM
   int _currentPage = 1;
   bool _hasMoreNotifications = true;
   
-  final List<Widget> _pages = [
-     HomePage(),
+  List<Widget> get _pages => [
+     HomePage(onNavigateToQR: () {
+       setState(() {
+         _selectedIndex = 3; // QR tab index
+       });
+     }),
      RoutinePage(),
      ComprehensiveDashboard(),
      QRPage(),

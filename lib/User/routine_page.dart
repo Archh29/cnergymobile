@@ -6,6 +6,7 @@ import './services/routine_services.dart';
 import './create_routine_page.dart';
 import './start_workout_preview.dart';
 import './widgets/session_status_widget.dart';
+import './muscle_group_selection_page.dart';
 
 class RoutinePage extends StatefulWidget {
   @override
@@ -104,8 +105,8 @@ class _RoutinePageState extends State<RoutinePage> with SingleTickerProviderStat
       setState(() {
         _isLoading = false;
         _errorMessage = e.toString().contains('User not logged in')
-            ? 'Please log in to view your routines'
-            : 'Failed to load routines. Please try again.';
+            ? 'Please log in to view your programs'
+            : 'Failed to load programs. Please try again.';
       });
       
       ScaffoldMessenger.of(context).showSnackBar(
@@ -133,143 +134,70 @@ class _RoutinePageState extends State<RoutinePage> with SingleTickerProviderStat
       case 'edit':
         _showEditRoutineModal(routine);
         break;
-      case 'duplicate':
-        await _duplicateRoutine(routine);
-        break;
-      case 'share':
-        _showShareOptions(routine);
-        break;
       case 'delete':
         _showDeleteConfirmation(routine);
         break;
     }
   }
 
-  void _showEditRoutineModal(RoutineModel routine) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Edit functionality coming soon'),
-        backgroundColor: Color(0xFF4ECDC4),
-      ),
-    );
-  }
-
-  Future<void> _duplicateRoutine(RoutineModel routine) async {
-    if (!isProMember && !_canCreateRoutine()) {
-      _showBasicUserLimitDialog();
-      return;
-    }
-
+  void _showEditRoutineModal(RoutineModel routine) async {
     try {
-      final duplicatedRoutine = RoutineModel(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
-        name: '${routine.name} (Copy)',
-        exercises: routine.exercises,
-        duration: '', // Duration removed
-        difficulty: routine.difficulty,
-        createdBy: 'user',
-        exerciseList: routine.exerciseList,
-        color: routine.color,
-        lastPerformed: 'Never',
-        tags: [], // Tags removed
-        goal: '', // Goal removed
-        completionRate: 0,
-        totalSessions: 0,
-        notes: routine.notes,
-        scheduledDays: List.from(routine.scheduledDays),
-        version: 1.0,
+      // Show loading indicator
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => Center(
+          child: CircularProgressIndicator(
+            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF4ECDC4)),
+          ),
+        ),
       );
 
-      final result = await RoutineService.createRoutine(duplicatedRoutine);
+      // Fetch routine details with exercises
+      final routineDetails = await RoutineService.fetchRoutineDetails(routine.id);
       
-      if (!mounted) return;
+      // Close loading dialog
+      Navigator.of(context).pop();
       
-      if (result['success'] == true) {
+      if (routineDetails != null) {
+        // Navigate to create routine page for editing
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => CreateRoutinePage(
+              isEditing: true,
+              existingRoutine: routineDetails,
+              isProMember: isProMember,
+              currentRoutineCount: myRoutines.length,
+            ),
+          ),
+        ).then((_) {
+          // Refresh data when returning from edit
+          _loadData();
+        });
+      } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Routine duplicated successfully'),
-            backgroundColor: Color(0xFF96CEB4),
+            content: Text('Failed to load routine details'),
+            backgroundColor: Colors.red,
           ),
         );
-        _loadData();
-      } else {
-        if (result['membership_required'] == true) {
-          _showBasicUserLimitDialog();
-        } else {
-          throw Exception(result['error'] ?? 'Failed to duplicate routine');
-        }
       }
     } catch (e) {
-      if (!mounted) return;
+      // Close loading dialog if still open
+      if (Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
       
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error duplicating routine: ${e.toString()}'),
+          content: Text('Error loading routine: ${e.toString()}'),
           backgroundColor: Colors.red,
         ),
       );
     }
   }
 
-  void _showShareOptions(RoutineModel routine) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Color(0xFF0F0F0F),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => Container(
-        padding: EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'Share Routine',
-              style: GoogleFonts.poppins(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            SizedBox(height: 20),
-            ListTile(
-              leading: Icon(Icons.copy, color: Color(0xFF4ECDC4)),
-              title: Text(
-                'Copy to Clipboard',
-                style: GoogleFonts.poppins(color: Colors.white),
-              ),
-              onTap: () {
-                Clipboard.setData(ClipboardData(text: routine.toJson().toString()));
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Routine copied to clipboard'),
-                    backgroundColor: Color(0xFF4ECDC4),
-                  ),
-                );
-              },
-            ),
-            ListTile(
-              leading: Icon(Icons.share, color: Color(0xFFFF6B35)),
-              title: Text(
-                'Share via Apps',
-                style: GoogleFonts.poppins(color: Colors.white),
-              ),
-              onTap: () {
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Native sharing coming soon'),
-                    backgroundColor: Color(0xFFFF6B35),
-                  ),
-                );
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
   void _showDeleteConfirmation(RoutineModel routine) {
     showDialog(
@@ -285,7 +213,7 @@ class _RoutinePageState extends State<RoutinePage> with SingleTickerProviderStat
               Icon(Icons.warning, color: Colors.red, size: 24),
               SizedBox(width: 12),
               Text(
-                'Delete Routine',
+                'Delete Program',
                 style: GoogleFonts.poppins(
                   color: Colors.white,
                   fontWeight: FontWeight.bold,
@@ -338,6 +266,7 @@ class _RoutinePageState extends State<RoutinePage> with SingleTickerProviderStat
 
   Future<void> _deleteRoutine(RoutineModel routine) async {
     try {
+      print('🗑️ Attempting to delete routine: ${routine.id}');
       final success = await RoutineService.deleteRoutine(routine.id);
       
       if (!mounted) return;
@@ -345,20 +274,21 @@ class _RoutinePageState extends State<RoutinePage> with SingleTickerProviderStat
       if (success) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Routine deleted successfully'),
+            content: Text('Program deleted successfully'),
             backgroundColor: Color(0xFF4ECDC4),
           ),
         );
         _loadData();
       } else {
-        throw Exception('Failed to delete routine');
+        throw Exception('Failed to delete program');
       }
     } catch (e) {
       if (!mounted) return;
       
+      print('💥 Delete error: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error deleting routine: ${e.toString()}'),
+          content: Text('Error deleting program: ${e.toString()}'),
           backgroundColor: Colors.red,
         ),
       );
@@ -379,7 +309,7 @@ class _RoutinePageState extends State<RoutinePage> with SingleTickerProviderStat
               Icon(Icons.lock, color: Color(0xFFFFD700), size: 24),
               SizedBox(width: 12),
               Text(
-                'Routine Limit Reached',
+                'Program Limit Reached',
                 style: GoogleFonts.poppins(
                   color: Colors.white,
                   fontWeight: FontWeight.bold,
@@ -392,7 +322,7 @@ class _RoutinePageState extends State<RoutinePage> with SingleTickerProviderStat
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Basic users can only have 1 routine at a time.',
+                'Basic users can only have 1 program at a time.',
                 style: GoogleFonts.poppins(
                   color: Colors.grey[300],
                   height: 1.4,
@@ -400,7 +330,7 @@ class _RoutinePageState extends State<RoutinePage> with SingleTickerProviderStat
               ),
               SizedBox(height: 12),
               Text(
-                'To create a new routine, you need to:',
+                'To create a new program, you need to:',
                 style: GoogleFonts.poppins(
                   color: Colors.white,
                   fontWeight: FontWeight.w600,
@@ -408,7 +338,7 @@ class _RoutinePageState extends State<RoutinePage> with SingleTickerProviderStat
               ),
               SizedBox(height: 8),
               Text(
-                '• Delete your existing routine, or\n• Upgrade to Premium for unlimited routines',
+                '• Delete your existing program, or\n• Upgrade to Premium for unlimited programs',
                 style: GoogleFonts.poppins(
                   color: Colors.grey[300],
                   height: 1.4,
@@ -486,7 +416,7 @@ class _RoutinePageState extends State<RoutinePage> with SingleTickerProviderStat
                 ),
               ),
               SizedBox(height: 12),
-              _buildFeatureItem('✓ Unlimited Routines'),
+              _buildFeatureItem('✓ Unlimited Programs'),
               _buildFeatureItem('✓ Coach-Assigned Programs'),
               _buildFeatureItem('✓ Advanced Analytics'),
               _buildFeatureItem('✓ Priority Support'),
@@ -593,44 +523,6 @@ class _RoutinePageState extends State<RoutinePage> with SingleTickerProviderStat
     }
   }
 
-  void _showRoutineCalendar() {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          backgroundColor: Color(0xFF1A1A1A),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          title: Text(
-            'Routine Calendar',
-            style: GoogleFonts.poppins(
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          content: Text(
-            'Calendar feature coming soon! This will show your scheduled routines and workout history.',
-            style: GoogleFonts.poppins(
-              color: Colors.grey[300],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: Text(
-                'OK',
-                style: GoogleFonts.poppins(
-                  color: Color(0xFF4ECDC4),
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
 
   Color _getColorFromString(String colorString) {
     try {
@@ -748,7 +640,7 @@ class _RoutinePageState extends State<RoutinePage> with SingleTickerProviderStat
             Icon(Icons.error_outline, color: Colors.red, size: 48),
             SizedBox(height: 16),
             Text(
-              'Error Loading Routines',
+              'Error Loading Programs',
               style: GoogleFonts.poppins(
                 color: Colors.white,
                 fontSize: 20,
@@ -797,7 +689,7 @@ class _RoutinePageState extends State<RoutinePage> with SingleTickerProviderStat
           ),
           SizedBox(height: 16),
           Text(
-            'Loading your routines...',
+            'Loading your programs...',
             style: GoogleFonts.poppins(
               color: Colors.grey[400],
               fontSize: 16,
@@ -842,22 +734,6 @@ class _RoutinePageState extends State<RoutinePage> with SingleTickerProviderStat
                       ),
                     ),
                   ),
-                  Container(
-                    padding: EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Color(0xFF4ECDC4).withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: Color(0xFF4ECDC4).withOpacity(0.3)),
-                    ),
-                    child: GestureDetector(
-                      onTap: _showRoutineCalendar,
-                      child: Icon(
-                        Icons.calendar_today_rounded,
-                        color: Color(0xFF4ECDC4),
-                        size: 20,
-                      ),
-                    ),
-                  ),
                 ],
               ),
             ),
@@ -897,7 +773,7 @@ class _RoutinePageState extends State<RoutinePage> with SingleTickerProviderStat
                   fontSize: 13,
                 ),
                 tabs: [
-                  Tab(text: "My Routines"),
+                  Tab(text: "My Programs"),
                   Tab(text: "Coach Assigned"),
                   Tab(text: "Templates"),
                 ],
@@ -925,7 +801,7 @@ class _RoutinePageState extends State<RoutinePage> with SingleTickerProviderStat
               elevation: 8,
               icon: Icon(Icons.add_rounded),
               label: Text(
-                "Create Routine",
+                "Create Program",
                 style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
               ),
             )
@@ -1087,7 +963,7 @@ class _RoutinePageState extends State<RoutinePage> with SingleTickerProviderStat
               ),
               SizedBox(height: 20),
               Text(
-                'Coach Routines',
+                'Coach Programs',
                 style: GoogleFonts.poppins(
                   color: Colors.white,
                   fontSize: 24,
@@ -1096,7 +972,7 @@ class _RoutinePageState extends State<RoutinePage> with SingleTickerProviderStat
               ),
               SizedBox(height: 12),
               Text(
-                'No coach-assigned routines yet. Your coach will assign personalized routines here.',
+                'No coach-assigned programs yet. Your coach will assign personalized programs here.',
                 style: GoogleFonts.poppins(
                   color: Colors.grey[400],
                   fontSize: 14,
@@ -1271,26 +1147,6 @@ class _RoutinePageState extends State<RoutinePage> with SingleTickerProviderStat
                             Icon(Icons.edit_rounded, color: Color(0xFF4ECDC4), size: 20),
                             SizedBox(width: 12),
                             Text('Edit', style: GoogleFonts.poppins(color: Colors.white)),
-                          ],
-                        ),
-                      ),
-                      PopupMenuItem(
-                        value: 'duplicate',
-                        child: Row(
-                          children: [
-                            Icon(Icons.copy_rounded, color: Color(0xFF96CEB4), size: 20),
-                            SizedBox(width: 12),
-                            Text('Duplicate', style: GoogleFonts.poppins(color: Colors.white)),
-                          ],
-                        ),
-                      ),
-                      PopupMenuItem(
-                        value: 'share',
-                        child: Row(
-                          children: [
-                            Icon(Icons.share_rounded, color: Color(0xFFFF6B35), size: 20),
-                            SizedBox(width: 12),
-                            Text('Share', style: GoogleFonts.poppins(color: Colors.white)),
                           ],
                         ),
                       ),

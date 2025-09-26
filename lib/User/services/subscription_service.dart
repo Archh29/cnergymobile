@@ -189,7 +189,46 @@ class SubscriptionService {
     }
   }
 
-  // Get subscription plans with retry logic
+  // Get available subscription plans for a specific user (with business logic)
+  static Future<List<SubscriptionPlan>> getAvailablePlansForUser(int userId, {int maxRetries = 3}) async {
+    for (int attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        print('Debug: Getting available subscription plans for user $userId (attempt $attempt)');
+        
+        final response = await http.get(
+          Uri.parse('$subscriptionBaseUrl?action=available-plans&user_id=$userId'),
+          headers: {'Content-Type': 'application/json'},
+        );
+        
+        print('Debug: Available plans response status: ${response.statusCode}');
+        print('Debug: Available plans response body: ${response.body}');
+        
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body);
+          if (data['success'] == true && data['plans'] != null) {
+            return (data['plans'] as List<dynamic>)
+                .map((planJson) => SubscriptionPlan.fromJson(planJson))
+                .toList();
+          }
+        }
+        
+        if (attempt < maxRetries) {
+          print('Debug: Retrying in 2 seconds...');
+          await Future.delayed(Duration(seconds: 2));
+        }
+      } catch (e) {
+        print('Error getting available subscription plans (attempt $attempt): $e');
+        if (attempt < maxRetries) {
+          await Future.delayed(Duration(seconds: 2));
+        }
+      }
+    }
+    
+    print('Debug: Failed to get available subscription plans after $maxRetries attempts');
+    return [];
+  }
+
+  // Get subscription plans with retry logic (all plans - for admin use)
   static Future<List<SubscriptionPlan>> getSubscriptionPlansWithRetry({int maxRetries = 3}) async {
     for (int attempt = 1; attempt <= maxRetries; attempt++) {
       try {
@@ -352,6 +391,100 @@ class SubscriptionService {
       return SubscriptionRequestResponse(
         success: false,
         message: 'Error cancelling subscription: $e'
+      );
+    }
+  }
+
+  // Get user's pending request
+  static Future<Map<String, dynamic>?> getUserPendingRequest(int userId) async {
+    try {
+      print('Debug: Getting pending request for user: $userId');
+      
+      final response = await http.get(
+        Uri.parse('$subscriptionBaseUrl?action=get-pending-request&user_id=$userId'),
+        headers: {'Content-Type': 'application/json'},
+      );
+      
+      print('Debug: Pending request URL: $subscriptionBaseUrl?action=get-pending-request&user_id=$userId');
+      
+      print('Debug: Pending request response status: ${response.statusCode}');
+      print('Debug: Pending request response body: ${response.body}');
+      
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data['success'] == true) {
+          return data;
+        }
+      }
+      return null;
+    } catch (e) {
+      print('Error getting pending request: $e');
+      return null;
+    }
+  }
+
+  // Cancel pending request
+  static Future<SubscriptionRequestResponse> cancelPendingRequest(int userId) async {
+    try {
+      print('Debug: Cancelling pending request for user: $userId');
+      
+      final response = await http.post(
+        Uri.parse('$subscriptionBaseUrl?action=cancel-pending-request'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'user_id': userId,
+        }),
+      );
+      
+      print('Debug: Cancel pending request response status: ${response.statusCode}');
+      print('Debug: Cancel pending request response body: ${response.body}');
+      
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return SubscriptionRequestResponse.fromJson(data);
+      }
+      
+      return SubscriptionRequestResponse(
+        success: false,
+        message: 'Failed to cancel pending request'
+      );
+    } catch (e) {
+      print('Error cancelling pending request: $e');
+      return SubscriptionRequestResponse(
+        success: false,
+        message: 'Error cancelling pending request: $e'
+      );
+    }
+  }
+
+  // Auto-expire old requests (admin function)
+  static Future<SubscriptionRequestResponse> autoExpireRequests() async {
+    try {
+      print('Debug: Auto-expiring old requests');
+      
+      final response = await http.post(
+        Uri.parse('$subscriptionBaseUrl?action=auto-expire-requests'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({}),
+      );
+      
+      print('Debug: Auto-expire requests response status: ${response.statusCode}');
+      print('Debug: Auto-expire requests response body: ${response.body}');
+      
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return SubscriptionRequestResponse.fromJson(data);
+      }
+      
+      return SubscriptionRequestResponse(
+        success: false,
+        message: 'Failed to auto-expire requests'
+      );
+    } catch (e) {
+      print('Error auto-expiring requests: $e');
+      return SubscriptionRequestResponse(
+        success: false,
+        message: 'Error auto-expiring requests: $e'
       );
     }
   }

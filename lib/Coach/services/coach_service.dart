@@ -145,7 +145,7 @@ class CoachService {
     final intFields = [
       'id', 'user_id', 'member_id', 'request_id', 'coach_id',
       'user_type_id', 'gender_id', 'age', 'height', 'weight',
-      'handled_by_coach', 'handled_by_staff'
+      'handled_by_coach', 'handled_by_staff', 'remaining_sessions'
     ];
     
     // List of fields that should be strings
@@ -156,7 +156,8 @@ class CoachService {
       'coach_approval', 'staff_approval', 'subscription_status',
       'plan_name', 'gender_name', 'bday', 'requested_at',
       'coach_approved_at', 'staff_approved_at', 'subscription_start',
-      'subscription_end', 'membership_type', 'join_date'
+      'subscription_end', 'membership_type', 'join_date',
+      'rate_type', 'expires_at'
     ];
     
     // List of fields that should be doubles

@@ -4,6 +4,10 @@ import '../User/services/auth_service.dart';
 import '../User/services/home_service.dart';
 
 class HomePage extends StatefulWidget {
+  final VoidCallback? onNavigateToQR;
+  
+  const HomePage({Key? key, this.onNavigateToQR}) : super(key: key);
+  
   @override
   _HomePageState createState() => _HomePageState();
 }
@@ -149,16 +153,18 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _buildRuleItem("1. Always wipe down equipment after use", isSmallScreen),
-                        _buildRuleItem("2. Rerack weights after your workout", isSmallScreen),
-                        _buildRuleItem("3. Respect other members' space and time", isSmallScreen),
-                        _buildRuleItem("4. No dropping weights unnecessarily", isSmallScreen),
-                        _buildRuleItem("5. Wear appropriate workout attire", isSmallScreen),
-                        _buildRuleItem("6. Keep personal belongings in lockers", isSmallScreen),
-                        _buildRuleItem("7. No photography without permission", isSmallScreen),
-                        _buildRuleItem("8. Follow equipment time limits during peak hours", isSmallScreen),
-                        _buildRuleItem("9. Report any equipment issues immediately", isSmallScreen),
-                        _buildRuleItem("10. Be courteous and maintain gym etiquette", isSmallScreen),
+                        _buildRuleItem("1. Consult coach or trainer on how to use the gym properly.", isSmallScreen),
+                        _buildRuleItem("2. Use facilities and equipment at your own risk.", isSmallScreen),
+                        _buildRuleItem("3. Return weights to rack after use.", isSmallScreen),
+                        _buildRuleItem("4. Children under the age of 16 must have parents or guardians permission.", isSmallScreen),
+                        _buildRuleItem("5. Report any damages to the management immediately DO NOT USE.", isSmallScreen),
+                        _buildRuleItem("6. Stop exercising if you feel pain, discomfort, nausea, dizziness or shortness of breath.", isSmallScreen),
+                        _buildRuleItem("7. Wear proper gym clothing. NO SLIPPERS.", isSmallScreen),
+                        _buildRuleItem("8. NO LITTERING.", isSmallScreen),
+                        _buildRuleItem("9. NO SMOKING", isSmallScreen),
+                        _buildRuleItem("10. NO LOITERING", isSmallScreen),
+                        _buildRuleItem("11. Use provided SANITZER STATIONS.", isSmallScreen),
+                        _buildRuleItem("12. Please be COURTEOUS AND RESPECTFUL of other gym users.", isSmallScreen),
                       ],
                     ),
                   ),
@@ -328,7 +334,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   Widget _buildWelcomeSection(bool isSmallScreen, bool isThinScreen) {
     String userName = AuthService.isLoggedIn() 
         ? AuthService.getUserFullName() ?? "Member"
-        : "Guest";
+        : "Day Pass User";
         
     return Container(
       padding: EdgeInsets.all(isSmallScreen ? 16 : 20),
@@ -430,17 +436,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 Icons.qr_code_scanner,
                 Color(0xFF45B7D1),
                 () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Navigate to QR tab to check in!'),
-                      backgroundColor: Color(0xFF45B7D1),
-                      behavior: SnackBarBehavior.floating,
-                      margin: EdgeInsets.all(16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                  );
+                  // Navigate to QR tab within the same dashboard
+                  if (widget.onNavigateToQR != null) {
+                    widget.onNavigateToQR!();
+                  }
                 },
                 isSmallScreen,
                 isThinScreen,

@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import './models/member_model.dart';
 import './models/routine.models.dart';
 import './models/program_template_model.dart';
 import './services/coach_service.dart';
+import './services/routine_service.dart';
 import './services/program_template_service.dart' as programservice;
 import 'coach_client_selection_page.dart';
 import 'coach_create_routine_page.dart';
@@ -25,7 +25,9 @@ class _CoachRoutinePageState extends State<CoachRoutinePage> with SingleTickerPr
   List<MemberModel> assignedMembers = [];
   Map<int, List<RoutineModel>> memberRoutines = {};
   List<ProgramTemplateModel> programTemplates = [];
+  List<Map<String, dynamic>> coachTemplates = [];
   bool isLoading = true;
+  bool isLoadingTemplates = true;
   late TabController _tabController;
   bool _showFab = true;
 
@@ -33,6 +35,15 @@ class _CoachRoutinePageState extends State<CoachRoutinePage> with SingleTickerPr
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _tabController.addListener(() {
+      setState(() {
+        _showFab = _tabController.index == 0;
+      });
+      // Load templates when switching to second tab
+      if (_tabController.index == 1 && coachTemplates.isEmpty) {
+        _loadCoachTemplates();
+      }
+    });
     _loadCoachData();
   }
 
@@ -42,8 +53,29 @@ class _CoachRoutinePageState extends State<CoachRoutinePage> with SingleTickerPr
     super.dispose();
   }
 
+  Future<void> _loadCoachTemplates() async {
+    try {
+      setState(() {
+        isLoadingTemplates = true;
+      });
+
+      final templates = await RoutineService.getCoachTemplates('current_coach_id');
+      
+      setState(() {
+        coachTemplates = templates;
+        isLoadingTemplates = false;
+      });
+    } catch (e) {
+      print('Error loading coach templates: $e');
+      setState(() {
+        isLoadingTemplates = false;
+      });
+    }
+  }
+
   Future<void> _loadCoachData() async {
     try {
+      if (!mounted) return;
       setState(() => isLoading = true);
       
       // Load assigned members
@@ -63,6 +95,7 @@ class _CoachRoutinePageState extends State<CoachRoutinePage> with SingleTickerPr
         }
       }
       
+      if (!mounted) return;
       setState(() {
         assignedMembers = members;
         memberRoutines = routines;
@@ -70,6 +103,7 @@ class _CoachRoutinePageState extends State<CoachRoutinePage> with SingleTickerPr
         isLoading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() => isLoading = false);
       _showError('Failed to load coach data: ${e.toString()}');
     }
@@ -124,7 +158,7 @@ class _CoachRoutinePageState extends State<CoachRoutinePage> with SingleTickerPr
                 ),
                 Tab(
                   child: Text(
-                    "ROUTINES",
+                    "TEMPLATES",
                     style: GoogleFonts.poppins(
                       fontWeight: FontWeight.w600,
                       fontSize: 12,
@@ -139,7 +173,7 @@ class _CoachRoutinePageState extends State<CoachRoutinePage> with SingleTickerPr
               controller: _tabController,
               children: [
                 _buildClientsTab(),
-                _buildRoutinesTab(),
+                _buildTemplatesTab(),
               ],
             ),
           ),
@@ -163,9 +197,9 @@ class _CoachRoutinePageState extends State<CoachRoutinePage> with SingleTickerPr
               child: FloatingActionButton.extended(
                 onPressed: () => _tabController.index == 0 
                     ? _navigateToClientSelection()
-                    : _createNewProgram(),
+                    : _createNewTemplate(),
                 label: Text(
-                  _tabController.index == 0 ? "CREATE ROUTINE" : "CREATE PROGRAM",
+                  _tabController.index == 0 ? "CREATE ROUTINE" : "CREATE TEMPLATE",
                   style: GoogleFonts.poppins(
                     fontWeight: FontWeight.w600,
                     color: Colors.white,
@@ -484,8 +518,8 @@ class _CoachRoutinePageState extends State<CoachRoutinePage> with SingleTickerPr
     );
   }
 
-  Widget _buildRoutinesTab() {
-    if (isLoading) {
+  Widget _buildTemplatesTab() {
+    if (isLoadingTemplates) {
       return Center(
         child: CircularProgressIndicator(
           valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF4ECDC4)),
@@ -493,33 +527,33 @@ class _CoachRoutinePageState extends State<CoachRoutinePage> with SingleTickerPr
       );
     }
 
-    if (programTemplates.isEmpty) {
-      return _buildEmptyProgramsState();
+    if (coachTemplates.isEmpty) {
+      return _buildEmptyTemplatesState();
     }
 
     return ListView.builder(
       padding: const EdgeInsets.all(16),
-      itemCount: programTemplates.length,
+      itemCount: coachTemplates.length,
       itemBuilder: (context, index) {
-        final template = programTemplates[index];
-        return _buildProgramTemplateCard(template);
+        final template = coachTemplates[index];
+        return _buildTemplateCard(template);
       },
     );
   }
 
-  Widget _buildEmptyProgramsState() {
+  Widget _buildEmptyTemplatesState() {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(
-            Icons.library_books_outlined,
+            Icons.fitness_center,
             color: Colors.grey[600],
             size: 64,
           ),
           SizedBox(height: 16),
           Text(
-            'No program templates yet',
+            'No Templates Created',
             style: GoogleFonts.poppins(
               color: Colors.grey[400],
               fontSize: 18,
@@ -528,211 +562,163 @@ class _CoachRoutinePageState extends State<CoachRoutinePage> with SingleTickerPr
           ),
           SizedBox(height: 8),
           Text(
-            'Create reusable program templates to assign to multiple clients',
+            'Create workout templates to quickly assign to your clients',
             style: GoogleFonts.poppins(
               color: Colors.grey[500],
               fontSize: 14,
             ),
             textAlign: TextAlign.center,
           ),
+          SizedBox(height: 24),
+          ElevatedButton(
+            onPressed: _createNewTemplate,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Color(0xFF4ECDC4),
+              foregroundColor: Colors.white,
+              padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            child: Text(
+              'Create Your First Template',
+              style: GoogleFonts.poppins(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildProgramTemplateCard(ProgramTemplateModel template) {
+  Widget _buildTemplateCard(Map<String, dynamic> template) {
+    final templateColor = Color(int.parse(template['color'] ?? '4288073396'));
+    final tags = List<String>.from(template['tags'] ?? []);
+    
     return Container(
       margin: EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
         color: Color(0xFF1A1A1A),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.grey[800]!, width: 1),
+        border: Border.all(
+          color: templateColor.withOpacity(0.3),
+          width: 1,
+        ),
       ),
-      child: Column(
-        children: [
-          // Program Header
-          Padding(
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () => _showTemplateOptions(template),
+          child: Padding(
             padding: EdgeInsets.all(16),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Category Icon
-                Container(
-                  width: 50,
-                  height: 50,
-                  decoration: BoxDecoration(
-                    color: _getBalancedCategoryColor(template.category).withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: _getBalancedCategoryColor(template.category).withOpacity(0.3),
-                      width: 2,
-                    ),
-                  ),
-                  child: Icon(
-                    template.categoryIcon,
-                    color: _getBalancedCategoryColor(template.category),
-                    size: 24,
-                  ),
-                ),
-                SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        template.name,
-                        style: GoogleFonts.poppins(
-                          color: Colors.white,
-                          fontSize: 18,
-                          fontWeight: FontWeight.w600,
+                Row(
+                  children: [
+                    Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: templateColor.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: templateColor.withOpacity(0.3),
+                          width: 1,
                         ),
                       ),
-                      if (template.description.isNotEmpty)
+                      child: Icon(
+                        Icons.fitness_center,
+                        color: templateColor,
+                        size: 24,
+                      ),
+                    ),
+                    SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            template['name'] ?? 'Untitled Template',
+                            style: GoogleFonts.poppins(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          Text(
+                            '${template['exercise_count'] ?? 0} exercises • ${template['duration'] ?? '30'} min',
+                            style: GoogleFonts.poppins(
+                              color: Colors.grey[400],
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
                         Text(
-                          template.description,
+                          _formatDate(template['created_at']),
                           style: GoogleFonts.poppins(
-                            color: Colors.grey[400],
-                            fontSize: 14,
+                            color: Colors.grey[500],
+                            fontSize: 11,
                           ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
                         ),
-                      SizedBox(height: 4),
-                      Row(
-                        children: [
-                          Container(
-                            padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: _getBalancedCategoryColor(template.category).withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(
-                              template.categoryText,
-                              style: GoogleFonts.poppins(
-                                color: _getBalancedCategoryColor(template.category),
-                                fontSize: 10,
-                                fontWeight: FontWeight.w600,
-                              ),
+                        SizedBox(height: 4),
+                        Container(
+                          padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: _getDifficultyColor(template['difficulty'] ?? 'Beginner').withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            template['difficulty'] ?? 'Beginner',
+                            style: GoogleFonts.poppins(
+                              color: _getDifficultyColor(template['difficulty'] ?? 'Beginner'),
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
-                          SizedBox(width: 8),
-                          Container(
-                            padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: _getBalancedDifficultyColor(template.difficulty).withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(
-                              template.difficultyText,
-                              style: GoogleFonts.poppins(
-                                color: _getBalancedDifficultyColor(template.difficulty),
-                                fontSize: 10,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                PopupMenuButton<String>(
-                  icon: Icon(Icons.more_vert, color: Colors.grey[400]),
-                  color: Color(0xFF2A2A2A),
-                  onSelected: (value) => _handleProgramAction(value, template),
-                  itemBuilder: (context) => [
-                    PopupMenuItem(
-                      value: 'assign',
-                      child: Row(
-                        children: [
-                          Icon(Icons.person_add, color: Color(0xFF4ECDC4), size: 18),
-                          SizedBox(width: 8),
-                          Text('Assign to Client', style: TextStyle(color: Colors.white)),
-                        ],
-                      ),
-                    ),
-                    PopupMenuItem(
-                      value: 'duplicate',
-                      child: Row(
-                        children: [
-                          Icon(Icons.copy, color: Color(0xFF3498DB), size: 18),
-                          SizedBox(width: 8),
-                          Text('Duplicate', style: TextStyle(color: Colors.white)),
-                        ],
-                      ),
-                    ),
-                    PopupMenuItem(
-                      value: 'edit',
-                      child: Row(
-                        children: [
-                          Icon(Icons.edit, color: Color(0xFF9B59B6), size: 18),
-                          SizedBox(width: 8),
-                          Text('Edit', style: TextStyle(color: Colors.white)),
-                        ],
-                      ),
-                    ),
-                    PopupMenuItem(
-                      value: 'delete',
-                      child: Row(
-                        children: [
-                          Icon(Icons.delete, color: Color(0xFFE74C3C), size: 18),
-                          SizedBox(width: 8),
-                          Text('Delete', style: TextStyle(color: Colors.white)),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
+                if (tags.isNotEmpty) ...[
+                  SizedBox(height: 12),
+                  Wrap(
+                    spacing: 4,
+                    runSpacing: 4,
+                    children: tags.take(3).map((tag) => Container(
+                      padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: templateColor.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        tag,
+                        style: GoogleFonts.poppins(
+                          color: templateColor,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    )).toList(),
+                  ),
+                ],
               ],
             ),
           ),
-          
-          // Program Stats
-          Divider(color: Colors.grey[800], height: 1),
-          Padding(
-            padding: EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Expanded(
-                  child: _buildProgramStat(
-                    Icons.fitness_center,
-                    template.routineCountText,
-                    'Routines',
-                    Color(0xFF4ECDC4),
-                  ),
-                ),
-                Container(
-                  width: 1,
-                  height: 40,
-                  color: Colors.grey[800],
-                ),
-                Expanded(
-                  child: _buildProgramStat(
-                    Icons.schedule,
-                    template.estimatedDuration,
-                    'Duration',
-                    Color(0xFFF1C40F),
-                  ),
-                ),
-                Container(
-                  width: 1,
-                  height: 40,
-                  color: Colors.grey[800],
-                ),
-                Expanded(
-                  child: _buildProgramStat(
-                    Icons.people,
-                    '${template.timesUsed}',
-                    'Times Used',
-                    Color(0xFF2ECC71),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
+
+
 
   Widget _buildProgramStat(IconData icon, String value, String label, Color color) {
     return Column(
@@ -1068,36 +1054,7 @@ class _CoachRoutinePageState extends State<CoachRoutinePage> with SingleTickerPr
     );
   }
 
-  void _createNewProgram() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: Color(0xFF2A2A2A),
-        title: Text(
-          'Create Program',
-          style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.w600),
-        ),
-        content: Text(
-          'Program creation feature coming soon!',
-          style: GoogleFonts.poppins(color: Colors.grey[300]),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('OK', style: TextStyle(color: Color(0xFF4ECDC4)))),
-          ],
-      ),
-    );
-  }
 
-  void _showSuccess(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.green,
-      ),
-    );
-  }
 
   void _navigateToClientSelection() {
     Navigator.push(
@@ -1186,5 +1143,312 @@ class _CoachRoutinePageState extends State<CoachRoutinePage> with SingleTickerPr
     
     // Fallback to default teal color
     return Color(0xFF4ECDC4);
+  }
+
+  void _createNewTemplate() {
+    // Navigate to template creation page
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => CoachCreateRoutinePage(
+          selectedClient: null, // No specific client for template
+          isTemplate: true,
+        ),
+      ),
+    ).then((_) {
+      // Refresh templates when returning
+      if (_tabController.index == 1) {
+        _loadCoachTemplates();
+      }
+    });
+  }
+
+  void _showTemplateOptions(Map<String, dynamic> template) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Color(0xFF1A1A1A),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Container(
+        padding: EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey[600],
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            SizedBox(height: 20),
+            Text(
+              template['name'] ?? 'Untitled Template',
+              style: GoogleFonts.poppins(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            SizedBox(height: 8),
+            Text(
+              '${template['exercise_count'] ?? 0} exercises • ${template['duration'] ?? '30'} min',
+              style: GoogleFonts.poppins(
+                color: Colors.grey[400],
+                fontSize: 14,
+              ),
+            ),
+            SizedBox(height: 24),
+            ListTile(
+              leading: Icon(Icons.people, color: Color(0xFF4ECDC4)),
+              title: Text(
+                'Assign to Client',
+                style: GoogleFonts.poppins(color: Colors.white),
+              ),
+              onTap: () {
+                Navigator.pop(context);
+                _assignTemplateToClient(template);
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.edit, color: Colors.orange),
+              title: Text(
+                'Edit Template',
+                style: GoogleFonts.poppins(color: Colors.white),
+              ),
+              onTap: () {
+                Navigator.pop(context);
+                // TODO: Implement template editing
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Template editing coming soon!'),
+                    backgroundColor: Colors.orange,
+                  ),
+                );
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.delete, color: Colors.red),
+              title: Text(
+                'Delete Template',
+                style: GoogleFonts.poppins(color: Colors.white),
+              ),
+              onTap: () {
+                Navigator.pop(context);
+                _deleteTemplate(template);
+              },
+            ),
+            SizedBox(height: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _assignTemplateToClient(Map<String, dynamic> template) async {
+    // Use the existing assigned members from the coach data
+    if (assignedMembers.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No clients available to assign template to'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Color(0xFF1A1A1A),
+        title: Text(
+          'Assign Template',
+          style: GoogleFonts.poppins(
+            color: Colors.white,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        content: Container(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Select a client to assign "${template['name']}" template to:',
+                style: GoogleFonts.poppins(color: Colors.grey[300]),
+              ),
+              SizedBox(height: 16),
+              ...assignedMembers.map((member) => ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: Color(0xFF4ECDC4),
+                  child: Text(
+                    member.initials,
+                    style: GoogleFonts.poppins(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                title: Text(
+                  member.fullName,
+                  style: GoogleFonts.poppins(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                subtitle: Text(
+                  member.email,
+                  style: GoogleFonts.poppins(
+                    color: Colors.grey[400],
+                    fontSize: 12,
+                  ),
+                ),
+                onTap: () async {
+                  Navigator.of(context).pop();
+                  await _performTemplateAssignment(template, member);
+                },
+              )).toList(),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.poppins(color: Colors.grey[400]),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _performTemplateAssignment(Map<String, dynamic> template, MemberModel member) async {
+    try {
+      print('DEBUG - Attempting to assign template ${template['id']} to client ${member.id}');
+      
+      final success = await RoutineService.assignTemplateToClient(
+        templateId: template['id'].toString(),
+        clientId: member.id.toString(),
+        coachId: 'current_coach_id',
+      );
+      
+      print('DEBUG - Assignment result: $success');
+      
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Template assigned to ${member.fullName} successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        // Refresh the templates list and coach data
+        _loadCoachTemplates();
+        _loadCoachData();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to assign template to ${member.fullName}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      print('DEBUG - Assignment error: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  void _deleteTemplate(Map<String, dynamic> template) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Color(0xFF1A1A1A),
+        title: Text(
+          'Delete Template',
+          style: GoogleFonts.poppins(
+            color: Colors.white,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        content: Text(
+          'Are you sure you want to delete "${template['name']}"? This action cannot be undone.',
+          style: GoogleFonts.poppins(color: Colors.grey[300]),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.poppins(color: Colors.grey[400]),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              // TODO: Implement template deletion
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Template deletion coming soon!'),
+                  backgroundColor: Colors.orange,
+                ),
+              );
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: Text(
+              'Delete',
+              style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatDate(String? dateString) {
+    if (dateString == null) return 'Unknown';
+    try {
+      final date = DateTime.parse(dateString);
+      final now = DateTime.now();
+      final difference = now.difference(date).inDays;
+      
+      if (difference == 0) {
+        return 'Today';
+      } else if (difference == 1) {
+        return 'Yesterday';
+      } else if (difference <= 7) {
+        return '$difference days ago';
+      } else {
+        return '${date.day}/${date.month}/${date.year}';
+      }
+    } catch (e) {
+      return 'Unknown';
+    }
+  }
+
+  Color _getDifficultyColor(String difficulty) {
+    switch (difficulty.toLowerCase()) {
+      case 'beginner':
+        return Color(0xFF2ECC71);
+      case 'intermediate':
+        return Color(0xFFF39C12);
+      case 'advanced':
+        return Color(0xFFE67E22);
+      case 'expert':
+        return Color(0xFFE74C3C);
+      default:
+        return Color(0xFF2ECC71);
+    }
   }
 }

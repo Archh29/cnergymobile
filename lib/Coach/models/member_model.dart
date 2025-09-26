@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 class MemberModel {
   final int id;
   final String firstName;
+  final String? middleName;
   final String lastName;
   final String email;
   final String? profileImage;
@@ -23,10 +24,18 @@ class MemberModel {
   final String? genderName;
   final String? planName;
   final int age;
+  final DateTime? expiresAt;
+  final int? remainingSessions;
+  final String? rateType;
+  final String? coachApproval;
+  final String? staffApproval;
+  final DateTime? coachApprovedAt;
+  final DateTime? staffApprovedAt;
 
   MemberModel({
     required this.id,
     required this.firstName,
+    this.middleName,
     required this.lastName,
     required this.email,
     this.profileImage,
@@ -47,9 +56,18 @@ class MemberModel {
     this.genderName,
     this.planName,
     this.age = 0,
+    this.expiresAt,
+    this.remainingSessions,
+    this.rateType,
+    this.coachApproval,
+    this.staffApproval,
+    this.coachApprovedAt,
+    this.staffApprovedAt,
   });
 
-  String get fullName => '$firstName $lastName';
+  String get fullName => middleName != null && middleName!.isNotEmpty 
+      ? '$firstName $middleName $lastName' 
+      : '$firstName $lastName';
   
   String get fname => firstName;
   
@@ -107,7 +125,8 @@ class MemberModel {
     }
   }
 
-  bool get hasActiveSubscription => status.toLowerCase() == 'active';
+  bool get hasActiveSubscription => status.toLowerCase() == 'active' && 
+      (expiresAt == null || expiresAt!.isAfter(DateTime.now()));
   bool get hasPaidPlan => planName != null && planName!.isNotEmpty;
   bool get isNewMember {
     if (joinDate == null) return false;
@@ -127,10 +146,44 @@ class MemberModel {
     return 'Status unknown';
   }
 
+  // New getters for subscription-related fields
+  bool get isSubscriptionExpired => expiresAt != null && expiresAt!.isBefore(DateTime.now());
+  
+  int get daysUntilExpiration {
+    if (expiresAt == null) return -1;
+    final now = DateTime.now();
+    return expiresAt!.difference(now).inDays;
+  }
+  
+  String get subscriptionStatusText {
+    if (isSubscriptionExpired) return 'Expired';
+    if (hasActiveSubscription) {
+      final days = daysUntilExpiration;
+      if (days > 0) return '$days days remaining';
+      return 'Active';
+    }
+    return 'Inactive';
+  }
+  
+  Color get subscriptionStatusColor {
+    if (isSubscriptionExpired) return Color(0xFFE74C3C);
+    if (hasActiveSubscription) {
+      final days = daysUntilExpiration;
+      if (days <= 7) return Color(0xFFFF6B35);
+      return Color(0xFF2ECC71);
+    }
+    return Color(0xFF95A5A6);
+  }
+  
+  bool get isCoachApproved => coachApproval?.toLowerCase() == 'approved';
+  bool get isStaffApproved => staffApproval?.toLowerCase() == 'approved';
+  bool get isFullyApprovedByBoth => isCoachApproved && isStaffApproved;
+
   factory MemberModel.fromJson(Map<String, dynamic> json) {
     return MemberModel(
       id: json['id'] ?? json['user_id'] ?? 0,
       firstName: json['first_name'] ?? json['fname'] ?? '',
+      middleName: json['middle_name'] ?? json['mname'],
       lastName: json['last_name'] ?? json['lname'] ?? '',
       email: json['email'] ?? '',
       profileImage: json['profile_image'] ?? json['profile_picture'],
@@ -155,6 +208,13 @@ class MemberModel {
       genderName: json['gender_name'] ?? json['gender'],
       planName: json['plan_name'],
       age: json['age'] ?? _calculateAge(json['birth_date']),
+      expiresAt: json['expires_at'] != null ? DateTime.tryParse(json['expires_at']) : null,
+      remainingSessions: json['remaining_sessions'],
+      rateType: json['rate_type'],
+      coachApproval: json['coach_approval'],
+      staffApproval: json['staff_approval'],
+      coachApprovedAt: json['coach_approved_at'] != null ? DateTime.tryParse(json['coach_approved_at']) : null,
+      staffApprovedAt: json['staff_approved_at'] != null ? DateTime.tryParse(json['staff_approved_at']) : null,
     );
   }
 
@@ -174,6 +234,7 @@ class MemberModel {
     return {
       'id': id,
       'first_name': firstName,
+      'middle_name': middleName,
       'last_name': lastName,
       'email': email,
       'profile_image': profileImage,
@@ -194,12 +255,20 @@ class MemberModel {
       'gender_name': genderName,
       'plan_name': planName,
       'age': age,
+      'expires_at': expiresAt?.toIso8601String(),
+      'remaining_sessions': remainingSessions,
+      'rate_type': rateType,
+      'coach_approval': coachApproval,
+      'staff_approval': staffApproval,
+      'coach_approved_at': coachApprovedAt?.toIso8601String(),
+      'staff_approved_at': staffApprovedAt?.toIso8601String(),
     };
   }
 
   MemberModel copyWith({
     int? id,
     String? firstName,
+    String? middleName,
     String? lastName,
     String? email,
     String? profileImage,
@@ -220,10 +289,18 @@ class MemberModel {
     String? genderName,
     String? planName,
     int? age,
+    DateTime? expiresAt,
+    int? remainingSessions,
+    String? rateType,
+    String? coachApproval,
+    String? staffApproval,
+    DateTime? coachApprovedAt,
+    DateTime? staffApprovedAt,
   }) {
     return MemberModel(
       id: id ?? this.id,
       firstName: firstName ?? this.firstName,
+      middleName: middleName ?? this.middleName,
       lastName: lastName ?? this.lastName,
       email: email ?? this.email,
       profileImage: profileImage ?? this.profileImage,
@@ -244,6 +321,13 @@ class MemberModel {
       genderName: genderName ?? this.genderName,
       planName: planName ?? this.planName,
       age: age ?? this.age,
+      expiresAt: expiresAt ?? this.expiresAt,
+      remainingSessions: remainingSessions ?? this.remainingSessions,
+      rateType: rateType ?? this.rateType,
+      coachApproval: coachApproval ?? this.coachApproval,
+      staffApproval: staffApproval ?? this.staffApproval,
+      coachApprovedAt: coachApprovedAt ?? this.coachApprovedAt,
+      staffApprovedAt: staffApprovedAt ?? this.staffApprovedAt,
     );
   }
 

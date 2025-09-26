@@ -50,6 +50,9 @@ class WorkoutExerciseModel {
   int completedSets;
   bool isCompleted;
   List<WorkoutSetModel> loggedSets;
+  
+  // Individual set configurations
+  List<WorkoutSetModel>? targetSets;
 
   WorkoutExerciseModel({
     this.exerciseId,
@@ -67,27 +70,50 @@ class WorkoutExerciseModel {
     this.completedSets = 0,
     this.isCompleted = false,
     List<WorkoutSetModel>? loggedSets,
+    this.targetSets,
   }) : loggedSets = loggedSets ?? [];
 
   factory WorkoutExerciseModel.fromJson(Map<String, dynamic> json) {
     return WorkoutExerciseModel(
-      exerciseId: json['exercise_id'],
-      memberWorkoutExerciseId: json['member_workout_exercise_id'],
-      name: json['name'] ?? '',
-      targetMuscle: json['target_muscle'] ?? '',
-      description: json['description'] ?? '',
-      imageUrl: json['image_url'] ?? '',
-      sets: json['sets'] ?? 0,
+      exerciseId: json['exercise_id'] is int ? json['exercise_id'] : int.tryParse(json['exercise_id']?.toString() ?? '0'),
+      memberWorkoutExerciseId: json['member_workout_exercise_id'] is int ? json['member_workout_exercise_id'] : int.tryParse(json['member_workout_exercise_id']?.toString() ?? '0'),
+      name: json['name']?.toString() ?? '',
+      targetMuscle: json['target_muscle']?.toString() ?? '',
+      description: json['description']?.toString() ?? '',
+      imageUrl: json['image_url']?.toString() ?? '',
+      sets: json['sets'] is int ? json['sets'] : int.tryParse(json['sets']?.toString() ?? '0') ?? 0,
       reps: json['reps']?.toString() ?? '0',
-      weight: (json['weight'] ?? 0.0).toDouble(),
-      restTime: json['rest_time'] ?? 60,
-      category: json['category'] ?? '',
-      difficulty: json['difficulty'] ?? '',
-      completedSets: json['completed_sets'] ?? 0,
+      weight: json['weight'] is double ? json['weight'] : double.tryParse(json['weight']?.toString() ?? '0.0') ?? 0.0,
+      restTime: json['rest_time'] is int ? json['rest_time'] : int.tryParse(json['rest_time']?.toString() ?? '60') ?? 60,
+      category: json['category']?.toString() ?? '',
+      difficulty: json['difficulty']?.toString() ?? '',
+      completedSets: json['completed_sets'] is int ? json['completed_sets'] : int.tryParse(json['completed_sets']?.toString() ?? '0') ?? 0,
       isCompleted: json['is_completed'] ?? false,
       loggedSets: (json['logged_sets'] as List<dynamic>?)
           ?.map((s) => WorkoutSetModel.fromJson(s))
           .toList() ?? [],
+      targetSets: (() {
+        print('🔍 WorkoutExerciseModel.fromJson for: ${json['name']}');
+        print('  - Checking target_sets: ${json['target_sets']}');
+        print('  - target_sets type: ${json['target_sets']?.runtimeType}');
+        
+        if (json['target_sets'] != null && json['target_sets'] is List) {
+          print('  - Parsing target_sets: ${json['target_sets']}');
+          try {
+            final result = (json['target_sets'] as List<dynamic>)
+                .map((s) => WorkoutSetModel.fromJson(s))
+                .toList();
+            print('  - Successfully parsed ${result.length} targetSets');
+            return result;
+          } catch (e) {
+            print('  - ERROR parsing target_sets: $e');
+            return null;
+          }
+        } else {
+          print('  - No target_sets found or not a List');
+          return null;
+        }
+      })(),
     );
   }
 
@@ -108,6 +134,7 @@ class WorkoutExerciseModel {
       'completed_sets': completedSets,
       'is_completed': isCompleted,
       'logged_sets': loggedSets.map((s) => s.toJson()).toList(),
+      'target_sets': targetSets?.map((s) => s.toJson()).toList(),
     };
   }
 
@@ -145,10 +172,10 @@ class WorkoutSetModel {
 
   factory WorkoutSetModel.fromJson(Map<String, dynamic> json) {
     return WorkoutSetModel(
-      reps: json['reps'] ?? 0,
-      weight: (json['weight'] ?? 0.0).toDouble(),
-      rpe: json['rpe'] ?? 0,
-      notes: json['notes'] ?? '',
+      reps: json['reps'] is int ? json['reps'] : int.tryParse(json['reps']?.toString() ?? '0') ?? 0,
+      weight: json['weight'] is double ? json['weight'] : double.tryParse(json['weight']?.toString() ?? '0.0') ?? 0.0,
+      rpe: json['rpe'] is int ? json['rpe'] : int.tryParse(json['rpe']?.toString() ?? '0') ?? 0,
+      notes: json['notes']?.toString() ?? '',
       timestamp: json['timestamp'] != null 
           ? DateTime.parse(json['timestamp'])
           : DateTime.now(),

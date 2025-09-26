@@ -480,3 +480,14 @@ function checkAndAwardAchievements($pdo, $user_id) {
 
 
 
+
+
+
+
+
+
+
+
+
+
+

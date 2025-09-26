@@ -167,12 +167,63 @@ class _SignUpPageState extends State<SignUpPage> with SingleTickerProviderStateM
     });
 
     try {
+      // Validate password strength
+      String password = _passwordController.text.trim();
+      
+      // Check password length
+      if (password.length < 6) {
+        Get.snackbar(
+          'Error',
+          'Password must be at least 6 characters',
+          snackPosition: SnackPosition.BOTTOM,
+          backgroundColor: Colors.red,
+          colorText: Colors.white,
+        );
+        return;
+      }
+      
+      // Check for capital letter
+      if (!password.contains(RegExp(r'[A-Z]'))) {
+        Get.snackbar(
+          'Error',
+          'Password must contain at least one capital letter',
+          snackPosition: SnackPosition.BOTTOM,
+          backgroundColor: Colors.red,
+          colorText: Colors.white,
+        );
+        return;
+      }
+      
+      // Check for number
+      if (!password.contains(RegExp(r'[0-9]'))) {
+        Get.snackbar(
+          'Error',
+          'Password must contain at least one number',
+          snackPosition: SnackPosition.BOTTOM,
+          backgroundColor: Colors.red,
+          colorText: Colors.white,
+        );
+        return;
+      }
+      
+      // Check for symbol
+      if (!password.contains(RegExp(r'[!@#$%^&*(),.?":{}|<>]'))) {
+        Get.snackbar(
+          'Error',
+          'Password must contain at least one symbol (!@#\$%^&*(),.?":{}|<>)',
+          snackPosition: SnackPosition.BOTTOM,
+          backgroundColor: Colors.red,
+          colorText: Colors.white,
+        );
+        return;
+      }
+
       final response = await http.post(
         Uri.parse('https://api.cnergy.site/loginapp.php'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({
           'email': _emailController.text.trim(),
-          'password': _passwordController.text,
+          'password': password,
           'fname': _fnameController.text.trim(),
           'mname': _mnameController.text.trim(),
           'lname': _lnameController.text.trim(),
@@ -324,7 +375,7 @@ class _SignUpPageState extends State<SignUpPage> with SingleTickerProviderStateM
                     Text(
                       '1. Check your email for welcome instructions\n'
                       '2. Visit our front desk for account verification\n'
-                      '3. Bring a valid government-issued ID\n'
+                      '3. Bring any valid ID\n'
                       '4. Start your fitness journey!',
                       style: GoogleFonts.poppins(
                         fontSize: 12,

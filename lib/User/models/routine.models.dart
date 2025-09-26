@@ -146,30 +146,74 @@ class ExerciseModel {
     print('🔍 ExerciseModel.fromJson for: ${json['name']}');
     print('  - target_muscle: "${json['target_muscle']}"');
     print('  - targetMuscle: "${json['targetMuscle']}"');
+    print('  - sets type: ${json['sets'].runtimeType}');
+    print('  - sets value: ${json['sets']}');
     
     final targetMuscle = json['target_muscle'] ?? json['targetMuscle'] ?? '';
     print('  - Final targetMuscle: "$targetMuscle"');
     
     return ExerciseModel(
-      id: json['id'],
-      name: json['name'] ?? '',
-      targetSets: json['target_sets'] ?? json['targetSets'] ?? 0,
+      id: json['id'] is int ? json['id'] : int.tryParse(json['id']?.toString() ?? '0'),
+      name: json['name']?.toString() ?? '',
+      targetSets: json['target_sets'] is int 
+          ? json['target_sets'] 
+          : int.tryParse(json['target_sets']?.toString() ?? json['targetSets']?.toString() ?? '0') ?? 0,
       targetReps: json['target_reps']?.toString() ?? json['targetReps']?.toString() ?? '',
       targetWeight: json['target_weight']?.toString() ?? json['targetWeight']?.toString() ?? '',
-      completedSets: json['completed_sets'] ?? json['completedSets'] ?? 0,
-      sets: json['sets'] != null
-          ? (json['sets'] as List).map((s) => ExerciseSet.fromJson(s)).toList()
-          : [],
+      completedSets: json['completed_sets'] is int 
+          ? json['completed_sets'] 
+          : int.tryParse(json['completed_sets']?.toString() ?? json['completedSets']?.toString() ?? '0') ?? 0,
+      sets: (() {
+        print('  - Checking for target_sets: ${json['target_sets']}');
+        print('  - target_sets type: ${json['target_sets']?.runtimeType}');
+        print('  - Checking for sets: ${json['sets']}');
+        print('  - sets type: ${json['sets']?.runtimeType}');
+        
+        // Check for individual set configurations in target_sets first (from workout preview)
+        if (json['target_sets'] != null && json['target_sets'] is List) {
+          print('  - Parsing target_sets: ${json['target_sets']}');
+          try {
+            final result = (json['target_sets'] as List).map((s) => ExerciseSet.fromJson(s)).toList();
+            print('  - Successfully parsed ${result.length} sets from target_sets');
+            return result;
+          } catch (e) {
+            print('  - ERROR parsing target_sets: $e');
+            return <ExerciseSet>[];
+          }
+        }
+        // Fallback to sets field (from routine creation/editing)
+        else if (json['sets'] != null) {
+          print('  - Parsing sets: ${json['sets']}');
+          if (json['sets'] is List) {
+            try {
+              final result = (json['sets'] as List).map((s) => ExerciseSet.fromJson(s)).toList();
+              print('  - Successfully parsed ${result.length} sets from sets');
+              return result;
+            } catch (e) {
+              print('  - ERROR parsing sets: $e');
+              return <ExerciseSet>[];
+            }
+          } else {
+            print('  - ERROR: sets is not a List, it is ${json['sets'].runtimeType}');
+            return <ExerciseSet>[];
+          }
+        } else {
+          print('  - No target_sets or sets found, returning empty list');
+          return <ExerciseSet>[];
+        }
+      })(),
       completed: json['completed'] ?? false,
-      category: json['category'] ?? '',
-      difficulty: json['difficulty'] ?? '',
-      color: json['color'] ?? '0xFF96CEB4',
-      restTime: json['rest_time'] ?? json['restTime'] ?? 60,
-      notes: json['notes'] ?? '',
+      category: json['category']?.toString() ?? '',
+      difficulty: json['difficulty']?.toString() ?? '',
+      color: json['color']?.toString() ?? '0xFF96CEB4',
+      restTime: json['rest_time'] is int 
+          ? json['rest_time'] 
+          : int.tryParse(json['rest_time']?.toString() ?? json['restTime']?.toString() ?? '60') ?? 60,
+      notes: json['notes']?.toString() ?? '',
       targetMuscle: targetMuscle,
-      description: json['description'] ?? '',
-      imageUrl: json['image_url'] ?? json['imageUrl'] ?? '',
-      videoUrl: json['video_url'] ?? json['videoUrl'] ?? '',
+      description: json['description']?.toString() ?? '',
+      imageUrl: json['image_url']?.toString() ?? json['imageUrl']?.toString() ?? '',
+      videoUrl: json['video_url']?.toString() ?? json['videoUrl']?.toString() ?? '',
     );
   }
 

@@ -7,7 +7,6 @@ import  './services/auth_service.dart';// Import AuthService
 import './services/membership_service.dart';
 import 'achievements_page.dart';
 import 'manage_profile_page.dart';
-import 'manage_notification_page.dart';
 import 'manage_subscriptions_page.dart';
 import 'message_support_page.dart';
 import 'privacy_policy_page.dart';
@@ -624,9 +623,6 @@ class _ProfilePageState extends State<ProfilePage> with TickerProviderStateMixin
               }),
               _buildMenuItem(Icons.person, 'Manage Profile', Color(0xFF4ECDC4), () {
                 Navigator.push(context, MaterialPageRoute(builder: (_) => ManageProfilePage()));
-              }),
-              _buildMenuItem(Icons.notifications, 'Notifications', Color(0xFFFF6B35), () {
-                Navigator.push(context, MaterialPageRoute(builder: (_) => ManageNotificationPage()));
               }),
             ],
           ),

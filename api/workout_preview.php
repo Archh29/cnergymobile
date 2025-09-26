@@ -164,16 +164,51 @@ switch ($action) {
             ];
             
             // Format exercises for response
-            $formattedExercises = array_map(function($exercise) {
+            $formattedExercises = array_map(function($exercise) use ($workoutDetails) {
+                $exerciseId = $exercise['exercise_id'];
+                $targetSets = [];
+                
+                // Check if we have individual set configurations stored in workout_details
+                if (isset($workoutDetails['exercise_set_configs'][$exerciseId])) {
+                    // Use the stored individual set configurations
+                    $setConfigs = $workoutDetails['exercise_set_configs'][$exerciseId];
+                    foreach ($setConfigs as $setConfig) {
+                        $targetSets[] = [
+                            'reps' => (int)$setConfig['reps'],
+                            'weight' => (float)$setConfig['weight'],
+                            'timestamp' => $setConfig['timestamp'] ?? date('c'),
+                            'isCompleted' => false,
+                        ];
+                    }
+                    error_log("Using individual set configurations for exercise ID $exerciseId: " . json_encode($setConfigs));
+                } else {
+                    // Fallback to creating sets with default values
+                    $setCount = (int)$exercise['sets'];
+                    for ($i = 0; $i < $setCount; $i++) {
+                        $targetSets[] = [
+                            'reps' => (int)$exercise['reps'],
+                            'weight' => (float)$exercise['weight'],
+                            'timestamp' => date('c'),
+                            'isCompleted' => false,
+                        ];
+                    }
+                    error_log("Using default set configuration for exercise ID $exerciseId");
+                }
+                
                 return [
+                    'id' => (int)$exercise['exercise_id'],
                     'exercise_id' => (int)$exercise['exercise_id'],
                     'member_workout_exercise_id' => (int)$exercise['member_workout_exercise_id'],
                     'name' => $exercise['name'],
                     'target_muscle' => $exercise['target_muscle'] ?? 'General',
                     'description' => $exercise['description'] ?? '',
                     'image_url' => $exercise['image_url'] ?? '',
+                    'video_url' => $exercise['video_url'] ?? '',
+                    'target_sets' => $targetSets, // Array of individual set configurations
                     'sets' => (int)$exercise['sets'],
+                    'target_reps' => $exercise['reps'],
                     'reps' => $exercise['reps'],
+                    'target_weight' => (float)$exercise['weight'],
                     'weight' => (float)$exercise['weight'],
                     'rest_time' => (int)$exercise['rest_time'],
                     'category' => 'Strength', // Default since not in your schema
@@ -661,9 +696,3 @@ switch ($action) {
         respond(["error" => "Invalid action: " . $action]);
 }
 ?>
-
-
-
-
-
-

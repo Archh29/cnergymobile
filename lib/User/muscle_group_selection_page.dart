@@ -9,11 +9,19 @@ import 'package:gym/User/exercise_selection_page.dart'; // Assuming this is the 
 class MuscleGroupSelectionPage extends StatefulWidget {
   final Color selectedColor;
   final List<SelectedExerciseWithConfig> currentSelections; // This is the GLOBAL list of selected exercises
+  final bool isEditing;
+  final dynamic existingRoutine; // RoutineModel for editing
+  final bool isProMember;
+  final int currentRoutineCount;
 
   const MuscleGroupSelectionPage({
     Key? key,
     required this.selectedColor,
     this.currentSelections = const [],
+    this.isEditing = false,
+    this.existingRoutine,
+    this.isProMember = false,
+    this.currentRoutineCount = 0,
   }) : super(key: key);
 
   @override
@@ -29,12 +37,85 @@ class _MuscleGroupSelectionPageState extends State<MuscleGroupSelectionPage> {
   @override
   void initState() {
     super.initState();
-    selectedExercises = List.from(widget.currentSelections); // Initialize with the global list from parent
-    print('Initialized with ${selectedExercises.length} exercises');
+    
+    if (widget.isEditing && widget.existingRoutine != null) {
+      // Convert existing routine exercises to SelectedExerciseWithConfig format
+      selectedExercises = _convertRoutineToSelectedExercises(widget.existingRoutine);
+      print('Editing mode: Initialized with ${selectedExercises.length} exercises from existing routine');
+    } else {
+      selectedExercises = List.from(widget.currentSelections); // Initialize with the global list from parent
+      print('Create mode: Initialized with ${selectedExercises.length} exercises');
+    }
+    
     for (var exercise in selectedExercises) {
       print('Exercise: ${exercise.exercise.name} - Target Muscle: "${exercise.exercise.targetMuscle}"');
     }
     _loadMuscleGroups();
+  }
+
+  List<SelectedExerciseWithConfig> _convertRoutineToSelectedExercises(dynamic routine) {
+    List<SelectedExerciseWithConfig> exercises = [];
+    
+    // Use detailedExercises field which contains the full exercise data
+    if (routine.detailedExercises != null && routine.detailedExercises is List) {
+      for (var exerciseData in routine.detailedExercises) {
+        try {
+          // Create ExerciseSelectionModel from routine exercise data
+          final exercise = ExerciseSelectionModel(
+            id: int.tryParse(exerciseData['id']?.toString() ?? '0') ?? 0,
+            name: exerciseData['name'] ?? 'Unknown Exercise',
+            description: exerciseData['description'] ?? '',
+            imageUrl: exerciseData['image_url'] ?? '',
+            videoUrl: exerciseData['video_url'] ?? '',
+            targetMuscle: exerciseData['target_muscle'] ?? '',
+            category: exerciseData['category'] ?? 'General',
+            difficulty: exerciseData['difficulty'] ?? 'Intermediate',
+          );
+          
+          // Create set configurations from the exercise data
+          List<SetConfig> setConfigs = [];
+          if (exerciseData['sets'] is List) {
+            // If sets is already a list of set objects
+            for (int i = 0; i < exerciseData['sets'].length; i++) {
+              final setData = exerciseData['sets'][i];
+              setConfigs.add(SetConfig(
+                setNumber: i + 1,
+                reps: setData['reps']?.toString() ?? '10',
+                weight: setData['weight']?.toString() ?? '0',
+              ));
+            }
+          } else {
+            // If sets is just a count, create default set configs
+            final setCount = exerciseData['target_sets'] ?? exerciseData['sets'] ?? 3;
+            final defaultReps = exerciseData['target_reps']?.toString() ?? exerciseData['reps']?.toString() ?? '10';
+            final defaultWeight = exerciseData['target_weight']?.toString() ?? exerciseData['weight']?.toString() ?? '0';
+            
+            for (int i = 0; i < setCount; i++) {
+              setConfigs.add(SetConfig(
+                setNumber: i + 1,
+                reps: defaultReps,
+                weight: defaultWeight,
+              ));
+            }
+          }
+          
+          // Create SelectedExerciseWithConfig
+          final selectedExercise = SelectedExerciseWithConfig(
+            exercise: exercise,
+            sets: setConfigs.length,
+            reps: exerciseData['target_reps']?.toString() ?? exerciseData['reps']?.toString() ?? '10',
+            weight: exerciseData['target_weight']?.toString() ?? exerciseData['weight']?.toString() ?? '0',
+            setConfigs: setConfigs,
+          );
+          
+          exercises.add(selectedExercise);
+        } catch (e) {
+          print('Error converting exercise: $e');
+        }
+      }
+    }
+    
+    return exercises;
   }
 
   Future<void> _loadMuscleGroups() async {
@@ -284,7 +365,7 @@ class _MuscleGroupSelectionPageState extends State<MuscleGroupSelectionPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Muscles',
+              widget.isEditing ? 'Edit Routine' : 'Muscles',
               style: GoogleFonts.poppins(
                 color: Colors.white,
                 fontSize: 24,

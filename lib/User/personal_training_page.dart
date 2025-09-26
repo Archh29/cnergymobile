@@ -64,6 +64,7 @@ class _PersonalTrainingPageState extends State<PersonalTrainingPage>
   }
 
   Future<void> _loadCoaches() async {
+    if (!mounted) return;
     setState(() {
       isLoading = true;
       errorMessage = null;
@@ -71,11 +72,13 @@ class _PersonalTrainingPageState extends State<PersonalTrainingPage>
 
     try {
       final fetchedCoaches = await CoachService.fetchCoaches();
+      if (!mounted) return;
       setState(() {
         coaches = fetchedCoaches;
         isLoading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         errorMessage = 'Failed to load coaches: $e';
         isLoading = false;
@@ -84,17 +87,23 @@ class _PersonalTrainingPageState extends State<PersonalTrainingPage>
   }
 
   Future<void> _loadLocalData() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      coachRequestStatus = prefs.getString('coach_request_status') ?? 'none';
-      selectedCoachId = prefs.getInt('selected_coach_id');
-      selectedCoachName = prefs.getString('selected_coach_name');
-      requestDate = prefs.getString('request_date');
-    });
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (!mounted) return;
+      setState(() {
+        coachRequestStatus = prefs.getString('coach_request_status') ?? 'none';
+        selectedCoachId = prefs.getInt('selected_coach_id');
+        selectedCoachName = prefs.getString('selected_coach_name');
+        requestDate = prefs.getString('request_date');
+      });
+    } catch (e) {
+      print('❌ Error loading local data: $e');
+    }
   }
 
   Future<void> _loadCoachRequestStatus() async {
     try {
+      if (!mounted) return;
       setState(() { _loadingCoachRequest = true; });
       int? userId = widget.currentUser?.id;
       if (userId == null) {
@@ -102,21 +111,56 @@ class _PersonalTrainingPageState extends State<PersonalTrainingPage>
         userId = int.tryParse(prefs.getString('user_id') ?? '');
       }
       if (userId == null) {
+        if (!mounted) return;
         setState(() { _loadingCoachRequest = false; });
         return;
       }
       final data = await CoachService.getUserCoachRequest(userId);
+      if (!mounted) return;
+      
+      print('🔍 API Response data: $data');
+      print('🔍 API Response request: ${data?['request']}');
+      
       setState(() {
         _remoteCoachRequest = data?['request'];
+        print('🔍 Set _remoteCoachRequest to: $_remoteCoachRequest');
+        
         if (_remoteCoachRequest != null) {
-          selectedCoachId = _remoteCoachRequest!['coach_id'];
-          selectedCoachName = _remoteCoachRequest!['coach_name'];
-          coachRequestStatus = (_remoteCoachRequest!['status'] ?? 'pending').toString();
-          requestDate = _remoteCoachRequest!['requested_at']?.toString();
+          // Real coach data exists
+          final coachIdValue = _remoteCoachRequest?['coach_id'];
+          selectedCoachId = coachIdValue is int 
+              ? coachIdValue 
+              : int.tryParse(coachIdValue?.toString() ?? '0');
+          selectedCoachName = _remoteCoachRequest?['coach_name']?.toString();
+          coachRequestStatus = (_remoteCoachRequest?['status'] ?? 'pending').toString();
+          requestDate = _remoteCoachRequest?['requested_at']?.toString();
+          
+          print('🔍 Parsed data - Coach ID: $selectedCoachId, Name: $selectedCoachName, Status: $coachRequestStatus');
+        } else {
+          // No coach assigned - set static fallback data
+          print('🔍 No coach assigned - setting fallback data');
+          _remoteCoachRequest = {
+            'coach_approval': 'none',
+            'staff_approval': 'none', 
+            'status': 'none',
+            'coach_name': null,
+            'coach_id': null,
+            'requested_at': null,
+            'expires_at': null,
+            'remaining_sessions': null,
+            'rate_type': null
+          };
+          selectedCoachId = null;
+          selectedCoachName = null;
+          coachRequestStatus = 'none';
+          requestDate = null;
+          
+          print('🔍 Set fallback data - Status: $coachRequestStatus');
         }
         _loadingCoachRequest = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() { _loadingCoachRequest = false; });
     }
   }
@@ -136,56 +180,440 @@ class _PersonalTrainingPageState extends State<PersonalTrainingPage>
   }
 
   List<CoachModel> get filteredCoaches {
+    if (coaches.isEmpty) return [];
     if (selectedFilter == 'All') return coaches;
     if (selectedFilter == 'Available') return coaches.where((c) => c.isAvailable).toList();
     return coaches.where((c) => c.specialty == selectedFilter).toList();
   }
 
   List<String> get filterOptions {
-    final specialties = coaches.map((c) => c.specialty).toSet().toList();
+    if (coaches.isEmpty) return ['All'];
+    final specialties = coaches.map((c) => c.specialty ?? 'General').toSet().toList();
     return ['All', 'Available', ...specialties];
   }
 
   bool _hasActiveCoach() {
-    if (_remoteCoachRequest == null) return false;
-    
-    final coachApproval = (_remoteCoachRequest!['coach_approval'] ?? '').toString();
-    final staffApproval = (_remoteCoachRequest!['staff_approval'] ?? '').toString();
-    final status = (_remoteCoachRequest!['status'] ?? '').toString();
-    
-    // Check if user has an active coach (both coach and staff approved)
-    return coachApproval == 'approved' && staffApproval == 'approved';
+    try {
+      if (_remoteCoachRequest == null) {
+        print('🔍 _remoteCoachRequest is null - no active coach');
+        return false;
+      }
+      
+      // Safe data extraction with comprehensive null checks
+      final coachApproval = _remoteCoachRequest?['coach_approval']?.toString() ?? 'none';
+      final staffApproval = _remoteCoachRequest?['staff_approval']?.toString() ?? 'none';
+      final status = _remoteCoachRequest?['status']?.toString() ?? 'none';
+      
+      print('🔍 Coach approval: $coachApproval, Staff approval: $staffApproval, Status: $status');
+      
+      // Check if user has an active coach (both coach and staff approved)
+      final isActive = coachApproval == 'approved' && staffApproval == 'approved';
+      print('🔍 Has active coach: $isActive');
+      
+      return isActive;
+    } catch (e) {
+      print('❌ Error checking active coach: $e');
+      print('❌ _remoteCoachRequest data: $_remoteCoachRequest');
+      return false;
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Color(0xFF0F0F0F),
-      body: SafeArea(
-        child: FadeTransition(
-          opacity: _fadeAnimation,
-          child: SlideTransition(
-            position: _slideAnimation,
-            child: CustomScrollView(
-              slivers: [
-                _buildSliverAppBar(),
-                _buildCoachStatusSection(),
-                if (widget.currentUser != null && !widget.currentUser!.isPremium) _buildUpgradeSection(),
-                _buildAboutSection(),
-                if (widget.currentUser != null && widget.currentUser!.isPremium && !_hasActiveCoach()) _buildFilterSection(),
-                if (widget.currentUser != null && widget.currentUser!.isPremium && !_hasActiveCoach()) _buildCoachesSection(),
-                if (widget.currentUser != null && widget.currentUser!.isPremium && _hasActiveCoach()) _buildActiveCoachSection(),
+    try {
+      return Scaffold(
+        backgroundColor: Color(0xFF0F0F0F),
+        body: SafeArea(
+          child: isLoading
+              ? Center(
+                  child: CircularProgressIndicator(
+                    valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF4ECDC4)),
+                  ),
+                )
+              : errorMessage != null
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.error_outline,
+                            color: Colors.red,
+                            size: 64,
+                          ),
+                          SizedBox(height: 20),
+                          Text(
+                            'Error Loading Coaches',
+                            style: GoogleFonts.poppins(
+                              color: Colors.white,
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          SizedBox(height: 10),
+                          Text(
+                            errorMessage!,
+                            style: GoogleFonts.poppins(
+                              color: Colors.grey[400],
+                              fontSize: 16,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                          SizedBox(height: 20),
+                          ElevatedButton(
+                            onPressed: _loadCoaches,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Color(0xFF4ECDC4),
+                            ),
+                            child: Text('Retry'),
+                          ),
+                        ],
+                      ),
+                    )
+                  : FadeTransition(
+                      opacity: _fadeAnimation,
+                      child: SlideTransition(
+                        position: _slideAnimation,
+                        child: _buildMainContent(),
+                      ),
+                    ),
+        ),
+      );
+    } catch (e) {
+      print('❌ PersonalTrainingPage: Build error: $e');
+      return Scaffold(
+        backgroundColor: Color(0xFF0F0F0F),
+        body: SafeArea(
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.error_outline,
+                  color: Colors.red,
+                  size: 64,
+                ),
+                SizedBox(height: 20),
+                Text(
+                  'Something went wrong',
+                  style: GoogleFonts.poppins(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                SizedBox(height: 10),
+                Text(
+                  'Please try again later',
+                  style: GoogleFonts.poppins(
+                    color: Colors.grey[400],
+                    fontSize: 16,
+                  ),
+                ),
+                SizedBox(height: 20),
+                ElevatedButton(
+                  onPressed: () {
+                    setState(() {
+                      isLoading = true;
+                      errorMessage = null;
+                    });
+                    _loadCoaches();
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Color(0xFF4ECDC4),
+                  ),
+                  child: Text('Retry'),
+                ),
               ],
             ),
           ),
+        ),
+      );
+    }
+  }
+
+  Widget _buildMainContent() {
+    try {
+      List<Widget> slivers = [];
+      
+      try {
+        slivers.add(_buildSliverAppBar());
+        print('✅ _buildSliverAppBar() completed');
+      } catch (e) {
+        print('❌ Error in _buildSliverAppBar(): $e');
+        return _buildErrorContent('Error building app bar');
+      }
+      
+      try {
+        slivers.add(_buildCoachStatusSection());
+        print('✅ _buildCoachStatusSection() completed');
+      } catch (e) {
+        print('❌ Error in _buildCoachStatusSection(): $e');
+        // Don't show error for coach status - just show "no coach assigned"
+        slivers.add(SliverToBoxAdapter(
+          child: Container(
+            margin: EdgeInsets.all(20),
+            padding: EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Color(0xFF1A1A1A),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.person, color: Color(0xFF4ECDC4), size: 20),
+                SizedBox(width: 12),
+                Text(
+                  'No coach assigned yet',
+                  style: GoogleFonts.poppins(
+                    color: Colors.grey[400],
+                    fontSize: 14,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ));
+      }
+
+      if (widget.currentUser != null && !widget.currentUser!.isPremium) {
+        try {
+          slivers.add(_buildUpgradeSection());
+          print('✅ _buildUpgradeSection() completed');
+        } catch (e) {
+          print('❌ Error in _buildUpgradeSection(): $e');
+          return _buildErrorContent('Error building upgrade section');
+        }
+      }
+      
+      try {
+        slivers.add(_buildAboutSection());
+        print('✅ _buildAboutSection() completed');
+      } catch (e) {
+        print('❌ Error in _buildAboutSection(): $e');
+        return _buildErrorContent('Error building about section');
+      }
+      
+      if (widget.currentUser != null && widget.currentUser!.isPremium && !_hasActiveCoach()) {
+        try {
+          slivers.add(_buildFilterSection());
+          print('✅ _buildFilterSection() completed');
+        } catch (e) {
+          print('❌ Error in _buildFilterSection(): $e');
+          return _buildErrorContent('Error building filter section');
+        }
+        
+        if (coaches.isEmpty && !isLoading) {
+          try {
+            slivers.add(_buildEmptyCoachesSection());
+            print('✅ _buildEmptyCoachesSection() completed');
+          } catch (e) {
+            print('❌ Error in _buildEmptyCoachesSection(): $e');
+            return _buildErrorContent('Error building empty coaches section');
+          }
+        } else {
+          try {
+            slivers.add(_buildCoachesSection());
+            print('✅ _buildCoachesSection() completed');
+          } catch (e) {
+            print('❌ Error in _buildCoachesSection(): $e');
+            return _buildErrorContent('Error building coaches section');
+          }
+        }
+      }
+      
+      if (widget.currentUser != null && widget.currentUser!.isPremium && _hasActiveCoach()) {
+        try {
+          slivers.add(_buildActiveCoachSection());
+          print('✅ _buildActiveCoachSection() completed');
+        } catch (e) {
+          print('❌ Error in _buildActiveCoachSection(): $e');
+          return _buildErrorContent('Error building active coach section');
+        }
+      }
+
+      return CustomScrollView(
+        slivers: slivers,
+      );
+    } catch (e) {
+      print('❌ PersonalTrainingPage: _buildMainContent general error: $e');
+      return _buildErrorContent('General content building error');
+    }
+  }
+
+  Widget _buildErrorContent(String errorType) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.error_outline,
+            color: Colors.red,
+            size: 64,
+          ),
+          SizedBox(height: 20),
+          Text(
+            'Error: $errorType',
+            style: GoogleFonts.poppins(
+              color: Colors.white,
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          SizedBox(height: 10),
+          Text(
+            'Please try refreshing the page',
+            style: GoogleFonts.poppins(
+              color: Colors.grey[400],
+              fontSize: 16,
+            ),
+          ),
+          SizedBox(height: 20),
+          ElevatedButton(
+            onPressed: () {
+              setState(() {
+                isLoading = true;
+                errorMessage = null;
+              });
+              _loadCoaches();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Color(0xFF4ECDC4),
+            ),
+            child: Text('Retry'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyCoachesSection() {
+    return SliverToBoxAdapter(
+      child: Container(
+        margin: EdgeInsets.all(20),
+        padding: EdgeInsets.all(40),
+        decoration: BoxDecoration(
+          color: Color(0xFF1A1A1A),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Column(
+          children: [
+            Icon(
+              Icons.search_off,
+              color: Colors.grey[400],
+              size: 64,
+            ),
+            SizedBox(height: 20),
+            Text(
+              'No Coaches Available',
+              style: GoogleFonts.poppins(
+                color: Colors.white,
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            SizedBox(height: 10),
+            Text(
+              'We couldn\'t find any coaches matching your criteria. Please try again later.',
+              style: GoogleFonts.poppins(
+                color: Colors.grey[400],
+                fontSize: 16,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: _loadCoaches,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Color(0xFF4ECDC4),
+                padding: EdgeInsets.symmetric(horizontal: 30, vertical: 15),
+              ),
+              child: Text(
+                'Refresh',
+                style: GoogleFonts.poppins(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 
+  Widget _buildFallbackContent() {
+    return SliverToBoxAdapter(
+      child: Container(
+        margin: EdgeInsets.all(20),
+        padding: EdgeInsets.all(40),
+        decoration: BoxDecoration(
+          color: Color(0xFF1A1A1A),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Column(
+          children: [
+            Icon(
+              Icons.fitness_center,
+              color: Color(0xFF4ECDC4),
+              size: 64,
+            ),
+            SizedBox(height: 20),
+            Text(
+              'Personal Training',
+              style: GoogleFonts.poppins(
+                color: Colors.white,
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            SizedBox(height: 10),
+            Text(
+              'Connect with our certified trainers to achieve your fitness goals.',
+              style: GoogleFonts.poppins(
+                color: Colors.grey[400],
+                fontSize: 16,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            SizedBox(height: 20),
+            if (widget.currentUser == null)
+              Text(
+                'Please log in to access personal training features.',
+                style: GoogleFonts.poppins(
+                  color: Colors.orange,
+                  fontSize: 14,
+                ),
+                textAlign: TextAlign.center,
+              )
+            else if (!widget.currentUser!.isPremium)
+              Text(
+                'Upgrade to premium to access personal training.',
+                style: GoogleFonts.poppins(
+                  color: Colors.orange,
+                  fontSize: 14,
+                ),
+                textAlign: TextAlign.center,
+              )
+            else
+              Text(
+                'Loading your personal training options...',
+                style: GoogleFonts.poppins(
+                  color: Colors.grey[400],
+                  fontSize: 14,
+                ),
+                textAlign: TextAlign.center,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+
   SliverToBoxAdapter _buildCoachStatusSection() {
-    // Decide what to show based on remote data
-    if (_loadingCoachRequest) {
+    try {
+      // Decide what to show based on remote data
+      if (_loadingCoachRequest) {
       return SliverToBoxAdapter(
         child: Container(
           margin: EdgeInsets.all(20),
@@ -212,18 +640,42 @@ class _PersonalTrainingPageState extends State<PersonalTrainingPage>
       );
     }
 
-    if (_remoteCoachRequest == null) {
-      return SliverToBoxAdapter(child: SizedBox.shrink());
+    if (_remoteCoachRequest == null || _remoteCoachRequest?['status'] == 'none') {
+      // Return a minimal status section instead of empty content
+      return SliverToBoxAdapter(
+        child: Container(
+          margin: EdgeInsets.all(20),
+          padding: EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Color(0xFF1A1A1A),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.person, color: Color(0xFF4ECDC4), size: 20),
+              SizedBox(width: 12),
+              Text(
+                'No coach assigned yet',
+                style: GoogleFonts.poppins(
+                  color: Colors.grey[400],
+                  fontSize: 14,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
     }
 
-    final coachApproval = (_remoteCoachRequest!['coach_approval'] ?? '').toString();
-    final staffApproval = (_remoteCoachRequest!['staff_approval'] ?? '').toString();
-    final status = (_remoteCoachRequest!['status'] ?? '').toString();
-    final coachName = (_remoteCoachRequest!['coach_name'] ?? 'Coach').toString();
-    final requestedAt = (_remoteCoachRequest!['requested_at'] ?? '').toString();
-    final rateType = (_remoteCoachRequest!['rate_type'] ?? 'hourly').toString();
-    final remainingSessions = _remoteCoachRequest!['remaining_sessions'];
-    final expiresAt = _remoteCoachRequest!['expires_at'];
+    // Safe data extraction with comprehensive null checks
+    final coachApproval = _remoteCoachRequest?['coach_approval']?.toString() ?? '';
+    final staffApproval = _remoteCoachRequest?['staff_approval']?.toString() ?? '';
+    final status = _remoteCoachRequest?['status']?.toString() ?? '';
+    final coachName = _remoteCoachRequest?['coach_name']?.toString() ?? 'Coach';
+    final requestedAt = _remoteCoachRequest?['requested_at']?.toString() ?? '';
+    final rateType = _remoteCoachRequest?['rate_type']?.toString() ?? 'hourly';
+    final remainingSessions = _remoteCoachRequest?['remaining_sessions'];
+    final expiresAt = _remoteCoachRequest?['expires_at']?.toString();
 
     String title;
     String subtitle;
@@ -300,6 +752,33 @@ class _PersonalTrainingPageState extends State<PersonalTrainingPage>
         ),
       ),
     );
+    } catch (e) {
+      print('❌ Error in _buildCoachStatusSection details: $e');
+      // Return a safe fallback widget - show "no coach assigned" instead of error
+      return SliverToBoxAdapter(
+        child: Container(
+          margin: EdgeInsets.all(20),
+          padding: EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Color(0xFF1A1A1A),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.person, color: Color(0xFF4ECDC4), size: 20),
+              SizedBox(width: 12),
+              Text(
+                'No coach assigned yet',
+                style: GoogleFonts.poppins(
+                  color: Colors.grey[400],
+                  fontSize: 14,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
   }
 
   Widget _buildSliverAppBar() {
@@ -1268,7 +1747,25 @@ class _PersonalTrainingPageState extends State<PersonalTrainingPage>
   }
 
   Widget _buildActiveCoachSection() {
-    if (_remoteCoachRequest == null) return SizedBox.shrink();
+    if (_remoteCoachRequest == null) {
+      return SliverToBoxAdapter(
+        child: Container(
+          margin: EdgeInsets.all(20),
+          padding: EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Color(0xFF1A1A1A),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Text(
+            'No active coach session',
+            style: GoogleFonts.poppins(
+              color: Colors.grey[400],
+              fontSize: 14,
+            ),
+          ),
+        ),
+      );
+    }
     
     final coachName = (_remoteCoachRequest!['coach_name'] ?? 'Coach').toString();
     final rateType = (_remoteCoachRequest!['rate_type'] ?? 'hourly').toString();

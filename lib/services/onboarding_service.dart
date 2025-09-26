@@ -4,7 +4,7 @@ import 'package:http/http.dart' as http;
 import '../models/onboarding_model.dart';
 
 class OnboardingService {
-  static const String baseUrl = 'https://api.cnergy.site/onboarding_api.php'; // Replace with your actual URL
+  static const String baseUrl = 'https://api.cnergy.site/onboarding_api.php'; // Remote API URL
   static const Duration timeoutDuration = Duration(seconds: 30);
 
   // Headers for API requests
@@ -227,5 +227,40 @@ class OnboardingService {
   // Helper method to validate password strength
   bool isValidPassword(String password) {
     return password.length >= 8;
+  }
+
+  // Reset profile completion status (for testing/debugging)
+  Future<ApiResponse<Map<String, dynamic>>> resetProfileCompletion(int userId) async {
+    try {
+      final Map<String, dynamic> requestData = {
+        'user_id': userId,
+      };
+
+      final response = await http.post(
+        Uri.parse('$baseUrl/reset-profile-completion.php'),
+        headers: _headers,
+        body: json.encode(requestData),
+      ).timeout(timeoutDuration);
+
+      final Map<String, dynamic> jsonResponse = json.decode(response.body);
+      
+      if (response.statusCode == 200) {
+        return ApiResponse<Map<String, dynamic>>(
+          success: jsonResponse['success'],
+          message: jsonResponse['message'],
+          data: jsonResponse['data'],
+        );
+      } else {
+        return ApiResponse<Map<String, dynamic>>(
+          success: false,
+          message: jsonResponse['message'] ?? 'Failed to reset profile completion',
+        );
+      }
+    } catch (e) {
+      return ApiResponse<Map<String, dynamic>>(
+        success: false,
+        message: 'Network error: ${e.toString()}',
+      );
+    }
   }
 }

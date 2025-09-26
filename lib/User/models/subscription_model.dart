@@ -11,6 +11,12 @@ class SubscriptionPlan {
   final String? unavailableReason;
   final String? description;
   final List<Feature> features;
+  
+  // New lock-related fields
+  final bool isLocked;
+  final String? lockReason;
+  final String? lockMessage;
+  final String? lockIcon;
 
   SubscriptionPlan({
     required this.id,
@@ -23,6 +29,10 @@ class SubscriptionPlan {
     this.unavailableReason,
     this.description,
     required this.features,
+    this.isLocked = false,
+    this.lockReason,
+    this.lockMessage,
+    this.lockIcon,
   });
 
   factory SubscriptionPlan.fromJson(Map<String, dynamic> json) {
@@ -42,6 +52,11 @@ class SubscriptionPlan {
               ?.map((featureJson) => Feature.fromJson(featureJson))
               .toList() ??
           [],
+      // New lock-related fields
+      isLocked: json['is_locked'] == true,
+      lockReason: json['lock_reason']?.toString(),
+      lockMessage: json['lock_message']?.toString(),
+      lockIcon: json['lock_icon']?.toString(),
     );
   }
 
@@ -57,6 +72,10 @@ class SubscriptionPlan {
       'unavailable_reason': unavailableReason,
       'description': description,
       'features': features.map((feature) => feature.toJson()).toList(),
+      'is_locked': isLocked,
+      'lock_reason': lockReason,
+      'lock_message': lockMessage,
+      'lock_icon': lockIcon,
     };
   }
 

@@ -9,11 +9,15 @@ import './muscle_group_selection_page.dart';
 class CreateRoutinePage extends StatefulWidget {
   final bool isProMember;
   final int currentRoutineCount;
+  final bool isEditing;
+  final dynamic existingRoutine;
 
   const CreateRoutinePage({
     Key? key,
     required this.isProMember,
     required this.currentRoutineCount,
+    this.isEditing = false,
+    this.existingRoutine,
   }) : super(key: key);
 
   @override
@@ -40,6 +44,47 @@ class _CreateRoutinePageState extends State<CreateRoutinePage> {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    
+    // Populate form with existing routine data when editing
+    if (widget.isEditing && widget.existingRoutine != null) {
+      nameController.text = widget.existingRoutine.name ?? '';
+      notesController.text = widget.existingRoutine.notes ?? '';
+      selectedDifficulty = widget.existingRoutine.difficulty ?? 'Beginner';
+      
+      // Handle color conversion - it might be stored as int or string
+      if (widget.existingRoutine.color != null) {
+        try {
+          if (widget.existingRoutine.color is int) {
+            selectedColor = Color(widget.existingRoutine.color);
+          } else if (widget.existingRoutine.color is String) {
+            // Convert hex string to Color
+            String colorStr = widget.existingRoutine.color.toString();
+            if (colorStr.startsWith('0x')) {
+              selectedColor = Color(int.parse(colorStr));
+            } else if (colorStr.startsWith('#')) {
+              selectedColor = Color(int.parse(colorStr.substring(1), radix: 16) + 0xFF000000);
+            } else {
+              // Try parsing as int
+              selectedColor = Color(int.parse(colorStr));
+            }
+          } else {
+            selectedColor = Color(0xFF96CEB4); // Default color
+          }
+        } catch (e) {
+          print('Error parsing color: $e');
+          selectedColor = Color(0xFF96CEB4); // Default color on error
+        }
+      } else {
+        selectedColor = Color(0xFF96CEB4); // Default color
+      }
+      
+      exercises = widget.existingRoutine.detailedExercises ?? [];
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Color(0xFF0F0F0F),
@@ -54,7 +99,7 @@ class _CreateRoutinePageState extends State<CreateRoutinePage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Create New Routine',
+              widget.isEditing ? 'Edit Routine' : 'Create New Routine',
               style: GoogleFonts.poppins(
                 color: Colors.white,
                 fontSize: 18,

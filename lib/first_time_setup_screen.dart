@@ -424,7 +424,11 @@ class _FirstTimeSetupScreenState extends State<FirstTimeSetupScreen>
 
   @override
   Widget build(BuildContext context) {
+    print('🎯 FirstTimeSetupScreen build() called - userId: ${widget.userId}, email: ${widget.email}');
+    print('🎯 FirstTimeSetupScreen - isLoading: $isLoading, isDataLoaded: $isDataLoaded');
+    
     if (isLoading && !isDataLoaded) {
+      print('🎯 FirstTimeSetupScreen - Showing loading screen');
       return Scaffold(
         backgroundColor: Color(0xFF0F0F0F),
         body: Center(
@@ -436,6 +440,8 @@ class _FirstTimeSetupScreenState extends State<FirstTimeSetupScreen>
     final screenWidth = MediaQuery.of(context).size.width;
     final screenHeight = MediaQuery.of(context).size.height;
     final isSmallScreen = screenWidth < 375 || screenHeight < 667;
+    
+    print('🎯 FirstTimeSetupScreen - Building main Scaffold with ${widget.userId != null ? 3 : 4} pages');
     
     return Scaffold(
       backgroundColor: Color(0xFF0F0F0F),

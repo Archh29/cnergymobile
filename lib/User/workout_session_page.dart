@@ -6,6 +6,7 @@ import './models/workoutpreview_model.dart';
 import './services/workout_preview_service.dart';
 import './exercise_instructions_page.dart';
 import './exercise_selection_modal.dart';
+import '../utils/error_handler.dart';
 
 class WorkoutSessionPage extends StatefulWidget {
   final RoutineModel routine;
@@ -41,34 +42,106 @@ class _WorkoutSessionPageState extends State<WorkoutSessionPage> {
   @override
   void initState() {
     super.initState();
-    _initializeWorkout();
+    try {
+      _initializeWorkout();
+    } catch (e) {
+      print('❌ WorkoutSessionPage: Initialization error: $e');
+    }
   }
 
   void _initializeWorkout() {
+    print('🔍 WorkoutSessionPage: Initializing workout...');
     workoutStartTime = DateTime.now();
-    workoutExercises = widget.exercises.map((exercise) => WorkoutExerciseModel(
-      exerciseId: exercise.id ?? 0,
-      name: exercise.name,
-      sets: exercise.targetSets,
-      reps: exercise.targetReps,
-      weight: double.tryParse(exercise.targetWeight.replaceAll(RegExp(r'[^0-9.]'), '')) ?? 0.0,
-      category: exercise.category,
-      difficulty: exercise.difficulty,
-      restTime: exercise.restTime,
-      targetMuscle: exercise.targetMuscle,
-      description: exercise.description,
-      imageUrl: exercise.imageUrl,
-      completedSets: 0,
-      isCompleted: false,
-    )).toList();
+    
+    if (widget.exercises.isEmpty) {
+      workoutExercises = [];
+      currentSetIndex = 0;
+      return;
+    }
+    
+    workoutExercises = widget.exercises.where((exercise) => exercise != null).map((exercise) {
+      try {
+        print('🔍 Processing exercise: ${exercise.name}');
+        print('  - exercise.sets: ${exercise.sets}');
+        print('  - exercise.sets length: ${exercise.sets?.length}');
+        print('  - exercise.targetReps: ${exercise.targetReps}');
+        print('  - exercise.targetWeight: ${exercise.targetWeight}');
         
-    currentSetIndex = workoutExercises[currentExerciseIndex].completedSets;
+        // Get the first set's reps as default, or use targetReps as fallback
+        String defaultReps = '10';
+        double defaultWeight = 0.0;
+        List<WorkoutSetModel>? targetSets;
+        
+        if (exercise.sets != null && exercise.sets!.isNotEmpty) {
+          print('  - Using exercise.sets for targetSets');
+          // Convert ExerciseSet to WorkoutSetModel for target sets
+          targetSets = exercise.sets!.map((set) => WorkoutSetModel(
+            reps: int.tryParse(set.reps) ?? 0,
+            weight: double.tryParse(set.weight) ?? 0.0,
+            timestamp: set.timestamp,
+            isCompleted: false,
+          )).toList();
+          
+          // Use the first set's configuration as default
+          defaultReps = exercise.sets![0].reps;
+          defaultWeight = double.tryParse(exercise.sets![0].weight) ?? 0.0;
+          print('  - targetSets created: ${targetSets.length} sets');
+          print('  - First set: ${targetSets[0].reps} reps, ${targetSets[0].weight} weight');
+        } else {
+          print('  - Using fallback values');
+          // Fallback to target values
+          defaultReps = exercise.targetReps ?? '10';
+          defaultWeight = double.tryParse(exercise.targetWeight?.toString() ?? '0') ?? 0.0;
+        }
+        
+        return WorkoutExerciseModel(
+          exerciseId: exercise.id ?? 0,
+          name: exercise.name ?? 'Unknown Exercise',
+          sets: exercise.targetSets ?? 1,
+          reps: defaultReps,
+          weight: defaultWeight,
+          category: exercise.category ?? 'General',
+          difficulty: exercise.difficulty ?? 'Beginner',
+          restTime: exercise.restTime ?? 60,
+          targetMuscle: exercise.targetMuscle ?? 'General',
+          description: exercise.description ?? '',
+          imageUrl: exercise.imageUrl ?? '',
+          completedSets: 0,
+          isCompleted: false,
+          targetSets: targetSets,
+        );
+      } catch (e) {
+        print('❌ Error processing exercise: $e');
+        return WorkoutExerciseModel(
+          exerciseId: 0,
+          name: 'Unknown Exercise',
+          sets: 1,
+          reps: '10',
+          weight: 0.0,
+          category: 'General',
+          difficulty: 'Beginner',
+          restTime: 60,
+          targetMuscle: 'General',
+          description: '',
+          imageUrl: '',
+          completedSets: 0,
+          isCompleted: false,
+        );
+      }
+    }).toList();
+        
+    if (workoutExercises.isNotEmpty) {
+      currentSetIndex = workoutExercises[currentExerciseIndex].completedSets;
+    }
+    print('✅ WorkoutSessionPage: Workout initialized with ${workoutExercises.length} exercises');
   }
 
   void _logSet(int setIndex, String reps, String weight) {
+    if (workoutExercises.isEmpty || currentExerciseIndex >= workoutExercises.length) return;
     final currentExercise = workoutExercises[currentExerciseIndex];
     if (setIndex >= currentExercise.sets) return;
 
+    if (!mounted) return;
     setState(() {
       int repsInt = int.tryParse(reps) ?? 0;
       double weightDouble = double.tryParse(weight) ?? 0.0;
@@ -94,6 +167,7 @@ class _WorkoutSessionPageState extends State<WorkoutSessionPage> {
       currentExercise.isCompleted = true;
       _showExerciseCompletedModal();
     } else {
+      if (!mounted) return;
       setState(() {
         showRestTimer = true;
       });
@@ -102,6 +176,7 @@ class _WorkoutSessionPageState extends State<WorkoutSessionPage> {
   }
 
   void _navigateToInstructions() {
+    if (workoutExercises.isEmpty || currentExerciseIndex >= workoutExercises.length) return;
     final currentExercise = workoutExercises[currentExerciseIndex];
         
     final exerciseModel = ExerciseModel(
@@ -137,12 +212,12 @@ class _WorkoutSessionPageState extends State<WorkoutSessionPage> {
         currentRestTime: restTimeRemaining,
         useCustomTimer: useCustomTimer,
         onSave: (newRestTime, useCustom) {
+          if (!mounted) return;
           setState(() {
             restTimeRemaining = newRestTime;
-            useCustomTimer = useCustom;
-            if (useCustom) {
-              customRestTime = newRestTime;
-            }
+            useCustomTimer = true; // Always set to true when user adjusts timer
+            customRestTime = newRestTime; // Always update custom time
+            print('Timer saved: ${newRestTime}s (useCustomTimer: true, customRestTime: $customRestTime)');
           });
           Navigator.of(context).pop();
         },
@@ -151,27 +226,39 @@ class _WorkoutSessionPageState extends State<WorkoutSessionPage> {
   }
 
   void _startRestTimer() {
+    if (!mounted) return;
     setState(() {
       isTimerRunning = true;
+      // Reset timer to the current custom value when starting
+      restTimeRemaining = useCustomTimer ? customRestTime : 120;
+      print('Starting timer: ${restTimeRemaining}s (useCustomTimer: $useCustomTimer, customRestTime: $customRestTime)');
     });
     restTimer = Timer.periodic(Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
       if (restTimeRemaining > 0) {
         setState(() {
           restTimeRemaining--;
         });
       } else {
         timer.cancel();
+        if (!mounted) return;
         setState(() {
           isTimerRunning = false;
           restTimeRemaining = useCustomTimer ? customRestTime : 120;
           showRestTimer = false;
         });
+        // Show rest complete alert
+        _showRestCompleteAlert();
       }
     });
   }
 
   void _stopRestTimer() {
     restTimer?.cancel();
+    if (!mounted) return;
     setState(() {
       isTimerRunning = false;
       restTimeRemaining = useCustomTimer ? customRestTime : 120;
@@ -180,22 +267,61 @@ class _WorkoutSessionPageState extends State<WorkoutSessionPage> {
   }
 
   void _adjustTimer(int seconds) {
+    if (!mounted) return;
     setState(() {
       restTimeRemaining = (restTimeRemaining + seconds).clamp(0, 600);
     });
   }
 
   void _showSetInputModal(int setIndex) {
+    if (workoutExercises.isEmpty || currentExerciseIndex >= workoutExercises.length) return;
     final currentExercise = workoutExercises[currentExerciseIndex];
+    final originalExercise = widget.exercises[currentExerciseIndex];
     final TextEditingController repsController = TextEditingController();
     final TextEditingController weightController = TextEditingController();
 
     if (setIndex < currentExercise.loggedSets.length) {
+      // Use logged set data if available
       repsController.text = currentExercise.loggedSets[setIndex].reps.toString();
       weightController.text = currentExercise.loggedSets[setIndex].weight.toString();
     } else {
-      repsController.text = currentExercise.reps;
-      weightController.text = currentExercise.weight.toString();
+      // Use the configured reps/weight for this specific set
+      String targetReps = currentExercise.reps;
+      String targetWeight = currentExercise.weight.toString();
+      
+      // Get the specific set configuration from targetSets if available
+      print('🔍 Set Input Modal for Set ${setIndex + 1}:');
+      print('  - currentExercise.targetSets: ${currentExercise.targetSets}');
+      print('  - currentExercise.targetSets length: ${currentExercise.targetSets?.length}');
+      if (currentExercise.targetSets != null) {
+        for (int i = 0; i < currentExercise.targetSets!.length; i++) {
+          print('    - Set $i: ${currentExercise.targetSets![i].reps} reps, ${currentExercise.targetSets![i].weight} weight');
+        }
+      }
+      print('  - originalExercise.sets: ${originalExercise.sets}');
+      print('  - originalExercise.sets length: ${originalExercise.sets?.length}');
+      if (originalExercise.sets != null) {
+        for (int i = 0; i < originalExercise.sets!.length; i++) {
+          print('    - Set $i: ${originalExercise.sets![i].reps} reps, ${originalExercise.sets![i].weight} weight');
+        }
+      }
+      
+      if (currentExercise.targetSets != null && setIndex < currentExercise.targetSets!.length) {
+        targetReps = currentExercise.targetSets![setIndex].reps.toString();
+        targetWeight = currentExercise.targetSets![setIndex].weight.toString();
+        print('  - Using currentExercise.targetSets: $targetReps reps, $targetWeight weight');
+      } else if (originalExercise.sets != null && setIndex < originalExercise.sets!.length) {
+        // Fallback to original exercise sets
+        targetReps = originalExercise.sets![setIndex].reps;
+        targetWeight = originalExercise.sets![setIndex].weight;
+        print('  - Using originalExercise.sets: $targetReps reps, $targetWeight weight');
+      } else {
+        print('  - Using default values: $targetReps reps, $targetWeight weight');
+      }
+      
+      repsController.text = targetReps;
+      weightController.text = targetWeight;
+      print('  - Set text controllers: repsController="${repsController.text}", weightController="${weightController.text}"');
     }
 
     showModalBottomSheet(
@@ -269,6 +395,7 @@ class _WorkoutSessionPageState extends State<WorkoutSessionPage> {
   }
 
   void _showExerciseCompletedModal() {
+    if (workoutExercises.isEmpty || currentExerciseIndex >= workoutExercises.length) return;
     final currentExercise = workoutExercises[currentExerciseIndex];
     showModalBottomSheet(
       context: context,
@@ -293,6 +420,8 @@ class _WorkoutSessionPageState extends State<WorkoutSessionPage> {
   }
 
   void _moveToSelectedExercise(int selectedIndex) {
+    if (workoutExercises.isEmpty || selectedIndex >= workoutExercises.length) return;
+    if (!mounted) return;
     setState(() {
       currentExerciseIndex = selectedIndex;
       currentSetIndex = workoutExercises[currentExerciseIndex].completedSets;
@@ -300,6 +429,8 @@ class _WorkoutSessionPageState extends State<WorkoutSessionPage> {
   }
 
   void _moveToNextExercise() {
+    if (workoutExercises.isEmpty || currentExerciseIndex + 1 >= workoutExercises.length) return;
+    if (!mounted) return;
     setState(() {
       currentExerciseIndex++;
       currentSetIndex = workoutExercises[currentExerciseIndex].completedSets;
@@ -307,6 +438,7 @@ class _WorkoutSessionPageState extends State<WorkoutSessionPage> {
   }
 
   void _completeWorkout() {
+    if (!mounted) return;
     setState(() {
       isWorkoutCompleted = true;
     });
@@ -315,10 +447,11 @@ class _WorkoutSessionPageState extends State<WorkoutSessionPage> {
 
   Future<void> _saveWorkoutProgress() async {
     try {
+      if (!mounted) return;
       final workoutDuration = DateTime.now().difference(workoutStartTime).inMinutes;
             
       final success = await WorkoutPreviewService.completeWorkoutSession(
-        widget.routine.id,
+        widget.routine.id ?? 'unknown',
         workoutExercises,
         workoutDuration,
       );
@@ -347,11 +480,120 @@ class _WorkoutSessionPageState extends State<WorkoutSessionPage> {
 
   @override
   Widget build(BuildContext context) {
+    try {
+      return Scaffold(
+        backgroundColor: Color(0xFF0F0F0F),
+        appBar: AppBar(
+          backgroundColor: Color(0xFF1A1A1A),
+          elevation: 0,
+          leading: IconButton(
+            icon: Icon(Icons.close, color: Colors.white),
+            onPressed: () => _showExitConfirmation(),
+          ),
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                widget.routine.name?.toString() ?? 'Workout Routine',
+                style: GoogleFonts.poppins(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              Text(
+                'Workout Session',
+                style: GoogleFonts.poppins(
+                  color: Colors.grey[400],
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+        ),
+        body: _buildWorkoutContent(),
+      );
+    } catch (e) {
+      print('❌ WorkoutSessionPage: Build error: $e');
+      return Scaffold(
+        backgroundColor: Color(0xFF0F0F0F),
+        appBar: AppBar(
+          backgroundColor: Color(0xFF1A1A1A),
+          elevation: 0,
+          leading: IconButton(
+            icon: Icon(Icons.close, color: Colors.white),
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+          title: Text(
+            'Workout Error',
+            style: GoogleFonts.poppins(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.error_outline,
+                color: Colors.red,
+                size: 64,
+              ),
+              SizedBox(height: 20),
+              Text(
+                'Something went wrong',
+                style: GoogleFonts.poppins(
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              SizedBox(height: 10),
+              Text(
+                'Please try again later',
+                style: GoogleFonts.poppins(
+                  color: Colors.grey[400],
+                  fontSize: 16,
+                ),
+              ),
+              SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: () => Navigator.of(context).pop(),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Color(0xFF4ECDC4),
+                ),
+                child: Text('Go Back'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+  }
+
+  Widget _buildWorkoutContent() {
     if (isWorkoutCompleted) {
       return _buildWorkoutCompletedScreen();
     }
+    
+    if (workoutExercises.isEmpty) {
+      return _buildErrorContent();
+    }
+    
+    // Ensure currentExerciseIndex is valid
+    if (currentExerciseIndex >= workoutExercises.length) {
+      currentExerciseIndex = 0;
+    }
+    
     final currentExercise = workoutExercises[currentExerciseIndex];
         
+    return _buildWorkoutScreen();
+  }
+
+  Widget _buildLoadingContent() {
     return Scaffold(
       backgroundColor: Color(0xFF0F0F0F),
       appBar: AppBar(
@@ -359,34 +601,83 @@ class _WorkoutSessionPageState extends State<WorkoutSessionPage> {
         elevation: 0,
         leading: IconButton(
           icon: Icon(Icons.close, color: Colors.white),
-          onPressed: () => _showExitConfirmation(),
+          onPressed: () => Navigator.of(context).pop(),
         ),
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        title: Text(
+          'Loading Workout',
+          style: GoogleFonts.poppins(
+            color: Colors.white,
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
+            CircularProgressIndicator(
+              valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF4ECDC4)),
+            ),
+            SizedBox(height: 20),
             Text(
-              widget.routine.name,
+              'Preparing your workout...',
               style: GoogleFonts.poppins(
                 color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            Text(
-              'Workout Session',
-              style: GoogleFonts.poppins(
-                color: Colors.grey[400],
-                fontSize: 12,
+                fontSize: 18,
+                fontWeight: FontWeight.w500,
               ),
             ),
           ],
         ),
       ),
-      body: _buildWorkoutScreen(),
+    );
+  }
+
+  Widget _buildErrorContent() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.error_outline,
+            color: Colors.red,
+            size: 64,
+          ),
+          SizedBox(height: 20),
+          Text(
+            'No exercises found',
+            style: GoogleFonts.poppins(
+              color: Colors.white,
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          SizedBox(height: 10),
+          Text(
+            'This routine has no exercises to perform',
+            style: GoogleFonts.poppins(
+              color: Colors.grey[400],
+              fontSize: 16,
+            ),
+          ),
+          SizedBox(height: 20),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Color(0xFF4ECDC4),
+            ),
+            child: Text('Go Back'),
+          ),
+        ],
+      ),
     );
   }
 
   Widget _buildWorkoutScreen() {
+    if (workoutExercises.isEmpty || currentExerciseIndex >= workoutExercises.length) {
+      return _buildErrorContent();
+    }
     final currentExercise = workoutExercises[currentExerciseIndex];
         
     return Stack(
@@ -453,19 +744,27 @@ class _WorkoutSessionPageState extends State<WorkoutSessionPage> {
               SizedBox(height: 20),
               Row(
                 children: [
-                  GestureDetector(
-                    onTap: _showTimerSettingsModal,
-                    child: _buildControlItem(Icons.timer, _formatTime(restTimeRemaining), 'Timer'),
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: _showTimerSettingsModal,
+                      child: _buildControlItemContent(Icons.timer, _formatTime(restTimeRemaining), 'Timer'),
+                    ),
                   ),
                   SizedBox(width: 20),
-                  GestureDetector(
-                    onTap: _navigateToInstructions,
-                    child: _buildControlItem(Icons.play_arrow, 'Instructions', 'Instructions'),
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: _navigateToInstructions,
+                      child: _buildControlItemContent(Icons.play_arrow, 'Instructions', 'Instructions'),
+                    ),
                   ),
                   SizedBox(width: 20),
-                  _buildControlItem(Icons.bar_chart, 'Analytics', 'Analytics'),
+                  Expanded(
+                    child: _buildControlItemContent(Icons.bar_chart, 'Analytics', 'Analytics'),
+                  ),
                   SizedBox(width: 20),
-                  _buildControlItem(Icons.fitness_center, 'kg\nDumbbells', 'Equipment'),
+                  Expanded(
+                    child: _buildControlItemContent(Icons.fitness_center, 'kg\nDumbbells', 'Equipment'),
+                  ),
                 ],
               ),
               SizedBox(height: 24),
@@ -643,6 +942,7 @@ class _WorkoutSessionPageState extends State<WorkoutSessionPage> {
               ElevatedButton(
                 onPressed: () {
                   _stopRestTimer();
+                  if (!mounted) return;
                   setState(() {
                     showRestTimer = false;
                   });
@@ -668,31 +968,29 @@ class _WorkoutSessionPageState extends State<WorkoutSessionPage> {
     );
   }
 
-  Widget _buildControlItem(IconData icon, String title, String subtitle) {
-    return Expanded(
-      child: Column(
-        children: [
-          Icon(icon, color: Colors.white, size: 24),
-          SizedBox(height: 4),
-          Text(
-            title,
-            style: GoogleFonts.poppins(
-              color: Colors.white,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-            ),
-            textAlign: TextAlign.center,
+  Widget _buildControlItemContent(IconData icon, String title, String subtitle) {
+    return Column(
+      children: [
+        Icon(icon, color: Colors.white, size: 24),
+        SizedBox(height: 4),
+        Text(
+          title,
+          style: GoogleFonts.poppins(
+            color: Colors.white,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
           ),
-          Text(
-            subtitle,
-            style: GoogleFonts.poppins(
-              color: Colors.grey[400],
-              fontSize: 10,
-            ),
-            textAlign: TextAlign.center,
+          textAlign: TextAlign.center,
+        ),
+        Text(
+          subtitle,
+          style: GoogleFonts.poppins(
+            color: Colors.grey[400],
+            fontSize: 10,
           ),
-        ],
-      ),
+          textAlign: TextAlign.center,
+        ),
+      ],
     );
   }
 
@@ -780,8 +1078,10 @@ class _WorkoutSessionPageState extends State<WorkoutSessionPage> {
                       Expanded(
                         child: Text(
                           isCompleted
-                              ? exercise.loggedSets[index].reps.toString()
-                              : exercise.reps,
+                              ? (exercise.loggedSets.length > index ? exercise.loggedSets[index].reps.toString() : '0')
+                              : (exercise.targetSets != null && index < exercise.targetSets!.length 
+                                  ? exercise.targetSets![index].reps.toString() 
+                                  : (exercise.reps ?? '0')),
                           style: GoogleFonts.poppins(
                             color: isCompleted || isCurrent ? Colors.black : Colors.white,
                             fontSize: 16,
@@ -793,8 +1093,10 @@ class _WorkoutSessionPageState extends State<WorkoutSessionPage> {
                       Expanded(
                         child: Text(
                           isCompleted
-                              ? exercise.loggedSets[index].weight.toString()
-                              : exercise.weight.toString(),
+                              ? (exercise.loggedSets.length > index ? exercise.loggedSets[index].weight.toString() : '0')
+                              : (exercise.targetSets != null && index < exercise.targetSets!.length 
+                                  ? exercise.targetSets![index].weight.toString() 
+                                  : (exercise.weight?.toString() ?? '0')),
                           style: GoogleFonts.poppins(
                             color: isCompleted || isCurrent ? Colors.black : Colors.white,
                             fontSize: 16,
@@ -856,63 +1158,133 @@ class _WorkoutSessionPageState extends State<WorkoutSessionPage> {
   }
 
   Widget _buildWorkoutCompletedScreen() {
-    return Scaffold(
-      backgroundColor: Color(0xFF0F0F0F),
-      body: SafeArea(
-        child: Padding(
-          padding: EdgeInsets.all(20),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.all(20),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: EdgeInsets.all(40),
+              decoration: BoxDecoration(
+                color: Color(0xFF1A1A1A),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Column(
+                children: [
+                  Icon(Icons.celebration, color: Color(0xFF4ECDC4), size: 80),
+                  SizedBox(height: 24),
+                  Text(
+                    'Workout Complete!',
+                    style: GoogleFonts.poppins(
+                      color: Colors.white,
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  SizedBox(height: 12),
+                  Text(
+                    'Great job completing ${widget.routine.name}',
+                    style: GoogleFonts.poppins(color: Colors.grey[400], fontSize: 16),
+                    textAlign: TextAlign.center,
+                  ),
+                  SizedBox(height: 30),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.of(context).popUntil((route) => route.isFirst),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Color(0xFF4ECDC4),
+                        foregroundColor: Colors.black,
+                        padding: EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      child: Text(
+                        'Done',
+                        style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showRestCompleteAlert() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: Color(0xFF1A1A1A),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          contentPadding: EdgeInsets.all(24),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
               Container(
-                padding: EdgeInsets.all(40),
+                padding: EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Color(0xFF1A1A1A),
-                  borderRadius: BorderRadius.circular(20),
+                  color: Color(0xFF4ECDC4).withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(50),
                 ),
-                child: Column(
-                  children: [
-                    Icon(Icons.celebration, color: Color(0xFF4ECDC4), size: 80),
-                    SizedBox(height: 24),
-                    Text(
-                      'Workout Complete!',
-                      style: GoogleFonts.poppins(
-                        color: Colors.white,
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      textAlign: TextAlign.center,
+                child: Icon(
+                  Icons.check_circle,
+                  color: Color(0xFF4ECDC4),
+                  size: 48,
+                ),
+              ),
+              SizedBox(height: 20),
+              Text(
+                'Rest Complete!',
+                style: GoogleFonts.poppins(
+                  color: Colors.white,
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              SizedBox(height: 12),
+              Text(
+                'You\'re ready for your next set. Time to get back to work!',
+                style: GoogleFonts.poppins(
+                  color: Colors.grey[300],
+                  fontSize: 16,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    // Optionally play a sound or vibration here
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Color(0xFF4ECDC4),
+                    foregroundColor: Colors.black,
+                    padding: EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: Text(
+                    'Continue Workout',
+                    style: GoogleFonts.poppins(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
                     ),
-                    SizedBox(height: 12),
-                    Text(
-                      'Great job completing ${widget.routine.name}',
-                      style: GoogleFonts.poppins(color: Colors.grey[400], fontSize: 16),
-                      textAlign: TextAlign.center,
-                    ),
-                    SizedBox(height: 30),
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        onPressed: () => Navigator.of(context).popUntil((route) => route.isFirst),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Color(0xFF4ECDC4),
-                          foregroundColor: Colors.black,
-                          padding: EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
-                        child: Text(
-                          'Done',
-                          style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600),
-                        ),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ],
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -1001,177 +1373,163 @@ class _TimerSettingsModalState extends State<TimerSettingsModal> {
         color: Color(0xFF1A1A1A),
         borderRadius: BorderRadius.circular(20),
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Padding(
-            padding: EdgeInsets.all(20),
-            child: Column(
+      child: Padding(
+        padding: EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Rest Timer',
+              style: GoogleFonts.poppins(
+                color: Colors.white,
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            SizedBox(height: 24),
+            // Current timer display
+            Container(
+              padding: EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Color(0xFF2A2A2A),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                children: [
+                  Text(
+                    'Current Timer',
+                    style: GoogleFonts.poppins(
+                      color: Colors.grey[400],
+                      fontSize: 14,
+                    ),
+                  ),
+                  SizedBox(height: 8),
+                  Text(
+                    _formatTime(restTime),
+                    style: GoogleFonts.poppins(
+                      color: Colors.white,
+                      fontSize: 32,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(height: 24),
+            // Timer adjustment buttons
+            Row(
               children: [
-                Text(
-                  'Timer Settings',
-                  style: GoogleFonts.poppins(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
+                Expanded(
+                  child: _buildTimeAdjustmentButton('-15s', -15),
                 ),
-                SizedBox(height: 24),
-                Container(
-                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: Color(0xFF2A2A2A),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    children: [
-                      Text(
-                        'Settings',
-                        style: GoogleFonts.poppins(
-                          color: Colors.white,
-                          fontSize: 16,
-                        ),
-                      ),
-                      Spacer(),
-                      Icon(Icons.chevron_right, color: Colors.white),
-                    ],
-                  ),
+                SizedBox(width: 12),
+                Expanded(
+                  child: _buildTimeAdjustmentButton('-30s', -30),
                 ),
-                SizedBox(height: 16),
-                GestureDetector(
-                  onTap: () {
-                    setState(() {
-                      useCustomTimer = false;
-                      restTime = 120;
-                    });
-                  },
-                  child: Container(
-                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    decoration: BoxDecoration(
-                      color: Color(0xFF2A2A2A),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      children: [
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              _formatTime(120),
-                              style: GoogleFonts.poppins(
-                                color: Colors.white,
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            Text(
-                              'Compound exercises',
-                              style: GoogleFonts.poppins(
-                                color: Colors.grey[400],
-                                fontSize: 14,
-                              ),
-                            ),
-                          ],
-                        ),
-                        Spacer(),
-                        Container(
-                          width: 24,
-                          height: 24,
-                          decoration: BoxDecoration(
-                            color: !useCustomTimer ? Color(0xFF4ECDC4) : Colors.transparent,
-                            border: Border.all(
-                              color: !useCustomTimer ? Color(0xFF4ECDC4) : Colors.grey[600]!,
-                              width: 2,
-                            ),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: !useCustomTimer
-                              ? Icon(Icons.check, color: Colors.black, size: 16)
-                              : null,
-                        ),
-                      ],
-                    ),
-                  ),
+                SizedBox(width: 12),
+                Expanded(
+                  child: _buildTimeAdjustmentButton('+15s', 15),
                 ),
-                SizedBox(height: 16),
-                GestureDetector(
-                  onTap: () {
-                    setState(() {
-                      useCustomTimer = true;
-                    });
-                  },
-                  child: Container(
-                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    decoration: BoxDecoration(
-                      color: Color(0xFF2A2A2A),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      children: [
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Custom',
-                              style: GoogleFonts.poppins(
-                                color: Colors.white,
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            Text(
-                              'For dumbbell row only',
-                              style: GoogleFonts.poppins(
-                                color: Colors.grey[400],
-                                fontSize: 14,
-                              ),
-                            ),
-                          ],
-                        ),
-                        Spacer(),
-                        Container(
-                          width: 24,
-                          height: 24,
-                          decoration: BoxDecoration(
-                            color: useCustomTimer ? Color(0xFF4ECDC4) : Colors.transparent,
-                            border: Border.all(
-                              color: useCustomTimer ? Color(0xFF4ECDC4) : Colors.grey[600]!,
-                              width: 2,
-                            ),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: useCustomTimer
-                              ? Icon(Icons.check, color: Colors.black, size: 16)
-                              : null,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                SizedBox(height: 24),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: () => widget.onSave(restTime, useCustomTimer),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Color(0xFF4ECDC4),
-                      foregroundColor: Colors.black,
-                      padding: EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                    child: Text(
-                      'SAVE',
-                      style: GoogleFonts.poppins(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
+                SizedBox(width: 12),
+                Expanded(
+                  child: _buildTimeAdjustmentButton('+30s', 30),
                 ),
               ],
             ),
+            SizedBox(height: 16),
+            // Quick preset buttons
+            Row(
+              children: [
+                Expanded(
+                  child: _buildPresetButton('1 min', 60),
+                ),
+                SizedBox(width: 12),
+                Expanded(
+                  child: _buildPresetButton('2 min', 120),
+                ),
+                SizedBox(width: 12),
+                Expanded(
+                  child: _buildPresetButton('3 min', 180),
+                ),
+              ],
+            ),
+            SizedBox(height: 24),
+            // Save button
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () => widget.onSave(restTime, useCustomTimer),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Color(0xFF4ECDC4),
+                  foregroundColor: Colors.black,
+                  padding: EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: Text(
+                  'SAVE TIMER',
+                  style: GoogleFonts.poppins(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTimeAdjustmentButton(String label, int seconds) {
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          restTime = (restTime + seconds).clamp(30, 600); // Min 30s, Max 10min
+        });
+      },
+      child: Container(
+        padding: EdgeInsets.symmetric(vertical: 12),
+        decoration: BoxDecoration(
+          color: Color(0xFF2A2A2A),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Color(0xFF4ECDC4).withOpacity(0.3)),
+        ),
+        child: Text(
+          label,
+          style: GoogleFonts.poppins(
+            color: Color(0xFF4ECDC4),
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
           ),
-        ],
+          textAlign: TextAlign.center,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPresetButton(String label, int seconds) {
+    final isSelected = restTime == seconds;
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          restTime = seconds;
+        });
+      },
+      child: Container(
+        padding: EdgeInsets.symmetric(vertical: 12),
+        decoration: BoxDecoration(
+          color: isSelected ? Color(0xFF4ECDC4) : Color(0xFF2A2A2A),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Text(
+          label,
+          style: GoogleFonts.poppins(
+            color: isSelected ? Colors.black : Colors.white,
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+          ),
+          textAlign: TextAlign.center,
+        ),
       ),
     );
   }

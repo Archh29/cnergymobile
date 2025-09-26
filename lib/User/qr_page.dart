@@ -7,6 +7,8 @@ import 'dart:io';
 import 'dart:ui' as ui;
 import 'dart:typed_data';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/foundation.dart';
+import 'package:universal_html/html.dart' as html;
 import './services/auth_service.dart';
 
 class QRPage extends StatefulWidget {
@@ -119,25 +121,48 @@ class _QRPageState extends State<QRPage> with TickerProviderStateMixin {
       ByteData? byteData = await image.toByteData(format: ui.ImageByteFormat.png);
       Uint8List pngBytes = byteData!.buffer.asUint8List();
       
-      final directory = await getApplicationDocumentsDirectory();
-      final file = File('${directory.path}/cnergy_attendance_qr.png');
-      await file.writeAsBytes(pngBytes);
-      
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'QR Code saved successfully!',
-            style: GoogleFonts.poppins(),
+      if (kIsWeb) {
+        // Web implementation
+        final blob = html.Blob([pngBytes], 'image/png');
+        final url = html.Url.createObjectUrlFromBlob(blob);
+        final anchor = html.AnchorElement(href: url)
+          ..setAttribute('download', 'cnergy_attendance_qr_${userId ?? 'user'}.png')
+          ..click();
+        html.Url.revokeObjectUrl(url);
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'QR Code download started!',
+              style: GoogleFonts.poppins(),
+            ),
+            backgroundColor: Color(0xFF4ECDC4),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           ),
-          backgroundColor: Color(0xFF4ECDC4),
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        ),
-      );
+        );
+      } else {
+        // Mobile implementation
+        final directory = await getApplicationDocumentsDirectory();
+        final file = File('${directory.path}/cnergy_attendance_qr_${userId ?? 'user'}.png');
+        await file.writeAsBytes(pngBytes);
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'QR Code saved to Downloads!',
+              style: GoogleFonts.poppins(),
+            ),
+            backgroundColor: Color(0xFF4ECDC4),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        );
+      }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Failed to save QR Code', style: GoogleFonts.poppins()),
+          content: Text('Failed to download QR Code: $e', style: GoogleFonts.poppins()),
           backgroundColor: Colors.red,
           behavior: SnackBarBehavior.floating,
         ),
@@ -150,10 +175,82 @@ class _QRPageState extends State<QRPage> with TickerProviderStateMixin {
   Future<void> _shareQR() async {
     if (qrData == null || userName == null) return;
     
-    await Share.share(
-      'My CNERGY Attendance QR Code for $userName\nShow this to staff for gym check-in/check-out',
-      subject: 'CNERGY Attendance QR Code',
-    );
+    try {
+      if (kIsWeb) {
+        // Web implementation - try Web Share API first, fallback to clipboard
+        if (html.window.navigator.share != null) {
+          await html.window.navigator.share!({
+            'title': 'CNERGY Attendance QR Code',
+            'text': 'My CNERGY Attendance QR Code for $userName\nShow this to staff for gym check-in/check-out',
+            'url': html.window.location.href,
+          });
+        } else {
+          // Fallback to clipboard
+          await html.window.navigator.clipboard?.writeText(
+            'My CNERGY Attendance QR Code for $userName\nShow this to staff for gym check-in/check-out\n\nQR Data: $qrData'
+          );
+          
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'QR Code info copied to clipboard!',
+                style: GoogleFonts.poppins(),
+              ),
+              backgroundColor: Color(0xFFFF6B35),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+          );
+        }
+      } else {
+        // Mobile implementation
+        await Share.share(
+          'My CNERGY Attendance QR Code for $userName\nShow this to staff for gym check-in/check-out\n\nQR Data: $qrData',
+          subject: 'CNERGY Attendance QR Code',
+        );
+      }
+    } catch (e) {
+      // Fallback for any errors
+      if (kIsWeb) {
+        // Copy to clipboard as fallback
+        try {
+          await html.window.navigator.clipboard?.writeText(
+            'My CNERGY Attendance QR Code for $userName\nShow this to staff for gym check-in/check-out\n\nQR Data: $qrData'
+          );
+          
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'QR Code info copied to clipboard!',
+                style: GoogleFonts.poppins(),
+              ),
+              backgroundColor: Color(0xFFFF6B35),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+          );
+        } catch (clipboardError) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Share not supported. QR Data: $qrData',
+                style: GoogleFonts.poppins(),
+              ),
+              backgroundColor: Colors.orange,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to share QR Code: $e', style: GoogleFonts.poppins()),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
   }
 
   @override
@@ -487,47 +584,6 @@ class _QRPageState extends State<QRPage> with TickerProviderStateMixin {
                         ),
                       ),
                     ],
-                  ),
-                ),
-                SizedBox(height: 24),
-                
-                // Done Button
-                Container(
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [Color(0xFF96CEB4), Color(0xFF4ECDC4)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Color(0xFF96CEB4).withOpacity(0.4),
-                        blurRadius: 20,
-                        offset: Offset(0, 8),
-                      ),
-                    ],
-                  ),
-                  child: ElevatedButton(
-                    onPressed: () => Navigator.pop(context),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.transparent,
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      padding: EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                    ),
-                    child: Text(
-                      'DONE',
-                      style: GoogleFonts.poppins(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 1.2,
-                      ),
-                    ),
                   ),
                 ),
               ],

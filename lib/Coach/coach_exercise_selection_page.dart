@@ -3,7 +3,6 @@ import 'package:google_fonts/google_fonts.dart';
 import './models/exercise_selection_model.dart';
 import './models/member_model.dart';
 import './services/routine_service.dart';
-import './services/exercise_selection_service.dart';
 
 class CoachExerciseSelectionPage extends StatefulWidget {
   final MemberModel selectedClient;
@@ -47,23 +46,20 @@ class _CoachExerciseSelectionPageState extends State<CoachExerciseSelectionPage>
     try {
       setState(() => isLoading = true);
 
-      print('🔍 Loading exercises for muscle group: ${widget.muscleGroup.name} (ID: ${widget.muscleGroup.id})');
       final exercises = await RoutineService.getExercisesByMuscleGroup(widget.muscleGroup.id);
-      print('📋 Loaded ${exercises.length} exercises');
 
       setState(() {
-        availableExercises = exercises.map((exercise) {
-          print('🏋️ Exercise: ${exercise.name} - ID: ${exercise.id}');
-          return ExerciseSelectionModel(
+        availableExercises = exercises.map((exercise) => 
+          ExerciseSelectionModel(
             id: exercise.id ?? 0,
             name: exercise.name,
             description: exercise.description ?? '',
             imageUrl: exercise.imageUrl ?? '',
-            targetMuscle: widget.muscleGroup.name, // Use muscle group name instead
+            targetMuscle: exercise.targetMuscle ?? widget.muscleGroup.name,
             category: exercise.category ?? 'General',
             difficulty: exercise.difficulty ?? 'Intermediate',
-          );
-        }).toList();
+          )
+        ).toList();
         isLoading = false;
       });
     } catch (e) {
@@ -93,24 +89,6 @@ class _CoachExerciseSelectionPageState extends State<CoachExerciseSelectionPage>
     }
   }
 
-  void _toggleExerciseSelection(ExerciseSelectionModel exercise) {
-    setState(() {
-      if (_isExerciseSelected(exercise)) {
-        // Remove exercise
-        selectedExercises.removeWhere((selected) => selected.exercise.id == exercise.id);
-      } else {
-        // Add exercise with default configuration
-        selectedExercises.add(SelectedExerciseWithConfig(
-          exercise: exercise,
-          sets: 3,
-          reps: '10',
-          weight: '',
-          restTime: 60,
-          notes: '',
-        ));
-      }
-    });
-  }
 
   void _showExerciseConfigDialog(ExerciseSelectionModel exercise) {
     final existingConfig = _getSelectedExerciseConfig(exercise);
@@ -123,112 +101,178 @@ class _CoachExerciseSelectionPageState extends State<CoachExerciseSelectionPage>
     final restController = TextEditingController(text: (existingConfig?.restTime ?? 60).toString());
     final notesController = TextEditingController(text: existingConfig?.notes ?? '');
 
+    // Individual set controllers
+    final Map<String, TextEditingController> setRepsControllers = {};
+    final Map<String, TextEditingController> setWeightControllers = {};
+    
+    // Initialize individual set controllers
+    int currentSets = existingConfig?.sets ?? 3;
+    for (int i = 0; i < currentSets; i++) {
+      final setKey = '${exercise.id}_${i}';
+      setRepsControllers[setKey] = TextEditingController(
+        text: existingConfig?.setConfigs[i].reps ?? '10'
+      );
+      setWeightControllers[setKey] = TextEditingController(
+        text: existingConfig?.setConfigs[i].weight ?? ''
+      );
+    }
+
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: Color(0xFF1A1A1A),
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              exercise.name,
-              style: GoogleFonts.poppins(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          // Add listener to sets controller to update individual set configurations
+          setsController.addListener(() {
+            final newSetCount = int.tryParse(setsController.text) ?? 3;
+            if (newSetCount != currentSets) {
+              setDialogState(() {
+                currentSets = newSetCount;
+                
+                // Add new controllers for additional sets
+                for (int i = setRepsControllers.length; i < newSetCount; i++) {
+                  final setKey = '${exercise.id}_${i}';
+                  setRepsControllers[setKey] = TextEditingController(text: repsController.text);
+                  setWeightControllers[setKey] = TextEditingController(text: weightController.text);
+                }
+                
+                // Remove excess controllers
+                final keysToRemove = <String>[];
+                for (String key in setRepsControllers.keys) {
+                  final setIndex = int.tryParse(key.split('_').last) ?? 0;
+                  if (setIndex >= newSetCount) {
+                    keysToRemove.add(key);
+                  }
+                }
+                for (String key in keysToRemove) {
+                  setRepsControllers[key]?.dispose();
+                  setWeightControllers[key]?.dispose();
+                  setRepsControllers.remove(key);
+                  setWeightControllers.remove(key);
+                }
+              });
+            }
+          });
+
+          return AlertDialog(
+          backgroundColor: Color(0xFF1A1A1A),
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                exercise.name,
+                style: GoogleFonts.poppins(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              Text(
+                'Configure for ${widget.selectedClient.firstName}',
+                style: GoogleFonts.poppins(
+                  color: widget.selectedColor,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Sets
+                _buildDialogInputField('Sets', setsController, TextInputType.number),
+                SizedBox(height: 16),
+                
+                // Individual Set Configurations
+                _buildIndividualSetsSection(
+                  exercise,
+                  currentSets,
+                  setRepsControllers,
+                  setWeightControllers,
+                  setDialogState,
+                ),
+                SizedBox(height: 16),
+                
+                // Rest Time
+                _buildDialogInputField('Rest Time (seconds)', restController, TextInputType.number),
+                SizedBox(height: 16),
+                
+                // Notes
+                _buildDialogInputField('Notes (optional)', notesController, TextInputType.text, maxLines: 3),
+              ],
+            ),
+          ),
+          actions: [
+            if (isSelected)
+              TextButton(
+                onPressed: () {
+                  setState(() {
+                    selectedExercises.removeWhere((selected) => selected.exercise.id == exercise.id);
+                  });
+                  Navigator.pop(context);
+                },
+                child: Text(
+                  'Remove',
+                  style: GoogleFonts.poppins(color: Colors.red),
+                ),
+              ),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text(
+                'Cancel',
+                style: GoogleFonts.poppins(color: Colors.grey[400]),
               ),
             ),
-            Text(
-              'Configure for ${widget.selectedClient.firstName}',
-              style: GoogleFonts.poppins(
-                color: widget.selectedColor,
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
+            ElevatedButton(
+              onPressed: () {
+                final sets = int.tryParse(setsController.text) ?? 3;
+                final reps = repsController.text.isNotEmpty ? repsController.text : '10';
+                final weight = weightController.text;
+                final restTime = int.tryParse(restController.text) ?? 60;
+                final notes = notesController.text;
+
+                // Create individual set configurations
+                final List<SetConfig> setConfigs = [];
+                for (int i = 0; i < sets; i++) {
+                  final setKey = '${exercise.id}_${i}';
+                  setConfigs.add(SetConfig(
+                    setNumber: i + 1,
+                    reps: setRepsControllers[setKey]?.text ?? reps,
+                    weight: setWeightControllers[setKey]?.text ?? weight,
+                  ));
+                }
+
+                setState(() {
+                  // Remove existing if present
+                  selectedExercises.removeWhere((selected) => selected.exercise.id == exercise.id);
+                  
+                  // Add with new configuration
+                  selectedExercises.add(SelectedExerciseWithConfig(
+                    exercise: exercise,
+                    sets: sets,
+                    reps: reps,
+                    weight: weight,
+                    restTime: restTime,
+                    notes: notes,
+                    setConfigs: setConfigs,
+                  ));
+                });
+                
+                Navigator.pop(context);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: widget.selectedColor,
+                foregroundColor: Colors.white,
+              ),
+              child: Text(
+                isSelected ? 'Update' : 'Add Exercise',
+                style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
               ),
             ),
           ],
-        ),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Sets
-              _buildDialogInputField('Sets', setsController, TextInputType.number),
-              SizedBox(height: 16),
-              
-              // Reps
-              _buildDialogInputField('Reps', repsController, TextInputType.text),
-              SizedBox(height: 16),
-              
-              // Weight
-              _buildDialogInputField('Weight (optional)', weightController, TextInputType.text),
-              SizedBox(height: 16),
-              
-              // Rest Time
-              _buildDialogInputField('Rest Time (seconds)', restController, TextInputType.number),
-              SizedBox(height: 16),
-              
-              // Notes
-              _buildDialogInputField('Notes (optional)', notesController, TextInputType.text, maxLines: 3),
-            ],
-          ),
-        ),
-        actions: [
-          if (isSelected)
-            TextButton(
-              onPressed: () {
-                setState(() {
-                  selectedExercises.removeWhere((selected) => selected.exercise.id == exercise.id);
-                });
-                Navigator.pop(context);
-              },
-              child: Text(
-                'Remove',
-                style: GoogleFonts.poppins(color: Colors.red),
-              ),
-            ),
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(
-              'Cancel',
-              style: GoogleFonts.poppins(color: Colors.grey[400]),
-            ),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              final sets = int.tryParse(setsController.text) ?? 3;
-              final reps = repsController.text.isNotEmpty ? repsController.text : '10';
-              final weight = weightController.text;
-              final restTime = int.tryParse(restController.text) ?? 60;
-              final notes = notesController.text;
-
-              setState(() {
-                // Remove existing if present
-                selectedExercises.removeWhere((selected) => selected.exercise.id == exercise.id);
-                
-                // Add with new configuration
-                selectedExercises.add(SelectedExerciseWithConfig(
-                  exercise: exercise,
-                  sets: sets,
-                  reps: reps,
-                  weight: weight,
-                  restTime: restTime,
-                  notes: notes,
-                ));
-              });
-              
-              Navigator.pop(context);
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: widget.selectedColor,
-              foregroundColor: Colors.white,
-            ),
-            child: Text(
-              isSelected ? 'Update' : 'Add Exercise',
-              style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
-            ),
-          ),
-        ],
+        );
+        },
       ),
     );
   }
@@ -259,6 +303,143 @@ class _CoachExerciseSelectionPageState extends State<CoachExerciseSelectionPage>
               borderSide: BorderSide.none,
             ),
             contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildIndividualSetsSection(
+    ExerciseSelectionModel exercise,
+    int currentSets,
+    Map<String, TextEditingController> setRepsControllers,
+    Map<String, TextEditingController> setWeightControllers,
+    StateSetter setDialogState,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Individual Set Configuration',
+          style: GoogleFonts.poppins(
+            color: Colors.white,
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        SizedBox(height: 8),
+        Container(
+          padding: EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Color(0xFF2A2A2A),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Column(
+            children: List.generate(currentSets, (index) {
+              final setKey = '${exercise.id}_${index}';
+              return Padding(
+                padding: EdgeInsets.only(bottom: index < currentSets - 1 ? 12 : 0),
+                child: Row(
+                  children: [
+                    // Set number
+                    Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        color: widget.selectedColor.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: widget.selectedColor.withOpacity(0.3),
+                          width: 1,
+                        ),
+                      ),
+                      child: Center(
+                        child: Text(
+                          '${index + 1}',
+                          style: GoogleFonts.poppins(
+                            color: widget.selectedColor,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                    SizedBox(width: 12),
+                    
+                    // Reps field
+                    Expanded(
+                      flex: 2,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Reps',
+                            style: GoogleFonts.poppins(
+                              color: Colors.grey[400],
+                              fontSize: 10,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          SizedBox(height: 4),
+                          TextField(
+                            controller: setRepsControllers[setKey],
+                            keyboardType: TextInputType.text,
+                            style: GoogleFonts.poppins(color: Colors.white, fontSize: 12),
+                            decoration: InputDecoration(
+                              filled: true,
+                              fillColor: Color(0xFF1A1A1A),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(6),
+                                borderSide: BorderSide.none,
+                              ),
+                              contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                              hintText: '10',
+                              hintStyle: GoogleFonts.poppins(color: Colors.grey[500], fontSize: 12),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    SizedBox(width: 8),
+                    
+                    // Weight field
+                    Expanded(
+                      flex: 2,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Weight',
+                            style: GoogleFonts.poppins(
+                              color: Colors.grey[400],
+                              fontSize: 10,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          SizedBox(height: 4),
+                          TextField(
+                            controller: setWeightControllers[setKey],
+                            keyboardType: TextInputType.text,
+                            style: GoogleFonts.poppins(color: Colors.white, fontSize: 12),
+                            decoration: InputDecoration(
+                              filled: true,
+                              fillColor: Color(0xFF1A1A1A),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(6),
+                                borderSide: BorderSide.none,
+                              ),
+                              contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                              hintText: 'kg',
+                              hintStyle: GoogleFonts.poppins(color: Colors.grey[500], fontSize: 12),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
           ),
         ),
       ],
@@ -584,59 +765,47 @@ class _CoachExerciseSelectionPageState extends State<CoachExerciseSelectionPage>
                             color: widget.selectedColor.withOpacity(0.1),
                             borderRadius: BorderRadius.circular(8),
                           ),
-                          child: Text(
-                            '${config.sets} sets × ${config.reps} reps${config.weight.isNotEmpty ? ' @ ${config.weight}' : ''}',
-                            style: GoogleFonts.poppins(
-                              color: widget.selectedColor,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ] else ...[
-                        Row(
-                          children: [
-                            Container(
-                              padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: Colors.grey[800],
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Text(
-                                exercise.difficulty,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '${config.sets} sets configured',
                                 style: GoogleFonts.poppins(
-                                  color: Colors.grey[400],
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w500,
+                                  color: widget.selectedColor,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
                                 ),
                               ),
-                            ),
-                          ],
+                              if (config.setConfigs.isNotEmpty) ...[
+                                SizedBox(height: 4),
+                                Wrap(
+                                  spacing: 4,
+                                  runSpacing: 2,
+                                  children: config.setConfigs.take(3).map((setConfig) {
+                                    return Container(
+                                      padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: widget.selectedColor.withOpacity(0.2),
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: Text(
+                                        'Set ${setConfig.setNumber}: ${setConfig.reps}${setConfig.weight.isNotEmpty ? ' @ ${setConfig.weight}' : ''}',
+                                        style: GoogleFonts.poppins(
+                                          color: widget.selectedColor,
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    );
+                                  }).toList(),
+                                ),
+                              ],
+                            ],
+                          ),
                         ),
                       ],
                     ],
                   ),
-                ),
-                
-                // Selection indicator
-                Container(
-                  width: 24,
-                  height: 24,
-                  decoration: BoxDecoration(
-                    color: isSelected ? widget.selectedColor : Colors.transparent,
-                    border: Border.all(
-                      color: isSelected ? widget.selectedColor : Colors.grey[600]!,
-                      width: 2,
-                    ),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: isSelected
-                      ? Icon(
-                          Icons.check,
-                          color: Colors.white,
-                          size: 16,
-                        )
-                      : null,
                 ),
               ],
             ),

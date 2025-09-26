@@ -29,6 +29,7 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
   List<WorkoutSessionModel> recentSessions = [];
   List<WorkoutSessionModel> allSessions = [];
   List<AttendanceModel> recentAttendance = [];
+  List<AttendanceModel> allAttendance = [];
   List<ProgressModel> progressData = [];
   Map<DateTime, int> workoutHeatmapData = {};
   int selectedYear = DateTime.now().year;
@@ -84,9 +85,10 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
           allSessions = (futures[2] as List<WorkoutSessionModel>);
           recentSessions = allSessions.take(5).toList();
           recentAttendance = (futures[3] as List<AttendanceModel>).take(7).toList();
+          allAttendance = futures[3] as List<AttendanceModel>; // Store all attendance for heatmap
           progressData = futures[4] as List<ProgressModel>;
           
-          // Generate heatmap from all workout sessions
+          // Generate heatmap from all workout sessions and attendance
           workoutHeatmapData = _generateWorkoutHeatmapFromSessions(allSessions);
           
           
@@ -111,17 +113,35 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
   Map<DateTime, int> _generateWorkoutHeatmapFromSessions(List<WorkoutSessionModel> sessions) {
     final Map<DateTime, int> heatmapData = {};
     
-    // Mark days with workouts
-    for (final session in sessions) {
+    // ABSOLUTE REQUIREMENT: Only attendance days get any shading
+    for (final attendance in allAttendance) {
       final dateKey = DateTime(
-        session.sessionDate.year,
-        session.sessionDate.month,
-        session.sessionDate.day,
+        attendance.checkIn.year,
+        attendance.checkIn.month,
+        attendance.checkIn.day,
       );
       
-      // Intensity based on completion status
-      heatmapData[dateKey] = session.completed ? 3 : 1;
+      // Start with light shading for attendance
+      heatmapData[dateKey] = 1; // Light shading for attendance
+      
+      // Check if user also completed a program on the same day
+      final completedProgramOnSameDay = sessions.any((session) {
+        final sessionDateKey = DateTime(
+          session.sessionDate.year,
+          session.sessionDate.month,
+          session.sessionDate.day,
+        );
+        return sessionDateKey == dateKey && session.completed;
+      });
+      
+      // If user attended AND completed program, make it darker
+      if (completedProgramOnSameDay) {
+        heatmapData[dateKey] = 2; // Darker shading for attendance + completed program
+      }
     }
+    
+    // NO SHADING for days without attendance, even if programs were completed
+    // This ensures attendance is the absolute requirement
     
     return heatmapData;
   }
@@ -294,6 +314,7 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
             builder: (context) => WorkoutHeatmapPage(
               heatmapData: workoutHeatmapData,
               workoutSessions: allSessions,
+              attendanceData: allAttendance,
             ),
           ),
         );
@@ -1321,7 +1342,7 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
               borderRadius: BorderRadius.circular(12),
             ),
             child: Text(
-              session.completed ? 'Completed' : 'Pending',
+              session.completed ? 'Completed' : 'In Progress',
               style: GoogleFonts.poppins(
                 color: session.statusColor,
                 fontSize: 12,

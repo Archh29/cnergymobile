@@ -289,15 +289,20 @@ class RoutineService {
       }
 
       final response = await http.get(
-        Uri.parse('$baseUrl/routines?client_id=$clientId'),
+        Uri.parse('$baseUrl?action=getClientRoutines&client_id=$clientId'),
         headers: {'Content-Type': 'application/json'},
       );
 
       if (response.statusCode == 200) {
-        final List<dynamic> data = json.decode(response.body);
-        return data.map((json) => routine_model.RoutineModel.fromJson(json)).toList();
+        final Map<String, dynamic> data = json.decode(response.body);
+        if (data['success'] == true) {
+          final List<dynamic> routines = data['data'];
+          return routines.map((json) => routine_model.RoutineModel.fromJson(json)).toList();
+        } else {
+          throw Exception(data['message'] ?? 'Failed to load client routines');
+        }
       } else {
-        throw Exception('Failed to load client routines');
+        throw Exception('Failed to load client routines - HTTP ${response.statusCode}');
       }
     } catch (e) {
       throw Exception('Error fetching client routines: $e');
@@ -417,6 +422,246 @@ class RoutineService {
     }
   }
 
+
+  // ============================================
+  // COACH TEMPLATE FUNCTIONS
+  // ============================================
+  
+  static Future<bool> createCoachTemplate({
+    required String templateName,
+    required String coachId,
+    required List<exercise_model.ExerciseModel> exercises,
+    String? description,
+    String? duration,
+    String? goal,
+    String? difficulty,
+    String? color,
+    List<String>? tags,
+    String? notes,
+  }) async {
+    try {
+      // Debug logging
+      print('DEBUG - createCoachTemplate called with:');
+      print('  coachId: "$coachId"');
+      print('  templateName: "$templateName"');
+      
+      // Validate input parameters using helper method
+      int? coachIdInt;
+      
+      if (coachId.contains('current_') || coachId.contains('placeholder') || coachId == 'current_coach_id') {
+        print('DEBUG - Detected placeholder coach ID, fetching from CoachService');
+        final actualCoachId = await CoachService.getCoachId();
+        if (actualCoachId == 0) {
+          throw Exception('Unable to get current coach ID from session. Please ensure you are logged in as a coach.');
+        }
+        coachIdInt = actualCoachId;
+        print('DEBUG - Retrieved actual coach ID: $coachIdInt');
+      } else {
+        coachIdInt = _parseId(coachId, 'Coach ID');
+      }
+      
+      if (coachIdInt == null) {
+        throw Exception('Coach ID is required and must be a valid number');
+      }
+
+      // Create template data
+      final templateData = {
+        'created_by': coachIdInt,
+        'template_name': templateName,
+        'goal': goal ?? 'General Fitness',
+        'difficulty': difficulty ?? 'Beginner',
+        'color': color ?? '4288073396',
+        'tags': tags ?? [],
+        'notes': notes ?? description ?? '',
+        'duration': duration ?? '30',
+        'exercises': exercises.map((exercise) => {
+          'id': exercise.id,
+          'name': exercise.name,
+          'reps': 10,
+          'sets': 3,
+          'weight': 0.0,
+        }).toList(),
+      };
+
+      print('DEBUG - Sending template data: ${json.encode(templateData)}');
+
+      // Add action to the request body
+      final requestData = {
+        'action': 'createTemplate',
+        ...templateData,
+      };
+
+      final response = await http.post(
+        Uri.parse(baseUrl),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode(requestData),
+      );
+
+      print('DEBUG - Response status: ${response.statusCode}');
+      print('DEBUG - Response body: ${response.body}');
+
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        return true;
+      } else {
+        final errorData = json.decode(response.body);
+        throw Exception('Failed to create template: ${errorData['message'] ?? 'Unknown error'}');
+      }
+    } catch (e) {
+      print('ERROR in createCoachTemplate: $e');
+      throw Exception('Error creating template: $e');
+    }
+  }
+
+  static Future<List<Map<String, dynamic>>> getCoachTemplates(String coachId) async {
+    try {
+      int? coachIdInt;
+      
+      if (coachId.contains('current_') || coachId.contains('placeholder') || coachId == 'current_coach_id') {
+        final actualCoachId = await CoachService.getCoachId();
+        if (actualCoachId == 0) {
+          throw Exception('Unable to get current coach ID from session');
+        }
+        coachIdInt = actualCoachId;
+      } else {
+        coachIdInt = _parseId(coachId, 'Coach ID');
+      }
+      
+      if (coachIdInt == null) {
+        throw Exception('Coach ID is required and must be a valid number');
+      }
+
+      final response = await http.get(
+        Uri.parse('$baseUrl?action=getTemplates&coach_id=$coachIdInt'),
+        headers: {'Content-Type': 'application/json'},
+      );
+
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> data = json.decode(response.body);
+        if (data['success'] == true) {
+          final List<dynamic> templates = data['data'];
+          return templates.cast<Map<String, dynamic>>();
+        } else {
+          throw Exception(data['message'] ?? 'Failed to load templates');
+        }
+      } else {
+        throw Exception('Failed to load templates - HTTP ${response.statusCode}');
+      }
+    } catch (e) {
+      throw Exception('Error fetching templates: $e');
+    }
+  }
+
+  static Future<List<Map<String, dynamic>>> getCoachClients(String coachId) async {
+    try {
+      int? coachIdInt;
+      
+      if (coachId.contains('current_') || coachId.contains('placeholder') || coachId == 'current_coach_id') {
+        final actualCoachId = await CoachService.getCoachId();
+        if (actualCoachId == 0) {
+          throw Exception('Unable to get current coach ID from session');
+        }
+        coachIdInt = actualCoachId;
+      } else {
+        coachIdInt = _parseId(coachId, 'Coach ID');
+      }
+      
+      if (coachIdInt == null) {
+        throw Exception('Coach ID is required and must be a valid number');
+      }
+
+      final response = await http.get(
+        Uri.parse('$baseUrl?action=getCoachClients&coach_id=$coachIdInt'),
+        headers: {'Content-Type': 'application/json'},
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data['success'] == true) {
+          return List<Map<String, dynamic>>.from(data['data'] ?? []);
+        }
+      }
+      return [];
+    } catch (e) {
+      print('Error fetching coach clients: $e');
+      return [];
+    }
+  }
+
+  static Future<bool> assignTemplateToClient({
+    required String templateId,
+    required String clientId,
+    required String coachId,
+    String? customGoal,
+    String? customDifficulty,
+    int? customDuration,
+    String? customNotes,
+    List<Map<String, dynamic>>? exerciseModifications,
+  }) async {
+    try {
+      // Validate parameters using helper method
+      final templateIdInt = _parseId(templateId, 'Template ID');
+      final clientIdInt = _parseId(clientId, 'Client ID');
+      
+      int? coachIdInt;
+      
+      if (coachId.contains('current_') || coachId.contains('placeholder') || coachId == 'current_coach_id') {
+        final actualCoachId = await CoachService.getCoachId();
+        if (actualCoachId == 0) {
+          throw Exception('Unable to get current coach ID from session');
+        }
+        coachIdInt = actualCoachId;
+      } else {
+        coachIdInt = _parseId(coachId, 'Coach ID');
+      }
+      
+      if (templateIdInt == null) {
+        throw Exception('Template ID is required and must be a valid number');
+      }
+      
+      if (clientIdInt == null) {
+        throw Exception('Client ID is required and must be a valid number');
+      }
+      
+      if (coachIdInt == null) {
+        throw Exception('Coach ID is required and must be a valid number');
+      }
+
+      final requestData = {
+        'action': 'assignTemplate',
+        'template_id': templateIdInt,
+        'client_id': clientIdInt,
+        'coach_id': coachIdInt,
+        'custom_goal': customGoal,
+        'custom_difficulty': customDifficulty,
+        'custom_duration': customDuration,
+        'custom_notes': customNotes,
+        'exercise_modifications': exerciseModifications ?? [],
+      };
+
+      print('DEBUG - Sending assignment request: ${json.encode(requestData)}');
+      
+      final response = await http.post(
+        Uri.parse(baseUrl),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode(requestData),
+      );
+
+      print('DEBUG - Assignment response status: ${response.statusCode}');
+      print('DEBUG - Assignment response body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> data = json.decode(response.body);
+        print('DEBUG - Parsed response data: $data');
+        return data['success'] == true;
+      } else {
+        final errorData = json.decode(response.body);
+        print('DEBUG - Error response: $errorData');
+        throw Exception('Failed to assign template: ${errorData['message'] ?? 'Unknown error'}');
+      }
+    } catch (e) {
+      throw Exception('Error assigning template: $e');
+    }
+  }
 
   static bool validateRoutineData({
     required String clientUserId,

@@ -579,11 +579,16 @@ class EnhancedProgressService {
   }
 
   // PERSONAL RECORDS MANAGEMENT
-  static Future<List<PersonalRecordModel>> fetchPersonalRecords() async {
+  static Future<List<PersonalRecordModel>> fetchPersonalRecords({int? muscleGroupId}) async {
     try {
       final userId = await getCurrentUserId();
+      String url = '$baseUrl?action=fetch_personal_records&user_id=$userId';
+      if (muscleGroupId != null) {
+        url += '&muscle_group_id=$muscleGroupId';
+      }
+      
       final response = await http.get(
-        Uri.parse('$baseUrl?action=fetch_personal_records&user_id=$userId'),
+        Uri.parse(url),
         headers: {"Content-Type": "application/json"},
       );
       if (response.statusCode == 200) {
@@ -599,11 +604,58 @@ class EnhancedProgressService {
     }
   }
 
-  // Fetch exercises as dynamic list to avoid import issues
-  static Future<List<Map<String, dynamic>>> fetchExercises() async {
+  // MUSCLE GROUPS MANAGEMENT
+  static Future<List<Map<String, dynamic>>> fetchMuscleGroups() async {
     try {
+      final userId = await getCurrentUserId();
       final response = await http.get(
-        Uri.parse('$baseUrl?action=fetch_exercises'),
+        Uri.parse('$baseUrl?action=fetch_muscle_groups&user_id=$userId'),
+        headers: {"Content-Type": "application/json"},
+      );
+      if (response.statusCode == 200) {
+        final dynamic responseData = json.decode(response.body);
+        if (responseData is List) {
+          return List<Map<String, dynamic>>.from(responseData);
+        }
+      }
+      return [];
+    } catch (e) {
+      print('Error fetching muscle groups: $e');
+      return [];
+    }
+  }
+
+  // EXERCISE HISTORY MANAGEMENT
+  static Future<List<PersonalRecordModel>> fetchExerciseHistory(int exerciseId) async {
+    try {
+      final userId = await getCurrentUserId();
+      final response = await http.get(
+        Uri.parse('$baseUrl?action=fetch_exercise_history&user_id=$userId&exercise_id=$exerciseId'),
+        headers: {"Content-Type": "application/json"},
+      );
+      if (response.statusCode == 200) {
+        final dynamic responseData = json.decode(response.body);
+        if (responseData is List) {
+          return responseData.map((json) => PersonalRecordModel.fromJson(json)).toList();
+        }
+      }
+      return [];
+    } catch (e) {
+      print('Error fetching exercise history: $e');
+      return [];
+    }
+  }
+
+  // Fetch exercises as dynamic list to avoid import issues
+  static Future<List<Map<String, dynamic>>> fetchExercises({int? muscleGroupId}) async {
+    try {
+      String url = '$baseUrl?action=fetch_exercises';
+      if (muscleGroupId != null) {
+        url += '&muscle_group_id=$muscleGroupId';
+      }
+      
+      final response = await http.get(
+        Uri.parse(url),
         headers: {"Content-Type": "application/json"},
       );
       if (response.statusCode == 200) {

@@ -28,7 +28,7 @@ try {
 function castMemberData($data) {
     // Cast integer fields
     $intFields = ['id', 'gender_id', 'coach_id', 'member_id', 'request_id', 
-                  'handled_by_coach', 'handled_by_staff', 'user_type_id'];
+                  'handled_by_coach', 'handled_by_staff', 'user_type_id', 'remaining_sessions'];
     
     foreach ($intFields as $field) {
         if (isset($data[$field]) && $data[$field] !== null) {
@@ -38,7 +38,7 @@ function castMemberData($data) {
     
     // Ensure string fields are properly handled
     $stringFields = ['fname', 'mname', 'lname', 'email', 'coach_approval', 
-                     'staff_approval', 'status', 'membership_type'];
+                     'staff_approval', 'status', 'membership_type', 'rate_type', 'expires_at'];
     
     foreach ($stringFields as $field) {
         if (isset($data[$field]) && $data[$field] !== null) {
@@ -179,6 +179,14 @@ switch ($action) {
             getRemainingSessions($pdo, (int)$_GET['user_id'], (int)$_GET['coach_id']);
         } else {
             echo json_encode(['success' => false, 'message' => 'User ID and Coach ID required']);
+        }
+        break;
+        
+    case 'get-user-coach-request':
+        if ($method === 'GET' && isset($_GET['user_id'])) {
+            getUserCoachRequest($pdo, (int)$_GET['user_id']);
+        } else {
+            echo json_encode(['success' => false, 'message' => 'User ID required']);
         }
         break;
         
@@ -1645,6 +1653,81 @@ function getRemainingSessions($pdo, $userId, $coachId) {
         echo json_encode([
             'success' => false,
             'message' => 'Database error: ' . $e->getMessage()
+        ]);
+    }
+}
+
+function getUserCoachRequest($pdo, $userId) {
+    try {
+        error_log("Getting user coach request for user ID: $userId");
+        
+        // Get the latest coach request for this user
+        $stmt = $pdo->prepare("
+            SELECT 
+                cml.id,
+                cml.coach_id,
+                cml.member_id,
+                cml.status,
+                cml.coach_approval,
+                cml.staff_approval,
+                cml.requested_at,
+                cml.coach_approved_at,
+                cml.staff_approved_at,
+                cml.expires_at,
+                cml.remaining_sessions,
+                cml.rate_type,
+                CONCAT(u.fname, ' ', u.lname) AS coach_name,
+                COALESCE(c.specialty, 'General Fitness') AS specialty,
+                COALESCE(c.hourly_rate, 50.0) AS hourly_rate,
+                COALESCE(c.monthly_rate, 0.0) AS monthly_rate,
+                COALESCE(c.session_package_rate, 0.0) AS session_package_rate,
+                COALESCE(c.session_package_count, 0) AS session_package_count
+            FROM coach_member_list cml
+            JOIN user u ON cml.coach_id = u.id
+            LEFT JOIN coaches c ON u.id = c.user_id
+            WHERE cml.member_id = ?
+            ORDER BY cml.requested_at DESC
+            LIMIT 1
+        ");
+        $stmt->execute([$userId]);
+        $result = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if ($result) {
+            // Cast numeric fields to proper types
+            $result['id'] = (int)$result['id'];
+            $result['coach_id'] = (int)$result['coach_id'];
+            $result['member_id'] = (int)$result['member_id'];
+            $result['hourly_rate'] = (float)$result['hourly_rate'];
+            $result['monthly_rate'] = (float)$result['monthly_rate'];
+            $result['session_package_rate'] = (float)$result['session_package_rate'];
+            $result['session_package_count'] = (int)$result['session_package_count'];
+            $result['remaining_sessions'] = $result['remaining_sessions'] !== null ? (int)$result['remaining_sessions'] : null;
+            
+            // Ensure string fields are properly handled
+            $result['status'] = (string)$result['status'];
+            $result['coach_approval'] = (string)$result['coach_approval'];
+            $result['staff_approval'] = (string)$result['staff_approval'];
+            $result['coach_name'] = (string)$result['coach_name'];
+            $result['specialty'] = (string)$result['specialty'];
+            $result['rate_type'] = (string)($result['rate_type'] ?? 'hourly');
+            
+            // Handle date fields
+            $result['requested_at'] = $result['requested_at'] ? (string)$result['requested_at'] : null;
+            $result['coach_approved_at'] = $result['coach_approved_at'] ? (string)$result['coach_approved_at'] : null;
+            $result['staff_approved_at'] = $result['staff_approved_at'] ? (string)$result['staff_approved_at'] : null;
+            $result['expires_at'] = $result['expires_at'] ? (string)$result['expires_at'] : null;
+        }
+        
+        echo json_encode([
+            'success' => true,
+            'request' => $result
+        ]);
+        
+    } catch (PDOException $e) {
+        error_log("Error in getUserCoachRequest: " . $e->getMessage());
+        echo json_encode([
+            'success' => false,
+            'message' => 'Error fetching user coach request: ' . $e->getMessage()
         ]);
     }
 }

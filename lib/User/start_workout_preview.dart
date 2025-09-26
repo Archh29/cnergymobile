@@ -520,20 +520,39 @@ class _StartWorkoutPreviewPageState extends State<StartWorkoutPreviewPage> {
 
   void _navigateToWorkoutSession() {
     if (workoutPreview != null) {
-      final exercises = workoutPreview!.exercises.map((exercise) => ExerciseModel(
-        id: exercise.exerciseId,
-        name: exercise.name,
-        targetSets: exercise.sets,
-        targetReps: exercise.reps,
-        targetWeight: exercise.formattedWeight,
-        category: exercise.category,
-        difficulty: exercise.difficulty,
-        color: '0xFF4ECDC4',
-        restTime: exercise.restTime,
-        targetMuscle: exercise.targetMuscle,
-        description: exercise.description,
-        imageUrl: exercise.imageUrl,
-      )).toList();
+      final exercises = workoutPreview!.exercises.map((exercise) {
+        // Convert WorkoutSetModel to ExerciseSet for individual set configurations
+        List<ExerciseSet> exerciseSets = [];
+        if (exercise.targetSets != null && exercise.targetSets!.isNotEmpty) {
+          exerciseSets = exercise.targetSets!.map((set) => ExerciseSet(
+            reps: set.reps.toString(),
+            weight: set.weight.toString(),
+            rpe: set.rpe,
+            duration: set.notes, // Using notes as duration
+            timestamp: set.timestamp,
+          )).toList();
+          print('🔍 Converting WorkoutExerciseModel to ExerciseModel:');
+          print('  - Exercise: ${exercise.name}');
+          print('  - targetSets count: ${exercise.targetSets!.length}');
+          print('  - Individual sets: ${exerciseSets.map((s) => '${s.reps} reps, ${s.weight} kg').join(', ')}');
+        }
+        
+        return ExerciseModel(
+          id: exercise.exerciseId,
+          name: exercise.name,
+          targetSets: exercise.sets,
+          targetReps: exercise.reps,
+          targetWeight: exercise.formattedWeight,
+          category: exercise.category,
+          difficulty: exercise.difficulty,
+          color: '0xFF4ECDC4',
+          restTime: exercise.restTime,
+          targetMuscle: exercise.targetMuscle,
+          description: exercise.description,
+          imageUrl: exercise.imageUrl,
+          sets: exerciseSets, // Individual set configurations
+        );
+      }).toList();
             
       Navigator.push(
         context,

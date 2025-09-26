@@ -427,21 +427,6 @@ class _CoachProfilePageState extends State<CoachProfilePage>
 
           // Menu sections
           _buildMenuSection(
-            'Coach Tools',
-            [
-              _buildMenuItem(Icons.people, 'Member Management', Color(0xFF4ECDC4), () {
-                // Navigate to member management
-              }),
-              _buildMenuItem(Icons.analytics, 'Performance Analytics', Color(0xFF96CEB4), () {
-                // Navigate to analytics
-              }),
-              _buildMenuItem(Icons.library_books, 'Program Templates', Color(0xFFFF6B35), () {
-                // Navigate to templates
-              }),
-            ],
-          ),
-          SizedBox(height: 16),
-          _buildMenuSection(
             'Account',
             [
               _buildMenuItem(Icons.person, 'Edit Profile', Color(0xFF45B7D1), () {

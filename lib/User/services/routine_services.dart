@@ -347,9 +347,14 @@ class RoutineService {
         "exercises": routine.detailedExercises?.map((exercise) => {
           "exercise_id": exercise.id,
           "name": exercise.name,
-          "sets": exercise.targetSets,
-          "reps": exercise.targetReps,
-          "weight": exercise.targetWeight,
+          "sets": exercise.sets.map((set) => {
+            "reps": set.reps,
+            "weight": set.weight,
+            "timestamp": set.timestamp.toIso8601String(),
+          }).toList(),
+          "target_sets": exercise.targetSets,
+          "target_reps": exercise.targetReps,
+          "target_weight": exercise.targetWeight,
           "rest_time": exercise.restTime,
           "notes": exercise.notes,
         }).toList() ?? [],
@@ -565,10 +570,51 @@ class RoutineService {
     }
   }
 
+  // Fetch routine details for editing
+  static Future<RoutineModel?> fetchRoutineDetails(String routineId) async {
+    try {
+      int currentUserId = await getCurrentUserId();
+      
+      print('🔍 Fetching routine details for ID: $routineId');
+      
+      final response = await http.get(
+        Uri.parse('$baseUrl?action=fetch_routine_details&routine_id=$routineId&user_id=$currentUserId'),
+        headers: {"Content-Type": "application/json"},
+      );
+      
+      print('📊 Fetch response status: ${response.statusCode}');
+      print('📋 Fetch response body: ${response.body}');
+      
+      if (response.statusCode == 200) {
+        final responseData = json.decode(response.body);
+        
+        if (responseData['success'] == true) {
+          final routineData = responseData['routine'];
+          if (routineData != null) {
+            print('✅ Found routine with ${routineData['exercises'] ?? 0} exercises');
+            return RoutineModel.fromJson(routineData);
+          } else {
+            print('❌ No routine data in response');
+            return null;
+          }
+        } else {
+          throw Exception(responseData['error'] ?? 'Failed to fetch routine details');
+        }
+      } else {
+        throw Exception('HTTP Error: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('💥 Error fetching routine details: $e');
+      rethrow;
+    }
+  }
+
   // Delete routine
   static Future<bool> deleteRoutine(String routineId) async {
     try {
       int currentUserId = await getCurrentUserId();
+      
+      print('🗑️ Deleting routine ID: $routineId for user: $currentUserId');
       
       final response = await http.post(
         Uri.parse(baseUrl),
@@ -580,14 +626,25 @@ class RoutineService {
         }),
       );
       
+      print('📊 Delete response status: ${response.statusCode}');
+      print('📋 Delete response body: ${response.body}');
+      
       if (response.statusCode == 200) {
         final responseData = json.decode(response.body);
-        return responseData['success'] == true;
+        if (responseData['success'] == true) {
+          print('✅ Routine deleted successfully');
+          return true;
+        } else {
+          print('❌ Delete failed: ${responseData['error']}');
+          throw Exception(responseData['error'] ?? 'Failed to delete routine');
+        }
+      } else {
+        print('❌ HTTP Error: ${response.statusCode}');
+        throw Exception('HTTP Error: ${response.statusCode}');
       }
-      return false;
     } catch (e) {
-      print('Error deleting routine: $e');
-      return false;
+      print('💥 Error deleting routine: $e');
+      rethrow; // Re-throw to let the UI handle the error
     }
   }
 
