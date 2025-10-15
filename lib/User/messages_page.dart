@@ -1,8 +1,11 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import './models/messages_model.dart';
-import './services/messages_service.dart';
+import 'package:intl/intl.dart';
+import 'models/messages_model.dart';
+import 'services/messages_service.dart';
 import 'chat_page.dart';
+import '../user_dashboard.dart';
 
 class MessagesPage extends StatefulWidget {
   final int currentUserId;
@@ -20,6 +23,7 @@ class _MessagesPageState extends State<MessagesPage> with TickerProviderStateMix
   List<Conversation> conversations = [];
   bool isLoading = true;
   String errorMessage = '';
+  Timer? _messageTimer;
 
   // Color palette for avatars
   final List<Color> avatarColors = [
@@ -44,34 +48,102 @@ class _MessagesPageState extends State<MessagesPage> with TickerProviderStateMix
       CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
     );
     _loadConversations();
+    // Start automatic message polling every 1 second
+    _startMessagePolling();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Refresh conversations when page becomes visible (e.g., returning from chat)
+    _loadConversations();
+  }
+
+  void _startMessagePolling() {
+    _messageTimer = Timer.periodic(Duration(seconds: 1), (timer) {
+      if (mounted) {
+        print('🔄 Auto-polling for new conversations');
+        _loadConversations(isPolling: true);
+      } else {
+        // Stop polling if widget is not mounted
+        timer.cancel();
+      }
+    });
+  }
+
+  void _stopMessagePolling() {
+    _messageTimer?.cancel();
+    _messageTimer = null;
   }
 
   @override
   void dispose() {
+    print('🗑️ Disposing MessagesPage...');
+    _stopMessagePolling();
     _animationController.dispose();
     super.dispose();
   }
 
-  Future<void> _loadConversations() async {
+  Future<void> _loadConversations({bool isPolling = false}) async {
     try {
-      setState(() {
-        isLoading = true;
-        errorMessage = '';
-      });
+      if (!isPolling) {
+        setState(() {
+          isLoading = true;
+          errorMessage = '';
+        });
+      }
 
       final loadedConversations = await MessageService.getConversations(widget.currentUserId);
       
-      setState(() {
-        conversations = loadedConversations;
-        isLoading = false;
-      });
-      
-      _animationController.forward();
+      if (mounted) {
+        // Only update UI if conversations have changed
+        bool hasChanged = conversations.length != loadedConversations.length ||
+            conversations.any((conv) => 
+              loadedConversations.any((newConv) => 
+                newConv.id == conv.id && 
+                (newConv.unreadCount != conv.unreadCount || 
+                 newConv.lastMessage != conv.lastMessage ||
+                 newConv.lastMessageTime != conv.lastMessageTime)
+              )
+            );
+        
+        if (hasChanged || !isPolling) {
+          setState(() {
+            // If this is polling and we have a conversation with unreadCount 0 locally,
+            // don't let server data overwrite it unless the server also shows 0
+            if (isPolling) {
+              for (int i = 0; i < conversations.length; i++) {
+                final localConv = conversations[i];
+                final serverConv = loadedConversations.firstWhere(
+                  (c) => c.id == localConv.id, 
+                  orElse: () => localConv
+                );
+                
+                // If local shows as read (0) but server still shows unread, keep local
+                if (localConv.unreadCount == 0 && serverConv.unreadCount > 0) {
+                  print('🔒 Keeping local read status for conversation ${localConv.id}');
+                  loadedConversations[loadedConversations.indexWhere((c) => c.id == localConv.id)] = localConv;
+                }
+              }
+            }
+            
+            conversations = loadedConversations;
+            isLoading = false;
+          });
+          
+          if (!isPolling) {
+            _animationController.forward();
+          }
+          print('✅ Loaded ${loadedConversations.length} conversations${isPolling ? ' (polling)' : ''}');
+        }
+      }
     } catch (e) {
-      setState(() {
-        errorMessage = e.toString();
-        isLoading = false;
-      });
+      if (mounted && !isPolling) {
+        setState(() {
+          errorMessage = e.toString();
+          isLoading = false;
+        });
+      }
     }
   }
 
@@ -87,18 +159,20 @@ class _MessagesPageState extends State<MessagesPage> with TickerProviderStateMix
     final now = DateTime.now();
     final difference = now.difference(dateTime);
     
-    if (difference.inDays > 0) {
-      if (difference.inDays == 1) {
-        return 'Yesterday';
-      } else {
-        return '${difference.inDays} days ago';
-      }
-    } else if (difference.inHours > 0) {
-      return '${difference.inHours}h ago';
-    } else if (difference.inMinutes > 0) {
+    if (difference.inMinutes < 1) {
+      return 'just now';
+    } else if (difference.inMinutes < 60) {
       return '${difference.inMinutes}m ago';
+    } else if (difference.inHours < 24) {
+      return '${difference.inHours}h ago';
+    } else if (difference.inDays == 1) {
+      return 'yesterday';
+    } else if (difference.inDays < 7) {
+      return '${difference.inDays}d ago';
+    } else if (dateTime.year == now.year) {
+      return DateFormat('MMM d').format(dateTime);
     } else {
-      return 'Just now';
+      return DateFormat('MMM d, y').format(dateTime);
     }
   }
 
@@ -113,8 +187,14 @@ class _MessagesPageState extends State<MessagesPage> with TickerProviderStateMix
         ),
         backgroundColor: Color(0xFF0F0F0F),
         elevation: 0,
-        leading: IconButton(
-          icon: Container(
+        leading: GestureDetector(
+          onTap: () {
+            print('🔙 Back button TAPPED - returning to dashboard');
+            // Use Navigator.pop() to trigger the .then() callback in dashboard
+            Navigator.pop(context);
+          },
+          child: Container(
+            margin: EdgeInsets.all(8),
             padding: EdgeInsets.all(8),
             decoration: BoxDecoration(
               color: Color(0xFF1A1A1A),
@@ -122,22 +202,8 @@ class _MessagesPageState extends State<MessagesPage> with TickerProviderStateMix
             ),
             child: Icon(Icons.arrow_back, color: Colors.white, size: 20),
           ),
-          onPressed: () => Navigator.pop(context),
         ),
-        actions: [
-          IconButton(
-            icon: Container(
-              padding: EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Color(0xFF1A1A1A),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(Icons.refresh, color: Colors.white, size: 20),
-            ),
-            onPressed: _loadConversations,
-          ),
-          SizedBox(width: 16),
-        ],
+        actions: [],
       ),
       body: isLoading
           ? Center(
@@ -170,19 +236,6 @@ class _MessagesPageState extends State<MessagesPage> with TickerProviderStateMix
                         textAlign: TextAlign.center,
                       ),
                       SizedBox(height: 24),
-                      ElevatedButton(
-                        onPressed: _loadConversations,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Color(0xFF4ECDC4),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        child: Text(
-                          'Retry',
-                          style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
-                        ),
-                      ),
                     ],
                   ),
                 )
@@ -193,33 +246,41 @@ class _MessagesPageState extends State<MessagesPage> with TickerProviderStateMix
                       // Header
                       Container(
                         margin: EdgeInsets.all(20),
-                        padding: EdgeInsets.all(24),
+                        padding: EdgeInsets.all(28),
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
-                            colors: [Color(0xFF4ECDC4).withOpacity(0.8), Color(0xFF44A08D).withOpacity(0.8)],
+                            colors: [Color(0xFFFF6B35), Color(0xFFFF8E53)],
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
                           ),
-                          borderRadius: BorderRadius.circular(20),
+                          borderRadius: BorderRadius.circular(24),
                           boxShadow: [
                             BoxShadow(
-                              color: Color(0xFF4ECDC4).withOpacity(0.3),
-                              blurRadius: 15,
-                              offset: Offset(0, 8),
+                              color: Color(0xFFFF6B35).withOpacity(0.4),
+                              blurRadius: 25,
+                              offset: Offset(0, 10),
                             ),
                           ],
                         ),
                         child: Row(
                           children: [
                             Container(
-                              padding: EdgeInsets.all(12),
+                              padding: EdgeInsets.all(14),
                               decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(0.2),
-                                borderRadius: BorderRadius.circular(16),
+                                color: Colors.white.withOpacity(0.25),
+                                borderRadius: BorderRadius.circular(18),
+                                border: Border.all(
+                                  color: Colors.white.withOpacity(0.3),
+                                  width: 1,
+                                ),
                               ),
-                              child: Icon(Icons.chat_bubble_outline, color: Colors.white, size: 28),
+                              child: Icon(
+                                Icons.chat_bubble_outline_rounded,
+                                color: Colors.white,
+                                size: 30,
+                              ),
                             ),
-                            SizedBox(width: 16),
+                            SizedBox(width: 20),
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -227,12 +288,13 @@ class _MessagesPageState extends State<MessagesPage> with TickerProviderStateMix
                                   Text(
                                     'Your Conversations',
                                     style: GoogleFonts.poppins(
-                                      fontSize: 22,
+                                      fontSize: 26,
                                       color: Colors.white,
                                       fontWeight: FontWeight.bold,
+                                      letterSpacing: 0.5,
                                     ),
                                   ),
-                                  SizedBox(height: 4),
+                                  SizedBox(height: 6),
                                   Text(
                                     totalUnread > 0
                                         ? '$totalUnread unread messages'
@@ -241,7 +303,8 @@ class _MessagesPageState extends State<MessagesPage> with TickerProviderStateMix
                                             : 'All caught up!',
                                     style: GoogleFonts.poppins(
                                       color: Colors.white.withOpacity(0.9),
-                                      fontSize: 14,
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w500,
                                     ),
                                   ),
                                 ],
@@ -249,10 +312,17 @@ class _MessagesPageState extends State<MessagesPage> with TickerProviderStateMix
                             ),
                             if (totalUnread > 0)
                               Container(
-                                padding: EdgeInsets.all(8),
+                                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                                 decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.2),
-                                  shape: BoxShape.circle,
+                                  color: Colors.red,
+                                  borderRadius: BorderRadius.circular(18),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.red.withOpacity(0.3),
+                                      blurRadius: 8,
+                                      offset: Offset(0, 4),
+                                    ),
+                                  ],
                                 ),
                                 child: Text(
                                   totalUnread.toString(),
@@ -306,18 +376,27 @@ class _MessagesPageState extends State<MessagesPage> with TickerProviderStateMix
                                   final avatarColor = _getAvatarColor(conversation.otherUser.id);
                                   
                                   return Container(
-                                    margin: EdgeInsets.only(bottom: 12),
+                                    key: ValueKey('conversation_${conversation.id}_${conversation.unreadCount}'),
+                                    margin: EdgeInsets.only(bottom: 16),
                                     decoration: BoxDecoration(
-                                      color: Color(0xFF1A1A1A),
-                                      borderRadius: BorderRadius.circular(20),
+                                      gradient: LinearGradient(
+                                        colors: conversation.unreadCount > 0
+                                            ? [Color(0xFF2A2A2A), Color(0xFF1F1F1F)]
+                                            : [Color(0xFF1A1A1A), Color(0xFF0F0F0F)],
+                                        begin: Alignment.topLeft,
+                                        end: Alignment.bottomRight,
+                                      ),
+                                      borderRadius: BorderRadius.circular(24),
                                       border: conversation.unreadCount > 0
-                                          ? Border.all(color: avatarColor, width: 1)
-                                          : null,
+                                          ? Border.all(color: avatarColor.withOpacity(0.6), width: 2)
+                                          : Border.all(color: Colors.grey.withOpacity(0.1), width: 1),
                                       boxShadow: [
                                         BoxShadow(
-                                          color: Colors.black.withOpacity(0.2),
-                                          blurRadius: 8,
-                                          offset: Offset(0, 4),
+                                          color: conversation.unreadCount > 0
+                                              ? avatarColor.withOpacity(0.2)
+                                              : Colors.black.withOpacity(0.3),
+                                          blurRadius: conversation.unreadCount > 0 ? 15 : 8,
+                                          offset: Offset(0, 6),
                                         ),
                                       ],
                                     ),
@@ -326,41 +405,56 @@ class _MessagesPageState extends State<MessagesPage> with TickerProviderStateMix
                                       leading: Stack(
                                         children: [
                                           Container(
-                                            width: 56,
-                                            height: 56,
+                                            width: 60,
+                                            height: 60,
                                             decoration: BoxDecoration(
                                               gradient: LinearGradient(
                                                 colors: [
-                                                  avatarColor.withOpacity(0.8),
-                                                  avatarColor.withOpacity(0.6),
+                                                  avatarColor,
+                                                  avatarColor.withOpacity(0.7),
                                                 ],
                                                 begin: Alignment.topLeft,
                                                 end: Alignment.bottomRight,
                                               ),
                                               shape: BoxShape.circle,
+                                              boxShadow: [
+                                                BoxShadow(
+                                                  color: avatarColor.withOpacity(0.3),
+                                                  blurRadius: 12,
+                                                  offset: Offset(0, 4),
+                                                ),
+                                              ],
                                             ),
                                             child: Center(
                                               child: Text(
                                                 conversation.otherUser.initials,
                                                 style: GoogleFonts.poppins(
-                                                  fontSize: 20,
+                                                  fontSize: 22,
                                                   fontWeight: FontWeight.bold,
                                                   color: Colors.white,
+                                                  letterSpacing: 0.5,
                                                 ),
                                               ),
                                             ),
                                           ),
                                           if (conversation.otherUser.isOnline)
                                             Positioned(
-                                              bottom: 0,
-                                              right: 0,
+                                              bottom: 2,
+                                              right: 2,
                                               child: Container(
-                                                width: 16,
-                                                height: 16,
+                                                width: 18,
+                                                height: 18,
                                                 decoration: BoxDecoration(
                                                   color: Color(0xFF4ECDC4),
                                                   shape: BoxShape.circle,
-                                                  border: Border.all(color: Color(0xFF1A1A1A), width: 2),
+                                                  border: Border.all(color: Color(0xFF1A1A1A), width: 3),
+                                                  boxShadow: [
+                                                    BoxShadow(
+                                                      color: Color(0xFF4ECDC4).withOpacity(0.5),
+                                                      blurRadius: 6,
+                                                      offset: Offset(0, 2),
+                                                    ),
+                                                  ],
                                                 ),
                                               ),
                                             ),
@@ -400,15 +494,21 @@ class _MessagesPageState extends State<MessagesPage> with TickerProviderStateMix
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
                                           SizedBox(height: 8),
-                                          Text(
-                                            conversation.lastMessage ?? 'No messages yet',
-                                            style: GoogleFonts.poppins(
-                                              color: conversation.unreadCount > 0 ? Colors.white : Colors.grey[400],
-                                              fontSize: 14,
-                                              fontWeight: conversation.unreadCount > 0 ? FontWeight.w500 : FontWeight.normal,
-                                            ),
-                                            maxLines: 2,
-                                            overflow: TextOverflow.ellipsis,
+                                          Builder(
+                                            builder: (context) {
+                                              final isUnread = conversation.unreadCount > 0;
+                                              print('🎨 Rendering message text - unreadCount: ${conversation.unreadCount}, isUnread: $isUnread');
+                                              return Text(
+                                                conversation.lastMessage ?? 'No messages yet',
+                                                style: GoogleFonts.poppins(
+                                                  color: isUnread ? Colors.white : Colors.grey[500],
+                                                  fontSize: 14,
+                                                  fontWeight: isUnread ? FontWeight.w600 : FontWeight.w400,
+                                                ),
+                                                maxLines: 2,
+                                                overflow: TextOverflow.ellipsis,
+                                              );
+                                            },
                                           ),
                                           SizedBox(height: 8),
                                           Row(
@@ -447,23 +547,66 @@ class _MessagesPageState extends State<MessagesPage> with TickerProviderStateMix
                                           ),
                                         ],
                                       ),
-                                      onTap: () async {
-                                        // Mark messages as read when opening chat
-                                        await MessageService.markMessagesAsRead(conversation.id, widget.currentUserId);
+                                      onTap: () {
+                                        // Mark messages as read in background (don't wait)
+                                        MessageService.markMessagesAsRead(conversation.id, widget.currentUserId);
                                         
+                                        // Immediately update local conversation to show as read
+                                        print('🔄 Before update - unreadCount: ${conversation.unreadCount}');
+                                        setState(() {
+                                          final index = conversations.indexWhere((c) => c.id == conversation.id);
+                                          if (index != -1) {
+                                            conversations[index] = conversation.copyWith(unreadCount: 0);
+                                            print('✅ After update - unreadCount: ${conversations[index].unreadCount}');
+                                            // Force a complete rebuild
+                                            conversations = List.from(conversations);
+                                          }
+                                        });
+                                        
+                                        // Navigate with ultra-smooth animation
                                         Navigator.push(
                                           context,
-                                          MaterialPageRoute(
-                                            builder: (context) => ChatPage(
+                                          PageRouteBuilder(
+                                            pageBuilder: (context, animation, secondaryAnimation) => ChatPage(
                                               conversationId: conversation.id,
                                               currentUserId: widget.currentUserId,
                                               otherUser: conversation.otherUser,
                                               avatarColor: avatarColor,
                                             ),
+                                            transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                                              // Very gentle slide from right
+                                              const begin = Offset(0.1, 0.0);
+                                              const end = Offset.zero;
+                                              const curve = Curves.easeOutCubic;
+                                              
+                                              var tween = Tween(begin: begin, end: end).chain(
+                                                CurveTween(curve: curve),
+                                              );
+                                              
+                                              var offsetAnimation = animation.drive(tween);
+                                              
+                                              // Very smooth fade
+                                              var fadeAnimation = Tween<double>(
+                                                begin: 0.0,
+                                                end: 1.0,
+                                              ).chain(CurveTween(curve: Curves.easeOutCubic)).animate(animation);
+                                              
+                                              return SlideTransition(
+                                                position: offsetAnimation,
+                                                child: FadeTransition(
+                                                  opacity: fadeAnimation,
+                                                  child: child,
+                                                ),
+                                              );
+                                            },
+                                            transitionDuration: Duration(milliseconds: 500),
+                                            reverseTransitionDuration: Duration(milliseconds: 400),
                                           ),
                                         ).then((_) {
                                           // Refresh conversations when returning from chat
-                                          _loadConversations();
+                                          if (mounted) {
+                                            _loadConversations();
+                                          }
                                         });
                                       },
                                     ),

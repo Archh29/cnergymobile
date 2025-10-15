@@ -96,6 +96,7 @@ class MessageService {
   // Mark messages as read
   static Future<bool> markMessagesAsRead(int conversationId, int userId) async {
     try {
+      print('📡 Marking messages as read for conversation $conversationId, user $userId');
       final response = await http.post(
         Uri.parse('$baseUrl?action=mark_read'),
         headers: {
@@ -107,13 +108,43 @@ class MessageService {
         }),
       );
 
+      print('📡 Mark read response status: ${response.statusCode}');
+      print('📄 Mark read response body: ${response.body}');
+
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        return data['success'] ?? false;
+        final success = data['success'] ?? false;
+        print('✅ Mark messages as read result: $success');
+        
+        // If successful, also try to update the conversation unread count
+        if (success) {
+          print('🔄 Attempting to update conversation unread count...');
+          try {
+            final updateResponse = await http.post(
+              Uri.parse('$baseUrl?action=update_conversation_unread'),
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: json.encode({
+                'conversation_id': conversationId,
+                'user_id': userId,
+                'unread_count': 0,
+              }),
+            );
+            print('📡 Update unread count response: ${updateResponse.statusCode}');
+            print('📄 Update unread count body: ${updateResponse.body}');
+          } catch (e) {
+            print('⚠️ Failed to update conversation unread count: $e');
+          }
+        }
+        
+        return success;
       } else {
+        print('❌ Mark read HTTP error: ${response.statusCode}');
         return false;
       }
     } catch (e) {
+      print('❌ Exception in markMessagesAsRead: $e');
       return false;
     }
   }
@@ -233,6 +264,7 @@ class MessageService {
   // Get unread message count for a user
   static Future<int> getUnreadCount(int userId) async {
     try {
+      print('📡 Getting unread count from: $baseUrl?action=unread_count&user_id=$userId');
       final response = await http.get(
         Uri.parse('$baseUrl?action=unread_count&user_id=$userId'),
         headers: {
@@ -240,17 +272,25 @@ class MessageService {
         },
       );
 
+      print('📡 Unread count response status: ${response.statusCode}');
+      print('📄 Unread count response body: ${response.body}');
+
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         if (data['success']) {
-          return data['unread_count'] ?? 0;
+          final count = data['unread_count'] ?? 0;
+          print('✅ Unread count from API: $count');
+          return count;
         } else {
+          print('❌ API returned success: false');
           return 0;
         }
       } else {
+        print('❌ HTTP error: ${response.statusCode}');
         return 0;
       }
     } catch (e) {
+      print('❌ Exception in getUnreadCount: $e');
       return 0;
     }
   }

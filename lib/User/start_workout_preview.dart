@@ -78,6 +78,12 @@ class _StartWorkoutPreviewPageState extends State<StartWorkoutPreviewPage> {
   }
 
   Widget _buildAppBar(BuildContext context, bool isSmallScreen) {
+    // Get current day
+    final currentDay = _getCurrentWorkoutDay();
+    
+    // Check if this program is for today's workout
+    final isTodayWorkout = widget.routine.scheduledDays?.contains(currentDay) == true;
+    
     return Container(
       padding: EdgeInsets.symmetric(
         horizontal: 16,
@@ -91,16 +97,75 @@ class _StartWorkoutPreviewPageState extends State<StartWorkoutPreviewPage> {
             padding: EdgeInsets.all(8),
           ),
           Expanded(
-            child: Text(
-              workoutPreview?.routineName ?? widget.routine.name,
-              style: GoogleFonts.poppins(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-              ),
-              textAlign: TextAlign.center,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+            child: Column(
+              children: [
+                // Current day at the top (only if this is today's workout)
+                if (isTodayWorkout) ...[
+                  Container(
+                    padding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Color(0xFF4ECDC4).withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Color(0xFF4ECDC4), width: 1),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.calendar_today,
+                          color: Color(0xFF4ECDC4),
+                          size: 14,
+                        ),
+                        SizedBox(width: 6),
+                        Text(
+                          currentDay,
+                          style: GoogleFonts.poppins(
+                            color: Color(0xFF4ECDC4),
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  SizedBox(height: 8),
+                ],
+                // Routine name
+                Text(
+                  workoutPreview?.routineName ?? widget.routine.name,
+                  style: GoogleFonts.poppins(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                // Scheduled day info (if this is not today's workout)
+                if (widget.routine.scheduledDays?.isNotEmpty == true && !isTodayWorkout) ...[
+                  SizedBox(height: 4),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.schedule,
+                        color: Colors.grey[400],
+                        size: 12,
+                      ),
+                      SizedBox(width: 4),
+                      Text(
+                        'Scheduled: ${widget.routine.scheduledDays!.first}',
+                        style: GoogleFonts.poppins(
+                          color: Colors.grey[400],
+                          fontSize: 11,
+                          fontWeight: FontWeight.w400,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
             ),
           ),
           IconButton(
@@ -111,6 +176,13 @@ class _StartWorkoutPreviewPageState extends State<StartWorkoutPreviewPage> {
         ],
       ),
     );
+  }
+
+  // Get current workout day
+  String _getCurrentWorkoutDay() {
+    final now = DateTime.now();
+    final days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    return days[now.weekday - 1];
   }
 
   Widget _buildContent(BuildContext context, bool isSmallScreen) {
@@ -298,7 +370,7 @@ class _StartWorkoutPreviewPageState extends State<StartWorkoutPreviewPage> {
           const SizedBox(width: 16),
           Expanded(
             child: GestureDetector(
-              onTap: () => _navigateToWorkoutSession(),
+              onTap: () => _navigateToInstructions(exercise),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -312,33 +384,7 @@ class _StartWorkoutPreviewPageState extends State<StartWorkoutPreviewPage> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 4),
-                  if (exercise.isCompleted)
-                    Text(
-                      '${exercise.completedSets}/${exercise.sets} logged',
-                      style: GoogleFonts.poppins(
-                        color: const Color(0xFF4ECDC4),
-                        fontSize: isSmallScreen ? 12 : 14,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    )
-                  else if (exercise.completedSets > 0)
-                    Text(
-                      '${exercise.completedSets}/${exercise.sets} logged',
-                      style: GoogleFonts.poppins(
-                        color: const Color(0xFF4ECDC4),
-                        fontSize: isSmallScreen ? 12 : 14,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    )
-                  else
-                    Text(
-                      exercise.exerciseDetails,
-                      style: GoogleFonts.poppins(
-                        color: Colors.grey[400],
-                        fontSize: isSmallScreen ? 12 : 14,
-                      ),
-                    ),
+                  // Removed the sets/reps text as requested
                 ],
               ),
             ),

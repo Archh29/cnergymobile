@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 class MessagesPage extends StatelessWidget {
   final List<Map<String, String>> messages = [
@@ -122,39 +123,293 @@ class MessagesPage extends StatelessWidget {
   }
 }
 
-class ChatPage extends StatelessWidget {
+class ChatPage extends StatefulWidget {
   final String coachName;
 
   ChatPage({required this.coachName});
 
   @override
+  _ChatPageState createState() => _ChatPageState();
+}
+
+class _ChatPageState extends State<ChatPage> {
+  final TextEditingController _messageController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
+  List<Map<String, dynamic>> messages = [
+    {
+      'text': 'Hello! How can I help you today?',
+      'isMe': false,
+      'time': '10:30 AM',
+    },
+    {
+      'text': 'Hi! I need help with my workout routine',
+      'isMe': true,
+      'time': '10:32 AM',
+    },
+  ];
+  bool isSending = false;
+
+  @override
+  void dispose() {
+    _messageController.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _sendMessage() {
+    if (_messageController.text.trim().isEmpty || isSending) return;
+
+    setState(() {
+      isSending = true;
+      messages.add({
+        'text': _messageController.text.trim(),
+        'isMe': true,
+        'time': 'Now',
+      });
+      _messageController.clear();
+    });
+
+    // Simulate sending
+    Future.delayed(Duration(seconds: 1), () {
+      if (mounted) {
+        setState(() {
+          isSending = false;
+        });
+        _scrollToBottom();
+      }
+    });
+  }
+
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Color(0xFF0F0F0F),
       body: Column(
         children: [
-          // Custom Header without AppBar
+          // Custom Header
           Container(
-            padding: EdgeInsets.all(16.0),
+            padding: EdgeInsets.fromLTRB(16, 50, 16, 16),
             decoration: BoxDecoration(
-              color: Colors.orange.shade600,
+              gradient: LinearGradient(
+                colors: [Colors.orange.shade600, Colors.orange.shade800],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
               borderRadius: BorderRadius.vertical(bottom: Radius.circular(20)),
             ),
-            child: Text(
-              'Chat with $coachName',
-              style: TextStyle(
-                  fontSize: 24,
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold),
+            child: Row(
+              children: [
+                IconButton(
+                  icon: Icon(Icons.arrow_back, color: Colors.white),
+                  onPressed: () => Navigator.pop(context),
+                ),
+                CircleAvatar(
+                  backgroundColor: Colors.white.withOpacity(0.2),
+                  child: Icon(Icons.person, color: Colors.white),
+                ),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        widget.coachName,
+                        style: TextStyle(
+                          fontSize: 18,
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Text(
+                        'Online',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.white.withOpacity(0.8),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: Icon(Icons.more_vert, color: Colors.white),
+                  onPressed: () {},
+                ),
+              ],
             ),
           ),
+          
+          // Messages
           Expanded(
-            child: Center(
-              child: Text(
-                'Conversation with $coachName',
-                style: TextStyle(fontSize: 20, color: Colors.grey.shade800),
+            child: ListView.builder(
+              controller: _scrollController,
+              padding: EdgeInsets.all(16),
+              itemCount: messages.length,
+              itemBuilder: (context, index) {
+                final message = messages[index];
+                return _buildMessage(message['text'], message['isMe'], message['time']);
+              },
+            ),
+          ),
+          
+          // Message Input
+          Container(
+            color: Color(0xFF0F0F0F),
+            padding: EdgeInsets.fromLTRB(16, 12, 16, 16),
+            child: SafeArea(
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Theme(
+                      data: Theme.of(context).copyWith(
+                        textSelectionTheme: TextSelectionThemeData(
+                          cursorColor: Colors.orange,
+                          selectionColor: Colors.orange.withOpacity(0.3),
+                        ),
+                      ),
+                      child: TextField(
+                        controller: _messageController,
+                        style: TextStyle(
+                          color: Colors.black,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        decoration: InputDecoration(
+                          filled: true,
+                          fillColor: Colors.white,
+                          hintText: "Type a message...",
+                          hintStyle: TextStyle(
+                            color: Colors.grey[500],
+                            fontSize: 16,
+                            fontWeight: FontWeight.w400,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(30),
+                            borderSide: BorderSide.none,
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(30),
+                            borderSide: BorderSide.none,
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(30),
+                            borderSide: BorderSide.none,
+                          ),
+                          contentPadding: EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                        ),
+                        onSubmitted: (_) => _sendMessage(),
+                        maxLines: null,
+                      ),
+                    ),
+                  ),
+                  SizedBox(width: 12),
+                  GestureDetector(
+                    onTap: _sendMessage,
+                    child: Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: Color(0xFFFF6B35),
+                        shape: BoxShape.circle,
+                      ),
+                      child: isSending 
+                          ? Center(
+                              child: SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                ),
+                              ),
+                            )
+                          : Icon(
+                              Icons.send_rounded,
+                              color: Colors.white,
+                              size: 22,
+                            ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMessage(String text, bool isMe, String time) {
+    return Container(
+      margin: EdgeInsets.only(bottom: 16),
+      child: Row(
+        mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+        children: [
+          if (!isMe) ...[
+            CircleAvatar(
+              radius: 16,
+              backgroundColor: Colors.orange.shade600,
+              child: Icon(Icons.person, color: Colors.white, size: 16),
+            ),
+            SizedBox(width: 8),
+          ],
+          Flexible(
+            child: Container(
+              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: isMe ? Colors.orange.shade600 : Color(0xFF1A1A1A),
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.3),
+                    blurRadius: 4,
+                    offset: Offset(0, 2),
+                  ),
+                ],
+                border: !isMe ? Border.all(color: Colors.orange.withOpacity(0.3)) : null,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    text,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    time,
+                    style: TextStyle(
+                      color: Colors.grey[500],
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (isMe) ...[
+            SizedBox(width: 8),
+            CircleAvatar(
+              radius: 16,
+              backgroundColor: Colors.grey[300],
+              child: Icon(Icons.person, color: Colors.grey[600], size: 16),
+            ),
+          ],
         ],
       ),
     );

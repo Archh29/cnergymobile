@@ -12,6 +12,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
 	exit();
 }
 
+// Debug: Log all requests
+error_log("=== API REQUEST RECEIVED ===");
+error_log("Request method: " . $_SERVER['REQUEST_METHOD']);
+error_log("Request URI: " . $_SERVER['REQUEST_URI']);
+error_log("Request body: " . file_get_contents('php://input'));
+error_log("=== API FILE LOADED SUCCESSFULLY ===");
+
 // Database configuration
 $host = "localhost";
 $dbname = "u773938685_cnergydb";      
@@ -73,6 +80,7 @@ function getMemberWorkoutExerciseId($pdo, $routineId, $exerciseId, $userId) {
 
 switch ($action) {
     case 'getWorkoutPreview':
+        error_log("=== GETWORKOUTPREVIEW CASE STARTED ===");
         try {
             $routineId = validateRoutineId($_GET['routine_id'] ?? null);
             $userId = validateUserId($_GET['user_id'] ?? null);
@@ -105,7 +113,7 @@ switch ($action) {
             $workoutDetails = json_decode($routine['workout_details'] ?? '{}', true);
             $routineName = $workoutDetails['name'] ?? "Routine #$routineId";
             
-            // Fetch exercises for this routine - prevent duplicates by grouping - Fixed table names to lowercase
+            // Fetch exercises for this routine - get all individual sets
             $exerciseStmt = $pdo->prepare("
                 SELECT 
                     e.id as exercise_id,
@@ -125,30 +133,172 @@ switch ($action) {
                 LEFT JOIN exercise_target_muscle etm ON e.id = etm.exercise_id
                 LEFT JOIN target_muscle tm ON etm.muscle_id = tm.id
                 WHERE mpw.member_program_hdr_id = :routine_id
-                GROUP BY e.id, e.name, e.description, e.image_url, e.video_url, 
-                         mwe.id, mwe.sets, mwe.reps, mwe.weight
-                ORDER BY mwe.id ASC
+                ORDER BY e.id, mwe.id ASC
             ");
             $exerciseStmt->bindParam(':routine_id', $routineId, PDO::PARAM_INT);
             $exerciseStmt->execute();
             $exercises = $exerciseStmt->fetchAll(PDO::FETCH_ASSOC);
             
-            error_log("Found " . count($exercises) . " exercises for routine $routineId");
+            error_log("Found " . count($exercises) . " exercise sets for routine $routineId");
+            error_log("=== TESTING WEIGHT UPDATE LOGIC ===");
 
-            // Calculate workout stats
+            // Group exercises by exercise_id and process individual sets
+            $groupedExercises = [];
+            foreach ($exercises as $exerciseSet) {
+                $exerciseId = $exerciseSet['exercise_id'];
+                
+                if (!isset($groupedExercises[$exerciseId])) {
+                    $groupedExercises[$exerciseId] = [
+                        'exercise_id' => $exerciseId,
+                        'name' => $exerciseSet['name'],
+                        'description' => $exerciseSet['description'],
+                        'image_url' => $exerciseSet['image_url'],
+                        'video_url' => $exerciseSet['video_url'],
+                        'target_muscle' => $exerciseSet['target_muscle'],
+                        'rest_time' => $exerciseSet['rest_time'],
+                        'sets' => [],
+                        'total_sets' => 0,
+                        'member_workout_exercise_id' => $exerciseSet['member_workout_exercise_id']
+                    ];
+                }
+                
+                // Add this set to the exercise
+                $groupedExercises[$exerciseId]['sets'][] = [
+                    'reps' => (int)$exerciseSet['reps'],
+                    'weight' => (float)$exerciseSet['weight'],
+                    'timestamp' => date('c'),
+                    'isCompleted' => false,
+                ];
+                $groupedExercises[$exerciseId]['total_sets']++;
+            }
+
+            // Convert to array and calculate stats
+            $exercises = array_values($groupedExercises);
             $totalExercises = count($exercises);
-            $totalSets = array_sum(array_column($exercises, 'sets'));
+            $totalSets = array_sum(array_column($exercises, 'total_sets'));
+            
+            // Update exercises with latest logged weights
+            foreach ($exercises as &$exercise) {
+                $exerciseId = $exercise['exercise_id'];
+                $memberWorkoutExerciseId = $exercise['member_workout_exercise_id'];
+                
+                error_log("=== DEBUGGING WEIGHT FETCH ===");
+                error_log("Exercise ID: $exerciseId");
+                error_log("Member Workout Exercise ID: $memberWorkoutExerciseId");
+                error_log("User ID: $userId");
+                
+                // Get latest logged sets for this exercise - try multiple approaches
+                $latestSets = [];
+                
+                // Approach 1: Try with member_workout_exercise_id
+                $latestSetsStmt = $pdo->prepare("
+                    SELECT 
+                        mesl.reps,
+                        mesl.weight,
+                        mel.log_date,
+                        mel.member_workout_exercise_id
+                    FROM member_exercise_set_log mesl
+                    JOIN member_exercise_log mel ON mesl.exercise_log_id = mel.id
+                    WHERE mel.member_workout_exercise_id = :member_workout_exercise_id
+                    AND mel.member_id = :user_id
+                    ORDER BY mel.log_date DESC, mesl.set_number ASC
+                    LIMIT 10
+                ");
+                $latestSetsStmt->bindParam(':member_workout_exercise_id', $memberWorkoutExerciseId, PDO::PARAM_INT);
+                $latestSetsStmt->bindParam(':user_id', $userId, PDO::PARAM_INT);
+                $latestSetsStmt->execute();
+                $latestSets = $latestSetsStmt->fetchAll(PDO::FETCH_ASSOC);
+                
+                error_log("Approach 1 - Found " . count($latestSets) . " sets with member_workout_exercise_id: $memberWorkoutExerciseId");
+                
+                // Approach 2: If no results, try finding by exercise_id and user_id
+                if (empty($latestSets)) {
+                    error_log("Trying approach 2 - searching by exercise_id and user_id");
+                    
+                    $latestSetsStmt2 = $pdo->prepare("
+                        SELECT 
+                            mesl.reps,
+                            mesl.weight,
+                            mel.log_date,
+                            mel.member_workout_exercise_id
+                        FROM member_exercise_set_log mesl
+                        JOIN member_exercise_log mel ON mesl.exercise_log_id = mel.id
+                        JOIN member_workout_exercise mwe ON mel.member_workout_exercise_id = mwe.id
+                        WHERE mwe.exercise_id = :exercise_id
+                        AND mel.member_id = :user_id
+                        ORDER BY mel.log_date DESC, mesl.set_number ASC
+                        LIMIT 10
+                    ");
+                    $latestSetsStmt2->bindParam(':exercise_id', $exerciseId, PDO::PARAM_INT);
+                    $latestSetsStmt2->bindParam(':user_id', $userId, PDO::PARAM_INT);
+                    $latestSetsStmt2->execute();
+                    $latestSets = $latestSetsStmt2->fetchAll(PDO::FETCH_ASSOC);
+                    
+                    error_log("Approach 2 - Found " . count($latestSets) . " sets with exercise_id: $exerciseId");
+                }
+                
+                // Approach 3: If still no results, try finding any logged sets for this user and exercise
+                if (empty($latestSets)) {
+                    error_log("Trying approach 3 - searching for any logged sets for this user and exercise");
+                    
+                    $latestSetsStmt3 = $pdo->prepare("
+                        SELECT 
+                            mesl.reps,
+                            mesl.weight,
+                            mel.log_date,
+                            mel.member_workout_exercise_id
+                        FROM member_exercise_set_log mesl
+                        JOIN member_exercise_log mel ON mesl.exercise_log_id = mel.id
+                        JOIN member_workout_exercise mwe ON mel.member_workout_exercise_id = mwe.id
+                        JOIN member_program_workout mpw ON mwe.member_program_workout_id = mpw.id
+                        WHERE mwe.exercise_id = :exercise_id
+                        AND mel.member_id = :user_id
+                        AND mpw.member_program_hdr_id = :routine_id
+                        ORDER BY mel.log_date DESC, mesl.set_number ASC
+                        LIMIT 10
+                    ");
+                    $latestSetsStmt3->bindParam(':exercise_id', $exerciseId, PDO::PARAM_INT);
+                    $latestSetsStmt3->bindParam(':user_id', $userId, PDO::PARAM_INT);
+                    $latestSetsStmt3->bindParam(':routine_id', $routineId, PDO::PARAM_INT);
+                    $latestSetsStmt3->execute();
+                    $latestSets = $latestSetsStmt3->fetchAll(PDO::FETCH_ASSOC);
+                    
+                    error_log("Approach 3 - Found " . count($latestSets) . " sets with exercise_id: $exerciseId and routine_id: $routineId");
+                }
+                
+                if (!empty($latestSets)) {
+                    error_log("SUCCESS: Found " . count($latestSets) . " latest sets for exercise $exerciseId");
+                    error_log("Latest sets data: " . json_encode($latestSets));
+                    
+                    // Replace the sets with latest logged weights
+                    $exercise['sets'] = [];
+                    foreach ($latestSets as $set) {
+                        $exercise['sets'][] = [
+                            'reps' => (int)$set['reps'],
+                            'weight' => (float)$set['weight'],
+                            'timestamp' => date('c'),
+                            'isCompleted' => false,
+                        ];
+                    }
+                    $exercise['total_sets'] = count($latestSets);
+                    
+                    error_log("Updated exercise $exerciseId with latest weights: " . json_encode($exercise['sets']));
+                } else {
+                    error_log("FAILED: No latest sets found for exercise $exerciseId with any approach, using program weights");
+                }
+            }
             $estimatedVolume = 0;
             $estimatedDuration = 0;
             
             foreach ($exercises as $exercise) {
-                // Calculate estimated volume (weight * sets * average reps)
-                $avgReps = is_numeric($exercise['reps']) ? intval($exercise['reps']) : 10;
-                $estimatedVolume += ($exercise['weight'] * $exercise['sets'] * $avgReps);
+                // Calculate estimated volume (sum of all sets)
+                foreach ($exercise['sets'] as $set) {
+                    $estimatedVolume += ($set['weight'] * $set['reps']);
+                }
                 
                 // Calculate estimated duration (2-3 minutes per set + rest time)
-                $setTime = $exercise['sets'] * 2; // 2 minutes per set
-                $restTime = $exercise['sets'] * (intval($exercise['rest_time']) / 60); // rest time in minutes
+                $setTime = $exercise['total_sets'] * 2; // 2 minutes per set
+                $restTime = $exercise['total_sets'] * (intval($exercise['rest_time']) / 60); // rest time in minutes
                 $estimatedDuration += ($setTime + $restTime);
             }
             
@@ -164,36 +314,42 @@ switch ($action) {
             ];
             
             // Format exercises for response
-            $formattedExercises = array_map(function($exercise) use ($workoutDetails) {
+            $formattedExercises = array_map(function($exercise) use ($workoutDetails, $pdo, $userId) {
                 $exerciseId = $exercise['exercise_id'];
-                $targetSets = [];
+                $memberWorkoutExerciseId = $exercise['member_workout_exercise_id'];
                 
-                // Check if we have individual set configurations stored in workout_details
-                if (isset($workoutDetails['exercise_set_configs'][$exerciseId])) {
-                    // Use the stored individual set configurations
-                    $setConfigs = $workoutDetails['exercise_set_configs'][$exerciseId];
-                    foreach ($setConfigs as $setConfig) {
-                        $targetSets[] = [
-                            'reps' => (int)$setConfig['reps'],
-                            'weight' => (float)$setConfig['weight'],
-                            'timestamp' => $setConfig['timestamp'] ?? date('c'),
-                            'isCompleted' => false,
-                        ];
-                    }
-                    error_log("Using individual set configurations for exercise ID $exerciseId: " . json_encode($setConfigs));
-                } else {
-                    // Fallback to creating sets with default values
-                    $setCount = (int)$exercise['sets'];
-                    for ($i = 0; $i < $setCount; $i++) {
-                        $targetSets[] = [
-                            'reps' => (int)$exercise['reps'],
-                            'weight' => (float)$exercise['weight'],
-                            'timestamp' => date('c'),
-                            'isCompleted' => false,
-                        ];
-                    }
-                    error_log("Using default set configuration for exercise ID $exerciseId");
+                // Use the sets we already processed from the database
+                $targetSets = $exercise['sets'];
+                
+                // Fetch previous lifts for this exercise
+                $previousLifts = [];
+                try {
+                    $previousLiftsStmt = $pdo->prepare("
+                        SELECT 
+                            mesl.set_number,
+                            mesl.reps,
+                            mesl.weight,
+                            mesl.rpe,
+                            mesl.notes,
+                            mel.log_date
+                        FROM member_exercise_set_log mesl
+                        JOIN member_exercise_log mel ON mesl.exercise_log_id = mel.id
+                        WHERE mel.member_workout_exercise_id = :member_workout_exercise_id
+                        AND mel.member_id = :user_id
+                        ORDER BY mel.log_date DESC, mesl.set_number ASC
+                        LIMIT 20
+                    ");
+                    $previousLiftsStmt->bindParam(':member_workout_exercise_id', $memberWorkoutExerciseId, PDO::PARAM_INT);
+                    $previousLiftsStmt->bindParam(':user_id', $userId, PDO::PARAM_INT);
+                    $previousLiftsStmt->execute();
+                    $previousLifts = $previousLiftsStmt->fetchAll(PDO::FETCH_ASSOC);
+                    
+                    error_log("Found " . count($previousLifts) . " previous lifts for exercise ID $exerciseId");
+                } catch (Exception $e) {
+                    error_log("Error fetching previous lifts: " . $e->getMessage());
                 }
+                
+                error_log("Using database sets for exercise ID $exerciseId: " . count($targetSets) . " sets");
                 
                 return [
                     'id' => (int)$exercise['exercise_id'],
@@ -204,12 +360,13 @@ switch ($action) {
                     'description' => $exercise['description'] ?? '',
                     'image_url' => $exercise['image_url'] ?? '',
                     'video_url' => $exercise['video_url'] ?? '',
-                    'target_sets' => $targetSets, // Array of individual set configurations
-                    'sets' => (int)$exercise['sets'],
-                    'target_reps' => $exercise['reps'],
-                    'reps' => $exercise['reps'],
-                    'target_weight' => (float)$exercise['weight'],
-                    'weight' => (float)$exercise['weight'],
+                    'target_sets' => $targetSets, // Array of individual set configurations from database
+                    'previous_lifts' => $previousLifts, // Previous performance data
+                    'sets' => $exercise['total_sets'],
+                    'target_reps' => $exercise['sets'][0]['reps'] ?? 10, // Use first set's reps as default
+                    'reps' => $exercise['sets'][0]['reps'] ?? 10,
+                    'target_weight' => $exercise['sets'][0]['weight'] ?? 0.0, // Use first set's weight as default
+                    'weight' => $exercise['sets'][0]['weight'] ?? 0.0,
                     'rest_time' => (int)$exercise['rest_time'],
                     'category' => 'Strength', // Default since not in your schema
                     'difficulty' => 'Intermediate', // Default since not in your schema
@@ -351,6 +508,13 @@ switch ($action) {
         break;
         
     case 'completeWorkout':
+        error_log("=== COMPLETEWORKOUT CASE STARTED ===");
+        error_log("=== API IS BEING CALLED ===");
+        error_log("=== INPUT DATA: " . json_encode($input) . " ===");
+        error_log("=== ROUTINE ID: " . ($input['routine_id'] ?? 'NULL') . " ===");
+        error_log("=== USER ID: " . ($input['user_id'] ?? 'NULL') . " ===");
+        error_log("=== EXERCISES COUNT: " . count($input['exercises'] ?? []) . " ===");
+        error_log("=== COMPLETEWORKOUT CASE IS DEFINITELY BEING EXECUTED ===");
         try {
             $routineId = validateRoutineId($input['routine_id'] ?? null);
             $userId = validateUserId($input['user_id'] ?? null);
@@ -512,6 +676,7 @@ switch ($action) {
                     }
                 }
                 
+                
                 // Update routine progress - Fixed table names
                 $completionRate = $totalExercises > 0 ? round(($completedExercises / $totalExercises) * 100) : 0;
                 
@@ -532,6 +697,76 @@ switch ($action) {
                 $pdo->commit();
                 
                 error_log("Workout completed successfully. Processed $processedExercises exercises.");
+                error_log("=== REACHED WEIGHT UPDATE SECTION ===");
+                error_log("=== ABOUT TO UPDATE WEIGHTS ===");
+                error_log("=== ROUTINE ID FOR UPDATE: $routineId ===");
+                error_log("=== USER ID FOR UPDATE: $userId ===");
+                error_log("=== EXERCISES COUNT FOR UPDATE: " . count($exercises) . " ===");
+                
+                // Update program weights with the weights user actually used (before respond)
+                error_log("=== UPDATING PROGRAM WEIGHTS ===");
+                error_log("Total exercises to process: " . count($exercises));
+                error_log("Exercises data: " . json_encode($exercises));
+                error_log("WEIGHT UPDATE SECTION IS BEING EXECUTED!");
+                
+                foreach ($exercises as $exercise) {
+                    $exerciseId = $exercise['exercise_id'] ?? $exercise['id'] ?? null;
+                    $loggedSets = $exercise['logged_sets'] ?? [];
+                    
+                    error_log("Processing exercise ID: $exerciseId");
+                    error_log("Logged sets count: " . count($loggedSets));
+                    error_log("Logged sets data: " . json_encode($loggedSets));
+                    
+                    if ($exerciseId && !empty($loggedSets)) {
+                        error_log("EXERCISE HAS LOGGED SETS - PROCEEDING WITH UPDATE");
+                        try {
+                            error_log("ATTEMPTING TO UPDATE WEIGHTS FOR EXERCISE $exerciseId");
+                            
+                            // Delete existing sets for this exercise
+                            $deleteStmt = $pdo->prepare("
+                                DELETE FROM member_workout_exercise 
+                                WHERE member_program_workout_id = (
+                                    SELECT id FROM member_program_workout 
+                                    WHERE member_program_hdr_id = :routine_id
+                                ) AND exercise_id = :exercise_id
+                            ");
+                            $deleteStmt->bindParam(':routine_id', $routineId, PDO::PARAM_INT);
+                            $deleteStmt->bindParam(':exercise_id', $exerciseId, PDO::PARAM_INT);
+                            $deleteStmt->execute();
+                            
+                            error_log("Deleted existing sets for exercise $exerciseId");
+                            
+                            // Insert new sets with updated weights
+                            $insertStmt = $pdo->prepare("
+                                INSERT INTO member_workout_exercise 
+                                (member_program_workout_id, exercise_id, sets, reps, weight)
+                                VALUES (
+                                    (SELECT id FROM member_program_workout WHERE member_program_hdr_id = :routine_id),
+                                    :exercise_id, 1, :reps, :weight
+                                )
+                            ");
+                            
+                            foreach ($loggedSets as $setIndex => $set) {
+                                $reps = intval($set['reps'] ?? 0);
+                                $weight = floatval($set['weight'] ?? 0);
+                                
+                                error_log("Inserting set " . ($setIndex + 1) . ": reps=$reps, weight=$weight");
+                                
+                                $insertStmt->bindParam(':routine_id', $routineId, PDO::PARAM_INT);
+                                $insertStmt->bindParam(':exercise_id', $exerciseId, PDO::PARAM_INT);
+                                $insertStmt->bindParam(':reps', $reps, PDO::PARAM_INT);
+                                $insertStmt->bindParam(':weight', $weight, PDO::PARAM_STR);
+                                $insertStmt->execute();
+                                
+                                error_log("Successfully inserted set " . ($setIndex + 1) . " for exercise $exerciseId");
+                            }
+                            
+                            error_log("✅ COMPLETED: Updated program weights for exercise ID $exerciseId with " . count($loggedSets) . " sets");
+                        } catch (Exception $e) {
+                            error_log("❌ Error updating weights for exercise $exerciseId: " . $e->getMessage());
+                        }
+                    }
+                }
                 
                 respond([
                     "success" => true,
@@ -685,6 +920,137 @@ switch ($action) {
             
         } catch (PDOException $e) {
             error_log("Database error in getExerciseAnalytics: " . $e->getMessage());
+            respond([
+                "success" => false,
+                "error" => "Database error: " . $e->getMessage()
+            ]);
+        }
+        break;
+        
+    case 'deleteProgramWeights':
+        try {
+            $routineId = validateRoutineId($input['routine_id'] ?? null);
+            $userId = validateUserId($input['user_id'] ?? null);
+            $exerciseId = validateRoutineId($input['exercise_id'] ?? null);
+            
+            error_log("Deleting program weights for routine: $routineId, exercise: $exerciseId, user: $userId");
+            
+            // Delete existing program weights for this exercise
+            $deleteStmt = $pdo->prepare("
+                DELETE FROM member_workout_exercise 
+                WHERE member_program_workout_id = (
+                    SELECT id FROM member_program_workout 
+                    WHERE member_program_hdr_id = :routine_id
+                ) AND exercise_id = :exercise_id
+            ");
+            $deleteStmt->bindParam(':routine_id', $routineId, PDO::PARAM_INT);
+            $deleteStmt->bindParam(':exercise_id', $exerciseId, PDO::PARAM_INT);
+            $deleteStmt->execute();
+            
+            $deletedRows = $deleteStmt->rowCount();
+            error_log("Deleted $deletedRows program weight rows for exercise $exerciseId");
+            
+            respond([
+                "success" => true,
+                "message" => "Program weights deleted successfully",
+                "deleted_rows" => $deletedRows
+            ]);
+            
+        } catch (PDOException $e) {
+            error_log("Database error in deleteProgramWeights: " . $e->getMessage());
+            respond([
+                "success" => false,
+                "error" => "Database error: " . $e->getMessage()
+            ]);
+        }
+        break;
+        
+    case 'insertProgramWeight':
+        try {
+            $routineId = validateRoutineId($input['routine_id'] ?? null);
+            $userId = validateUserId($input['user_id'] ?? null);
+            $exerciseId = validateRoutineId($input['exercise_id'] ?? null);
+            $reps = intval($input['reps'] ?? 0);
+            $weight = floatval($input['weight'] ?? 0.0);
+            $workoutDate = $input['workout_date'] ?? date('Y-m-d'); // Default to today if not provided
+            
+            error_log("Inserting program weight: routine=$routineId, exercise=$exerciseId, reps=$reps, weight=$weight, date=$workoutDate");
+            
+            // Insert new program weight with workout date
+            $insertStmt = $pdo->prepare("
+                INSERT INTO member_workout_exercise 
+                (member_program_workout_id, exercise_id, sets, reps, weight, workout_date)
+                VALUES (
+                    (SELECT id FROM member_program_workout WHERE member_program_hdr_id = :routine_id),
+                    :exercise_id, 1, :reps, :weight, :workout_date
+                )
+            ");
+            $insertStmt->bindParam(':routine_id', $routineId, PDO::PARAM_INT);
+            $insertStmt->bindParam(':exercise_id', $exerciseId, PDO::PARAM_INT);
+            $insertStmt->bindParam(':reps', $reps, PDO::PARAM_INT);
+            $insertStmt->bindParam(':weight', $weight, PDO::PARAM_STR);
+            $insertStmt->bindParam(':workout_date', $workoutDate, PDO::PARAM_STR);
+            $insertStmt->execute();
+            
+            $insertId = $pdo->lastInsertId();
+            error_log("Inserted program weight with ID: $insertId and date: $workoutDate");
+            
+            respond([
+                "success" => true,
+                "message" => "Program weight inserted successfully",
+                "insert_id" => $insertId,
+                "workout_date" => $workoutDate
+            ]);
+            
+        } catch (PDOException $e) {
+            error_log("Database error in insertProgramWeight: " . $e->getMessage());
+            respond([
+                "success" => false,
+                "error" => "Database error: " . $e->getMessage()
+            ]);
+        }
+        break;
+        
+    case 'getWorkoutHistory':
+        try {
+            $routineId = validateRoutineId($input['routine_id'] ?? null);
+            $userId = validateUserId($input['user_id'] ?? null);
+            $exerciseId = validateRoutineId($input['exercise_id'] ?? null);
+            
+            error_log("Getting workout history for routine: $routineId, exercise: $exerciseId, user: $userId");
+            
+            // Get workout history for this exercise
+            $historyStmt = $pdo->prepare("
+                SELECT 
+                    mwe.workout_date,
+                    mwe.reps,
+                    mwe.weight,
+                    mwe.sets,
+                    e.exercise_name
+                FROM member_workout_exercise mwe
+                JOIN exercise e ON mwe.exercise_id = e.id
+                WHERE mwe.member_program_workout_id = (
+                    SELECT id FROM member_program_workout 
+                    WHERE member_program_hdr_id = :routine_id
+                ) AND mwe.exercise_id = :exercise_id
+                AND mwe.workout_date IS NOT NULL
+                ORDER BY mwe.workout_date DESC, mwe.id DESC
+            ");
+            $historyStmt->bindParam(':routine_id', $routineId, PDO::PARAM_INT);
+            $historyStmt->bindParam(':exercise_id', $exerciseId, PDO::PARAM_INT);
+            $historyStmt->execute();
+            
+            $history = $historyStmt->fetchAll(PDO::FETCH_ASSOC);
+            error_log("Found " . count($history) . " workout history records");
+            
+            respond([
+                "success" => true,
+                "workout_history" => $history,
+                "exercise_name" => $history[0]['exercise_name'] ?? 'Unknown Exercise'
+            ]);
+            
+        } catch (PDOException $e) {
+            error_log("Database error in getWorkoutHistory: " . $e->getMessage());
             respond([
                 "success" => false,
                 "error" => "Database error: " . $e->getMessage()

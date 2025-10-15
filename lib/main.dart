@@ -3,7 +3,12 @@ import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 import './User/services/auth_service.dart';
+import './debug_data_check.dart';
+import './restore_workout_data.dart';
+import './force_restore_data.dart';
 
 // Screens
 import 'login_screen.dart';
@@ -33,6 +38,15 @@ void main() async {
   
   // FIXED: Ensure user_id is stored as integer in SharedPreferences
   await _fixUserIdStorage();
+  
+  // Test weights debug
+  await _testWeightsDebug();
+  
+  // Check all your data
+  await DebugDataCheck.checkAllData();
+  
+  // Force restore all your data
+  await ForceRestoreData.forceRestoreAllData();
   
   runApp(MyApp());
 }
@@ -185,10 +199,11 @@ class _AuthWrapperState extends State<AuthWrapper> {
     try {
       print('🔍 AuthWrapper: Checking authentication status...');
       
-      // Ensure AuthService is initialized
+      // Ensure AuthService is initializedr
       if (!AuthService.isInitialized) {
         print('🔄 AuthService not initialized, initializing...');
         await AuthService.initialize();
+        
       }
       
       // If user is logged in, refresh their data from server
@@ -281,10 +296,18 @@ class _AuthWrapperState extends State<AuthWrapper> {
                 'assets/images/gym.logo.png',
                 height: 80,
                 errorBuilder: (context, error, stackTrace) {
-                  return Icon(
-                    Icons.fitness_center,
-                    size: 80,
-                    color: const Color(0xFFFF6B35),
+                  return Container(
+                    height: 80,
+                    width: 80,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFF6B35),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.fitness_center,
+                      size: 40,
+                      color: Colors.white,
+                    ),
                   );
                 },
               ),
@@ -328,6 +351,12 @@ class _AuthWrapperState extends State<AuthWrapper> {
   }
 
   Widget _getHomeScreen() {
+    // First check if user is logged in
+    if (!AuthService.isLoggedIn()) {
+      print('🔐 User not logged in, showing login screen');
+      return const LoginScreen();
+    }
+    
     print('🏠 Determining home screen for user type: ${AuthService.getUserType()}');
     
     if (AuthService.isCoach()) {
@@ -360,5 +389,31 @@ class FirstTimeSetupScreenRoute extends StatelessWidget {
       return FirstTimeSetupScreen(userId: userId);
     }
     return FirstTimeSetupScreen(); // For new registrations
+  }
+}
+
+// Debug function to test weights
+Future<void> _testWeightsDebug() async {
+  try {
+    print('🔍 Testing weights for user 61, exercise 23...');
+    
+    final response = await http.get(
+      Uri.parse('https://api.cnergy.site/debug_weights.php?user_id=61&exercise_id=23'),
+      headers: {"Content-Type": "application/json"},
+    );
+    
+    print('📊 Debug response status: ${response.statusCode}');
+    print('📋 Debug response body: ${response.body}');
+    
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      print('✅ Debug data received:');
+      print('  - Logged sets count: ${data['logged_sets_count']}');
+      print('  - Program weights count: ${data['program_weights_count']}');
+      print('  - Logged sets: ${json.encode(data['logged_sets'])}');
+      print('  - Program weights: ${json.encode(data['program_weights'])}');
+    }
+  } catch (e) {
+    print('💥 Error testing weights: $e');
   }
 }

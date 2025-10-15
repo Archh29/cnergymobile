@@ -9,6 +9,7 @@ import 'User/routine_page.dart';
 import 'User/home_page.dart';
 import './User/services/auth_service.dart';
 import './User/services/notification_service.dart';
+import './User/services/messages_service.dart';
 import './User/models/notification_model.dart';
 import './User/manage_subscriptions_page.dart';
 import './User/pages/subscription_history_page.dart';
@@ -29,6 +30,9 @@ class _UserDashboardState extends State<UserDashboard> with TickerProviderStateM
   bool _isLoadingNotifications = false;
   int _currentPage = 1;
   bool _hasMoreNotifications = true;
+  
+  // Message state
+  int _messageUnreadCount = 0;
   
   List<Widget> get _pages => [
      HomePage(onNavigateToQR: () {
@@ -81,6 +85,7 @@ class _UserDashboardState extends State<UserDashboard> with TickerProviderStateM
     _initializeAuth();
     _loadSelectedIndex();
     _loadNotifications();
+    _loadMessageUnreadCount();
     _fabAnimationController = AnimationController(
       duration: const Duration(milliseconds: 300),
       vsync: this,
@@ -892,7 +897,7 @@ class _UserDashboardState extends State<UserDashboard> with TickerProviderStateM
                     ),
                   ),
                   title: Text(
-                    'My Requests',
+                    'My Subscriptions',
                     style: GoogleFonts.poppins(
                       color: Colors.white,
                       fontWeight: FontWeight.w600,
@@ -900,7 +905,7 @@ class _UserDashboardState extends State<UserDashboard> with TickerProviderStateM
                     ),
                   ),
                   subtitle: Text(
-                    'View your subscription request history',
+                    'View your subscription history and status',
                     style: GoogleFonts.poppins(
                       color: Colors.grey[400],
                       fontSize: isSmallScreen ? 11 : 12,
@@ -958,12 +963,51 @@ class _UserDashboardState extends State<UserDashboard> with TickerProviderStateM
       return;
     }
 
+    // Navigate to messages and refresh dashboard when returning
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => MessagesPage(currentUserId: currentUserId),
       ),
-    );
+    ).then((_) {
+      // Refresh notifications and message count when returning from messages
+      print('🔄 Returning from messages - refreshing counts...');
+      // Add a small delay to ensure server has processed the read status
+      Future.delayed(Duration(milliseconds: 500), () {
+        _loadNotifications();
+        _loadMessageUnreadCount();
+      });
+    });
+  }
+
+  Future<void> _loadMessageUnreadCount() async {
+    print('🔄 Loading message unread count...');
+    if (!AuthService.isLoggedIn()) {
+      print('❌ User not logged in, skipping message unread count');
+      return;
+    }
+    
+    final currentUserId = AuthService.getCurrentUserId();
+    if (currentUserId == null) {
+      print('❌ No current user ID, skipping message unread count');
+      return;
+    }
+
+    print('📱 Getting conversations for user ID: $currentUserId');
+    try {
+      // Get conversations and calculate unread count from them
+      final conversations = await MessageService.getConversations(currentUserId);
+      final unreadCount = conversations.fold(0, (sum, conv) => sum + conv.unreadCount);
+      print('✅ Message unread count calculated from conversations: $unreadCount');
+      if (mounted) {
+        setState(() {
+          _messageUnreadCount = unreadCount;
+        });
+        print('✅ Message unread count updated in UI: $_messageUnreadCount');
+      }
+    } catch (e) {
+      print('❌ Error loading message unread count: $e');
+    }
   }
 
   @override
@@ -1214,10 +1258,39 @@ class _UserDashboardState extends State<UserDashboard> with TickerProviderStateM
           onPressed: _navigateToMessages, // Updated to use the new method
           backgroundColor: Colors.transparent,
           elevation: 0,
-          child: Icon(
-            Icons.chat_bubble_outline,
-            color: Colors.white,
-            size: isSmallScreen ? 20 : 24,
+          child: Stack(
+            children: [
+              Icon(
+                Icons.chat_bubble_outline,
+                color: Colors.white,
+                size: isSmallScreen ? 20 : 24,
+              ),
+              if (_messageUnreadCount > 0)
+                Positioned(
+                  right: 0,
+                  top: 0,
+                  child: Container(
+                    padding: EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      color: Colors.red,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    constraints: BoxConstraints(
+                      minWidth: 16,
+                      minHeight: 16,
+                    ),
+                    child: Text(
+                      _messageUnreadCount > 99 ? '99+' : _messageUnreadCount.toString(),
+                      style: GoogleFonts.poppins(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+            ],
           ),
         ),
       ),

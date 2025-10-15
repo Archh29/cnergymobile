@@ -29,11 +29,16 @@ class _CoachCreateRoutinePageState extends State<CoachCreateRoutinePage> {
     
   String selectedDifficulty = "Beginner";
   Color selectedColor = Color(0xFF96CEB4);
+  String selectedDay = "Monday";
   List<ExerciseModel> exercises = [];
   bool isLoading = false;
 
   final List<String> availableDifficulties = [
     "Beginner", "Intermediate", "Advanced"
+  ];
+  
+  final List<String> availableDays = [
+    "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"
   ];
     
   final List<Color> availableColors = [
@@ -50,9 +55,9 @@ class _CoachCreateRoutinePageState extends State<CoachCreateRoutinePage> {
     if (widget.isTemplate) {
       nameController.text = "My Workout Template";
     } else if (widget.selectedClient != null) {
-      nameController.text = "${widget.selectedClient!.fname}'s Routine";
+      nameController.text = "${widget.selectedClient!.fname}'s Program";
     } else {
-      nameController.text = "New Routine";
+      nameController.text = "New Program";
     }
   }
 
@@ -71,7 +76,7 @@ class _CoachCreateRoutinePageState extends State<CoachCreateRoutinePage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              widget.isTemplate ? 'Create Template' : 'Create Routine',
+              widget.isTemplate ? 'Create Template' : 'Create Program',
               style: GoogleFonts.poppins(
                 color: Colors.white,
                 fontSize: 18,
@@ -235,9 +240,9 @@ class _CoachCreateRoutinePageState extends State<CoachCreateRoutinePage> {
           SizedBox(height: 16),
                     
           _buildInputField(
-            'Routine Name *',
+            'Program Name *',
             nameController,
-            'Enter routine name',
+            'Enter program name',
           ),
           SizedBox(height: 16),
                     
@@ -453,6 +458,15 @@ class _CoachCreateRoutinePageState extends State<CoachCreateRoutinePage> {
             ),
           ),
           SizedBox(height: 16),
+          
+          // Day Selection
+          _buildDropdownField(
+            'Training Day',
+            selectedDay,
+            availableDays,
+            (value) => setState(() => selectedDay = value!),
+          ),
+          SizedBox(height: 16),
                     
           // Color Selection
           Text(
@@ -607,7 +621,7 @@ class _CoachCreateRoutinePageState extends State<CoachCreateRoutinePage> {
                 ),
               )
             : Text(
-                widget.isTemplate ? 'Create Template' : 'Create Routine for ${widget.selectedClient?.fname ?? 'Client'}',
+                widget.isTemplate ? 'Create Template' : 'Create Program for ${widget.selectedClient?.fname ?? 'Client'}',
                 style: GoogleFonts.poppins(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
@@ -685,7 +699,7 @@ class _CoachCreateRoutinePageState extends State<CoachCreateRoutinePage> {
   Future<void> _createRoutine() async {
     // Validation
     if (nameController.text.trim().isEmpty) {
-      _showError('Please enter a ${widget.isTemplate ? 'template' : 'routine'} name');
+      _showError('Please enter a ${widget.isTemplate ? 'template' : 'program'} name');
       return;
     }
     if (exercises.isEmpty) {
@@ -730,6 +744,7 @@ class _CoachCreateRoutinePageState extends State<CoachCreateRoutinePage> {
           color: selectedColor.value.toString(),
           tags: [],
           notes: notesController.text.trim(),
+          scheduledDays: [selectedDay],
         );
       }
 

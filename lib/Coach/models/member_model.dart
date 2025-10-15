@@ -143,7 +143,7 @@ class MemberModel {
     if (isPendingStaffApproval) return 'Pending staff approval';
     if (isPendingCoachApproval) return 'Pending coach approval';
     if (isRejected) return 'Application rejected';
-    return 'Status unknown';
+    return 'Active'; // Show Active instead of Status unknown when viewing messages
   }
 
   // New getters for subscription-related fields

@@ -104,8 +104,10 @@ class SubscriptionPlan {
   String getDurationText() {
     if (planName.toLowerCase().contains('member fee')) {
       return '1 Year';
+    } else if (planName.toLowerCase().contains('day pass')) {
+      return '1 Day';
     }
-    return durationMonths == 1 ? '1 Month' : '$durationMonths Months';
+    return durationMonths == 1 ? '1 Month' : durationMonths == 0 ? '1 Day' : '$durationMonths Months';
   }
 
   String getPlanTypeText() {
@@ -127,6 +129,15 @@ class SubscriptionPlan {
     } else {
       return unavailableReason ?? 'Not Available';
     }
+  }
+
+  String getDisplayName() {
+    if (planName.toLowerCase().contains('gym membership fee')) {
+      return 'Gym Membership';
+    } else if (planName.toLowerCase().contains('non-member')) {
+      return planName.replaceAll('Non-Member', 'Standard');
+    }
+    return planName;
   }
 }
 
@@ -254,7 +265,7 @@ class UserSubscription {
   String getFormattedDate(String dateString) {
     try {
       final date = DateTime.parse(dateString);
-      return '${date.day}/${date.month}/${date.year}';
+      return '${date.month.toString().padLeft(2, '0')}/${date.day.toString().padLeft(2, '0')}/${date.year}';
     } catch (e) {
       return dateString;
     }
@@ -267,7 +278,11 @@ class UserSubscription {
     if (createdAt == null) return null;
     try {
       final date = DateTime.parse(createdAt!);
-      return '${date.day}/${date.month}/${date.year} ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
+      final hour = date.hour;
+      final minute = date.minute;
+      final period = hour >= 12 ? 'PM' : 'AM';
+      final displayHour = hour > 12 ? hour - 12 : (hour == 0 ? 12 : hour);
+      return '${date.month.toString().padLeft(2, '0')}/${date.day.toString().padLeft(2, '0')}/${date.year} $displayHour:${minute.toString().padLeft(2, '0')} $period';
     } catch (e) {
       return createdAt;
     }

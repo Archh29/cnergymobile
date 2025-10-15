@@ -3030,7 +3030,11 @@ class _CoachProgressPageState extends State<CoachProgressPage>
     if (dateTimeString == null) return 'Unknown';
     try {
       final dateTime = DateTime.parse(dateTimeString);
-      return '${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
+      final hour = dateTime.hour;
+      final minute = dateTime.minute;
+      final period = hour >= 12 ? 'PM' : 'AM';
+      final displayHour = hour > 12 ? hour - 12 : (hour == 0 ? 12 : hour);
+      return '$displayHour:${minute.toString().padLeft(2, '0')} $period';
     } catch (e) {
       return 'Invalid Time';
     }

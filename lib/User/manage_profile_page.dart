@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'dart:ui';
 import 'services/profile_service.dart';
@@ -21,6 +22,12 @@ class _ManageProfilePageState extends State<ManageProfilePage> with TickerProvid
       'icon': Icons.edit,
       'color': Color(0xFF4ECDC4),
       'route': 'EditProfilePage',
+    },
+    {
+      'title': 'Manage Height',
+      'icon': Icons.height_rounded,
+      'color': Color(0xFF6C5CE7),
+      'route': 'ManageHeightPage',
     },
     {
       'title': 'Change Password',
@@ -77,17 +84,6 @@ class _ManageProfilePageState extends State<ManageProfilePage> with TickerProvid
           onPressed: () => Navigator.pop(context),
         ),
         actions: [
-          IconButton(
-            icon: Container(
-              padding: EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Color(0xFF1A1A1A),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(Icons.logout, color: Colors.white, size: 20),
-            ),
-            onPressed: () => _showLogoutDialog(),
-          ),
           SizedBox(width: 16),
         ],
       ),
@@ -115,10 +111,16 @@ class _ManageProfilePageState extends State<ManageProfilePage> with TickerProvid
                       title: setting['title'],
                       icon: setting['icon'],
                       iconColor: setting['color'],
-                      onTap: () => _navigateWithTransition(
-                        context, 
-                        SettingsDetailPage(title: setting['title'], color: setting['color']),
-                      ),
+                      onTap: () {
+                        if (setting['route'] == 'ManageHeightPage') {
+                          _showHeightManagementDialog();
+                        } else {
+                          _navigateWithTransition(
+                            context, 
+                            SettingsDetailPage(title: setting['title'], color: setting['color']),
+                          );
+                        }
+                      },
                     );
                   },
                 ),
@@ -181,15 +183,33 @@ class _ManageProfilePageState extends State<ManageProfilePage> with TickerProvid
     bool isDestructive = false,
   }) {
     return Container(
-      margin: EdgeInsets.only(bottom: 12),
+      margin: EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
-        color: Color(0xFF1A1A1A),
-        borderRadius: BorderRadius.circular(16),
+        gradient: LinearGradient(
+          colors: [
+            Color(0xFF2A2A2A),
+            Color(0xFF1F1F1F),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: iconColor.withOpacity(0.2),
+          width: 1,
+        ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.2),
+            color: Colors.black.withOpacity(0.1),
             blurRadius: 8,
+            spreadRadius: 0,
             offset: Offset(0, 4),
+          ),
+          BoxShadow(
+            color: iconColor.withOpacity(0.05),
+            blurRadius: 16,
+            spreadRadius: 0,
+            offset: Offset(0, 0),
           ),
         ],
       ),
@@ -197,34 +217,83 @@ class _ManageProfilePageState extends State<ManageProfilePage> with TickerProvid
         color: Colors.transparent,
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(20),
           child: Padding(
-            padding: EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            padding: EdgeInsets.all(20),
             child: Row(
               children: [
                 Container(
-                  padding: EdgeInsets.all(10),
+                  width: 56,
+                  height: 56,
                   decoration: BoxDecoration(
-                    color: iconColor.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
+                    gradient: LinearGradient(
+                      colors: [
+                        iconColor.withOpacity(0.3),
+                        iconColor.withOpacity(0.1),
+                      ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: iconColor.withOpacity(0.3),
+                      width: 1,
+                    ),
                   ),
-                  child: Icon(icon, color: iconColor, size: 20),
+                  child: Icon(
+                    icon, 
+                    color: iconColor, 
+                    size: 24,
+                  ),
                 ),
                 SizedBox(width: 16),
                 Expanded(
-                  child: Text(
-                    title,
-                    style: GoogleFonts.poppins(
-                      color: isDestructive ? Colors.red : Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: GoogleFonts.poppins(
+                          color: isDestructive ? Colors.red : Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      SizedBox(height: 4),
+                      Text(
+                        _getOptionDescription(title),
+                        style: GoogleFonts.poppins(
+                          color: Colors.grey[400],
+                          fontSize: 14,
+                          fontWeight: FontWeight.w400,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                trailing ?? Icon(
-                  Icons.arrow_forward_ios,
-                  color: Colors.grey[600],
-                  size: 16,
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        iconColor.withOpacity(0.2),
+                        iconColor.withOpacity(0.1),
+                      ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: iconColor.withOpacity(0.3),
+                      width: 1,
+                    ),
+                  ),
+                  child: Icon(
+                    Icons.arrow_forward_ios_rounded,
+                    color: iconColor,
+                    size: 16,
+                  ),
                 ),
               ],
             ),
@@ -234,6 +303,18 @@ class _ManageProfilePageState extends State<ManageProfilePage> with TickerProvid
     );
   }
 
+  String _getOptionDescription(String title) {
+    switch (title) {
+      case 'Edit Profile':
+        return 'Update your personal information';
+      case 'Manage Height':
+        return 'Update your height for accurate BMI';
+      case 'Change Password':
+        return 'Secure your account with new password';
+      default:
+        return 'Manage your profile settings';
+    }
+  }
 
   void _showLogoutDialog() {
     showDialog(
@@ -368,6 +449,553 @@ class _ManageProfilePageState extends State<ManageProfilePage> with TickerProvid
         },
       ),
     );
+  }
+
+  void _showHeightManagementDialog() {
+    final TextEditingController heightController = TextEditingController();
+    double? currentHeight;
+
+    // Load current height
+    _loadCurrentHeight().then((height) {
+      currentHeight = height;
+      if (height != null) {
+        heightController.text = height.toStringAsFixed(0);
+      }
+    });
+
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return Dialog(
+              backgroundColor: Colors.transparent,
+              child: Container(
+                width: MediaQuery.of(context).size.width * 0.9,
+                decoration: BoxDecoration(
+                  color: Color(0xFF1A1A1A),
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: Color(0xFF6C5CE7).withOpacity(0.3), width: 1),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.3),
+                      blurRadius: 20,
+                      offset: Offset(0, 10),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Header
+                    Container(
+                      padding: EdgeInsets.all(24),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            Color(0xFF6C5CE7).withOpacity(0.15),
+                            Color(0xFF5A4FCF).withOpacity(0.1),
+                          ],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.only(
+                          topLeft: Radius.circular(24),
+                          topRight: Radius.circular(24),
+                        ),
+                        border: Border(
+                          bottom: BorderSide(
+                            color: Color(0xFF6C5CE7).withOpacity(0.2),
+                            width: 1,
+                          ),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 48,
+                            height: 48,
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [
+                                  Color(0xFF6C5CE7),
+                                  Color(0xFF5A4FCF),
+                                ],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                              ),
+                              borderRadius: BorderRadius.circular(16),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Color(0xFF6C5CE7).withOpacity(0.3),
+                                  blurRadius: 12,
+                                  offset: Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            child: Icon(
+                              Icons.height_rounded,
+                              color: Colors.white,
+                              size: 24,
+                            ),
+                          ),
+                          SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Manage Height',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                Text(
+                                  'Update your height for accurate BMI calculations',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 14,
+                                    color: Colors.grey[300],
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Container(
+                            width: 36,
+                            height: 36,
+                            decoration: BoxDecoration(
+                              color: Colors.grey[800]!.withOpacity(0.5),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: Colors.grey[600]!.withOpacity(0.3),
+                                width: 1,
+                              ),
+                            ),
+                            child: IconButton(
+                              onPressed: () => Navigator.pop(context),
+                              icon: Icon(
+                                Icons.close_rounded,
+                                color: Colors.grey[300],
+                                size: 18,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    
+                    // Content
+                    Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Column(
+                        children: [
+                          // Current Height Display
+                          if (currentHeight != null) ...[
+                            Container(
+                              width: double.infinity,
+                              padding: EdgeInsets.all(20),
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [
+                                    Color(0xFF6C5CE7).withOpacity(0.15),
+                                    Color(0xFF5A4FCF).withOpacity(0.1),
+                                  ],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                ),
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(
+                                  color: Color(0xFF6C5CE7).withOpacity(0.3),
+                                  width: 1,
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Color(0xFF6C5CE7).withOpacity(0.1),
+                                    blurRadius: 12,
+                                    offset: Offset(0, 4),
+                                  ),
+                                ],
+                              ),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    width: 48,
+                                    height: 48,
+                                    decoration: BoxDecoration(
+                                      gradient: LinearGradient(
+                                        colors: [
+                                          Color(0xFF6C5CE7).withOpacity(0.3),
+                                          Color(0xFF5A4FCF).withOpacity(0.2),
+                                        ],
+                                        begin: Alignment.topLeft,
+                                        end: Alignment.bottomRight,
+                                      ),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: Icon(
+                                      Icons.height_rounded,
+                                      color: Color(0xFF6C5CE7),
+                                      size: 24,
+                                    ),
+                                  ),
+                                  SizedBox(width: 16),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'Current Height',
+                                          style: GoogleFonts.poppins(
+                                            fontSize: 14,
+                                            color: Colors.grey[300],
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                        SizedBox(height: 4),
+                                        Text(
+                                          '${currentHeight!.toStringAsFixed(0)} cm',
+                                          style: GoogleFonts.poppins(
+                                            fontSize: 24,
+                                            fontWeight: FontWeight.bold,
+                                            color: Color(0xFF6C5CE7),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            SizedBox(height: 24),
+                          ],
+                          
+                          // Height Input
+                          Container(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [
+                                  Color(0xFF2A2A2A),
+                                  Color(0xFF1F1F1F),
+                                ],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                              ),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: Color(0xFF6C5CE7).withOpacity(0.3),
+                                width: 1,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.1),
+                                  blurRadius: 8,
+                                  offset: Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            child: TextField(
+                              controller: heightController,
+                              keyboardType: TextInputType.number,
+                              inputFormatters: [
+                                FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+                              ],
+                              onChanged: (value) {
+                                // Remove any non-numeric characters in real-time
+                                if (value.toLowerCase().contains('cm') || 
+                                    value.toLowerCase().contains('m') ||
+                                    !RegExp(r'^[0-9.]*$').hasMatch(value)) {
+                                  final cleanValue = value.replaceAll(RegExp(r'[^0-9.]'), '');
+                                  heightController.value = heightController.value.copyWith(
+                                    text: cleanValue,
+                                    selection: TextSelection.collapsed(offset: cleanValue.length),
+                                  );
+                                }
+                              },
+                              style: GoogleFonts.poppins(
+                                fontSize: 16,
+                                color: Colors.white,
+                                fontWeight: FontWeight.w500,
+                              ),
+                              decoration: InputDecoration(
+                                labelText: 'Height',
+                                labelStyle: GoogleFonts.poppins(
+                                  color: Colors.grey[300],
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                                hintText: 'e.g., 175',
+                                hintStyle: GoogleFonts.poppins(
+                                  color: Colors.grey[500],
+                                  fontSize: 16,
+                                ),
+                                prefixIcon: Container(
+                                  width: 48,
+                                  height: 48,
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      colors: [
+                                        Color(0xFF6C5CE7).withOpacity(0.3),
+                                        Color(0xFF5A4FCF).withOpacity(0.1),
+                                      ],
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                    ),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Icon(
+                                    Icons.height_rounded,
+                                    color: Color(0xFF6C5CE7),
+                                    size: 20,
+                                  ),
+                                ),
+                                border: InputBorder.none,
+                                contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                                filled: true,
+                                fillColor: Colors.transparent,
+                                floatingLabelBehavior: FloatingLabelBehavior.never,
+                                suffixText: 'cm',
+                                suffixStyle: GoogleFonts.poppins(
+                                  color: Colors.grey[400],
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          ),
+                          SizedBox(height: 20),
+                          
+                          // Height Guidance
+                          Container(
+                            padding: EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: Colors.blue.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: Colors.blue.withOpacity(0.3),
+                                width: 1,
+                              ),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Icon(
+                                      Icons.info_outline,
+                                      color: Colors.blue,
+                                      size: 20,
+                                    ),
+                                    SizedBox(width: 8),
+                                    Text(
+                                      'How to measure your height:',
+                                      style: GoogleFonts.poppins(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.blue,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                SizedBox(height: 8),
+                                Text(
+                                  '• Stand straight against a wall\n• Use a ruler or measuring tape\n• Measure from floor to top of head\n• Enter only the number (cm is automatic)\n• Example: 175 (not 1.75 or 175 cm)',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 13,
+                                    color: Colors.grey[300],
+                                    height: 1.4,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          SizedBox(height: 24),
+                          
+                          // Action Buttons
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Container(
+                                  height: 48,
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey[800],
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: Colors.grey[600]!,
+                                      width: 1,
+                                    ),
+                                  ),
+                                  child: TextButton(
+                                    onPressed: () => Navigator.pop(context),
+                                    child: Text(
+                                      'Cancel',
+                                      style: GoogleFonts.poppins(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.grey[300],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              SizedBox(width: 12),
+                              Expanded(
+                                child: Container(
+                                  height: 48,
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      colors: [
+                                        Color(0xFF6C5CE7),
+                                        Color(0xFF5A4FCF),
+                                      ],
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                    ),
+                                    borderRadius: BorderRadius.circular(12),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Color(0xFF6C5CE7).withOpacity(0.3),
+                                        blurRadius: 8,
+                                        offset: Offset(0, 4),
+                                      ),
+                                    ],
+                                  ),
+                                  child: TextButton(
+                                    onPressed: () => _saveHeight(heightController.text),
+                                    child: Text(
+                                      'Save Height',
+                                      style: GoogleFonts.poppins(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<double?> _loadCurrentHeight() async {
+    try {
+      final profileData = await ProfileService.getProfile();
+      print('Load height - Profile data: $profileData');
+      
+      if (profileData != null && profileData.isNotEmpty) {
+        final heightStr = profileData['height_cm']?.toString();
+        print('Load height - Height string: $heightStr');
+        final height = heightStr != null ? double.tryParse(heightStr) : null;
+        print('Load height - Parsed height: $height');
+        return height;
+      }
+      print('Load height - No data found');
+      return null;
+    } catch (e) {
+      print('Error loading current height: $e');
+      return null;
+    }
+  }
+
+  void _saveHeight(String heightText) async {
+    if (heightText.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Please enter your height'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    // Check if user entered "cm" or other text
+    if (heightText.toLowerCase().contains('cm') || 
+        heightText.toLowerCase().contains('m') ||
+        !RegExp(r'^[0-9.]+$').hasMatch(heightText.trim())) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Please enter only numbers (e.g., 175). "cm" is added automatically.'),
+          backgroundColor: Colors.orange,
+          duration: Duration(seconds: 4),
+        ),
+      );
+      return;
+    }
+
+    final height = double.tryParse(heightText.trim());
+    if (height == null || height <= 0 || height > 300) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Please enter a valid height between 1-300 cm'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    try {
+      // First get current profile data
+      final profileData = await ProfileService.getProfile();
+      print('Save height - Profile data: $profileData');
+      
+      if (profileData == null || profileData.isEmpty) {
+        throw Exception('No profile data found');
+      }
+      
+      // Update profile with new height, keeping all other existing values
+      final updateResult = await ProfileService.updateProfile(
+        fname: profileData['fname'] ?? '',
+        mname: profileData['mname'] ?? '',
+        lname: profileData['lname'] ?? '',
+        email: profileData['email'] ?? '',
+        bday: profileData['bday'] ?? '',
+        genderId: profileData['gender_id']?.toString() ?? '1',
+        fitnessLevel: profileData['fitness_level']?.toLowerCase() ?? 'beginner',
+        heightCm: height.toString(),
+        weightKg: profileData['weight_kg']?.toString() ?? '70',
+        targetWeight: profileData['target_weight']?.toString() ?? '70',
+        bodyFat: profileData['body_fat']?.toString() ?? '15',
+        activityLevel: profileData['activity_level']?.toLowerCase() ?? 'moderate',
+        workoutDaysPerWeek: profileData['workout_days_per_week']?.toString() ?? '3',
+        equipmentAccess: profileData['equipment_access'] ?? 'home',
+      );
+      
+      print('Save height - Update result: $updateResult');
+      
+      if (updateResult['success'] == true) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Height updated successfully! BMI will be recalculated.'),
+            backgroundColor: Color(0xFF6C5CE7),
+          ),
+        );
+      } else {
+        throw Exception('Update failed: ${updateResult['message'] ?? 'Unknown error'}');
+      }
+    } catch (e) {
+      print('Error updating height: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to update height: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 }
 
@@ -795,39 +1423,6 @@ SizedBox(height: 40),
         _buildInputField('Email Address', _emailController, Icons.email_outlined),
         SizedBox(height: 16),
         _buildInputField('Birthday (YYYY-MM-DD)', _bdayController, Icons.cake_outlined),
-        SizedBox(height: 16),
-        _buildDropdownField('Gender', _selectedGenderId, _genders.map((g) => {'value': g['id'].toString(), 'label': g['type'].toString()}).toList(), (value) {
-          setState(() => _selectedGenderId = value);
-        }),
-        SizedBox(height: 16),
-        _buildInputField('Height (cm)', _heightController, Icons.height),
-        SizedBox(height: 16),
-        _buildInputField('Weight (kg)', _weightController, Icons.monitor_weight_outlined),
-        SizedBox(height: 16),
-        _buildInputField('Target Weight (kg)', _targetWeightController, Icons.flag_outlined),
-        SizedBox(height: 16),
-        _buildInputField('Body Fat %', _bodyFatController, Icons.analytics_outlined),
-        SizedBox(height: 16),
-        _buildDropdownField('Fitness Level', _selectedFitnessLevel, [
-          {'value': 'Beginner', 'label': 'Beginner'},
-          {'value': 'Intermediate', 'label': 'Intermediate'},
-          {'value': 'Advanced', 'label': 'Advanced'},
-        ], (value) {
-          setState(() => _selectedFitnessLevel = value);
-        }),
-        SizedBox(height: 16),
-        _buildDropdownField('Activity Level', _selectedActivityLevel, [
-          {'value': 'Sedentary', 'label': 'Sedentary'},
-          {'value': 'Light', 'label': 'Light'},
-          {'value': 'Moderate', 'label': 'Moderate'},
-          {'value': 'Active', 'label': 'Active'},
-        ], (value) {
-          setState(() => _selectedActivityLevel = value);
-        }),
-        SizedBox(height: 16),
-        _buildInputField('Workout Days per Week', _workoutDaysController, Icons.calendar_today),
-        SizedBox(height: 16),
-        _buildInputField('Equipment Access', _equipmentController, Icons.fitness_center, maxLines: 3),
       ],
     );
   }
@@ -878,32 +1473,66 @@ SizedBox(height: 40),
         Text(
           label,
           style: GoogleFonts.poppins(
-            color: Colors.grey[400],
+            color: Colors.grey[300],
             fontSize: 14,
+            fontWeight: FontWeight.w500,
           ),
         ),
         SizedBox(height: 8),
         Container(
           decoration: BoxDecoration(
-            color: Color(0xFF1A1A1A),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Color(0xFF2A2A2A)),
+            gradient: LinearGradient(
+              colors: [
+                Color(0xFF2A2A2A),
+                Color(0xFF1F1F1F),
+              ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: widget.color.withOpacity(0.3),
+              width: 1,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 8,
+                offset: Offset(0, 4),
+              ),
+            ],
           ),
           child: DropdownButtonFormField<String>(
             value: value,
             onChanged: onChanged,
-            dropdownColor: Color(0xFF1A1A1A),
-            style: GoogleFonts.poppins(color: Colors.white),
+            dropdownColor: Color(0xFF2A2A2A),
+            style: GoogleFonts.poppins(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.w500,
+            ),
             decoration: InputDecoration(
               border: InputBorder.none,
               contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 16),
               hintText: 'Select $label',
-              hintStyle: GoogleFonts.poppins(color: Colors.grey[600]),
+              hintStyle: GoogleFonts.poppins(
+                color: Colors.grey[500],
+                fontSize: 16,
+              ),
+              filled: true,
+              fillColor: Colors.transparent,
             ),
             items: options.map((option) {
               return DropdownMenuItem<String>(
                 value: option['value'],
-                child: Text(option['label']!),
+                child: Text(
+                  option['label']!,
+                  style: GoogleFonts.poppins(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
               );
             }).toList(),
           ),
@@ -926,28 +1555,74 @@ SizedBox(height: 40),
         Text(
           label,
           style: GoogleFonts.poppins(
-            color: Colors.grey[400],
+            color: Colors.grey[300],
             fontSize: 14,
+            fontWeight: FontWeight.w500,
           ),
         ),
         SizedBox(height: 8),
         Container(
           decoration: BoxDecoration(
-            color: Color(0xFF1A1A1A),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Color(0xFF2A2A2A)),
+            gradient: LinearGradient(
+              colors: [
+                Color(0xFF2A2A2A),
+                Color(0xFF1F1F1F),
+              ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: widget.color.withOpacity(0.3),
+              width: 1,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 8,
+                offset: Offset(0, 4),
+              ),
+            ],
           ),
           child: TextField(
             controller: controller,
             obscureText: isPassword,
             maxLines: maxLines,
-            style: GoogleFonts.poppins(color: Colors.white),
+            style: GoogleFonts.poppins(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.w500,
+            ),
             decoration: InputDecoration(
-              prefixIcon: Icon(icon, color: widget.color),
+              prefixIcon: Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      widget.color.withOpacity(0.3),
+                      widget.color.withOpacity(0.1),
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  icon, 
+                  color: widget.color,
+                  size: 20,
+                ),
+              ),
               border: InputBorder.none,
               contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 16),
               hintText: 'Enter $label',
-              hintStyle: GoogleFonts.poppins(color: Colors.grey[600]),
+              hintStyle: GoogleFonts.poppins(
+                color: Colors.grey[500],
+                fontSize: 16,
+              ),
+              filled: true,
+              fillColor: Colors.transparent,
             ),
           ),
         ),

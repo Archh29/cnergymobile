@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:intl/intl.dart';
 import 'models/member_model.dart';
 import 'models/message_model.dart';
 import 'services/message_service.dart';
@@ -21,18 +23,68 @@ class _CoachMessagesPageState extends State<CoachMessagesPage> {
   bool isLoading = true;
   bool isSending = false;
   int? currentUserId;
+  Timer? _messageTimer;
 
   @override
   void initState() {
     super.initState();
-    _loadCurrentUser();
+    print('🔄 CoachMessagesPage initState called - Loading messages automatically');
+    _initializeMessages();
+  }
+
+  Future<void> _initializeMessages() async {
+    await _loadCurrentUser();
     if (widget.selectedMember != null) {
+      // Automatically trigger refresh when opening messages
+      print('🔄 Auto-refreshing messages on open');
+      await _loadMessages();
+      
+      // Start automatic message polling every 3 seconds
+      _startMessagePolling();
+    }
+  }
+
+  void _startMessagePolling() {
+    _messageTimer = Timer.periodic(Duration(seconds: 1), (timer) {
+      if (mounted && widget.selectedMember != null) {
+        print('🔄 Auto-polling for new messages');
+        _loadMessages(isPolling: true);
+      }
+    });
+  }
+
+  void _stopMessagePolling() {
+    _messageTimer?.cancel();
+    _messageTimer = null;
+  }
+
+  @override
+  void didUpdateWidget(CoachMessagesPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Reload messages if the selected member changed
+    if (oldWidget.selectedMember?.id != widget.selectedMember?.id) {
+      print('🔄 Selected member changed, restarting message polling');
+      _stopMessagePolling();
+      if (widget.selectedMember != null) {
+        _loadMessages();
+        _startMessagePolling();
+      }
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Force refresh when the page becomes visible
+    if (widget.selectedMember != null) {
+      print('🔄 Page became visible, force refreshing messages');
       _loadMessages();
     }
   }
 
   @override
   void dispose() {
+    _stopMessagePolling();
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -45,28 +97,78 @@ class _CoachMessagesPageState extends State<CoachMessagesPage> {
     });
   }
 
-  Future<void> _loadMessages() async {
-    if (currentUserId == null || widget.selectedMember == null) return;
+  Future<void> _loadMessages({bool isPolling = false}) async {
+    if (widget.selectedMember == null) {
+      print('❌ No selected member, cannot load messages');
+      setState(() => isLoading = false);
+      return;
+    }
 
-    setState(() => isLoading = true);
+    // If currentUserId is null, try to load it first
+    if (currentUserId == null) {
+      await _loadCurrentUser();
+      if (currentUserId == null) {
+        print('❌ No current user ID, cannot load messages');
+        setState(() => isLoading = false);
+        return;
+      }
+    }
+
+    if (!isPolling) {
+      print('🔄 Loading messages for member: ${widget.selectedMember!.fullName}');
+      setState(() => isLoading = true);
+    }
 
     try {
+      // Add timeout to prevent infinite loading
       final loadedMessages = await MessageService.getMessages(
         conversationId: 0, // Virtual conversation
         userId: currentUserId!,
         otherUserId: widget.selectedMember!.id,
+      ).timeout(
+        Duration(seconds: 5), // 5 second timeout
+        onTimeout: () {
+          print('⏰ Message loading timed out, returning empty list');
+          return <Message>[];
+        },
       );
 
-      setState(() {
-        messages = loadedMessages;
-        isLoading = false;
-      });
+      // Always update messages to ensure real-time updates
+      bool hasChanges = loadedMessages.length != messages.length;
+      
+      if (!hasChanges && loadedMessages.isNotEmpty && messages.isNotEmpty) {
+        // Check if any message content changed
+        for (int i = 0; i < loadedMessages.length && i < messages.length; i++) {
+          if (loadedMessages[i].id != messages[i].id || 
+              loadedMessages[i].message != messages[i].message) {
+            hasChanges = true;
+            break;
+          }
+        }
+      }
 
-      _scrollToBottom();
+      if (hasChanges) {
+        print('✅ Loaded ${loadedMessages.length} messages (${isPolling ? 'polling' : 'initial'}) - Changes detected');
+        setState(() {
+          messages = loadedMessages;
+          isLoading = false;
+        });
+
+        // Always scroll to bottom when messages change (both initial and polling)
+        _scrollToBottom();
+      } else if (isPolling) {
+        print('🔄 No message changes detected during polling');
+      }
     } catch (e) {
-      print('Error loading messages: $e');
-      setState(() => isLoading = false);
-      _showErrorSnackBar('Failed to load messages');
+      print('❌ Error loading messages: $e');
+      if (!isPolling) {
+        setState(() {
+          messages = []; // Set empty messages instead of staying in loading state
+          isLoading = false;
+        });
+        // Don't show error snackbar, just load empty state
+        print('📭 Showing empty messages state');
+      }
     }
   }
 
@@ -81,22 +183,52 @@ class _CoachMessagesPageState extends State<CoachMessagesPage> {
 
     setState(() => isSending = true);
 
+    // Create a temporary message immediately for instant UI update
+    final tempMessage = Message(
+      id: DateTime.now().millisecondsSinceEpoch, // Temporary ID
+      senderId: currentUserId!,
+      receiverId: widget.selectedMember!.id,
+      message: messageText,
+      timestamp: DateTime.now(),
+      isRead: false, // Add required isRead parameter
+    );
+
+    // Add message immediately to UI
+    setState(() {
+      messages.add(tempMessage);
+      isSending = false;
+    });
+
+    _scrollToBottom();
+
     try {
+      // Send to server in background
       final newMessage = await MessageService.sendMessage(
         senderId: currentUserId!,
         receiverId: widget.selectedMember!.id,
         message: messageText,
       );
 
+      // Update with real message from server
       setState(() {
-        messages.add(newMessage);
-        isSending = false;
+        final index = messages.indexWhere((m) => m.id == tempMessage.id);
+        if (index != -1) {
+          messages[index] = newMessage;
+        }
       });
 
-      _scrollToBottom();
+      // Trigger immediate refresh to get any new messages
+      Future.delayed(Duration(milliseconds: 500), () {
+        if (mounted) {
+          _loadMessages(isPolling: true);
+        }
+      });
     } catch (e) {
       print('Error sending message: $e');
-      setState(() => isSending = false);
+      // Remove the temporary message if sending failed
+      setState(() {
+        messages.removeWhere((m) => m.id == tempMessage.id);
+      });
       _showErrorSnackBar('Failed to send message');
       
       // Restore the message text
@@ -152,28 +284,62 @@ class _CoachMessagesPageState extends State<CoachMessagesPage> {
 
   PreferredSizeWidget _buildAppBar() {
     return AppBar(
-      backgroundColor: Color(0xFF1A1A1A),
+      backgroundColor: Color(0xFF0F0F0F),
       elevation: 0,
-      leading: IconButton(
-        icon: Icon(Icons.arrow_back, color: Colors.white),
-        onPressed: () => Navigator.pop(context),
+      flexibleSpace: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFF1A1A1A), Color(0xFF0F0F0F)],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+          ),
+        ),
+      ),
+      leading: Container(
+        margin: EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: IconButton(
+          icon: Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
+          onPressed: () => Navigator.pop(context),
+        ),
       ),
       title: widget.selectedMember != null
           ? Row(
               children: [
-                CircleAvatar(
-                  radius: 20,
-                  backgroundColor: Color(0xFF4ECDC4).withOpacity(0.2),
-                  child: Text(
-                    widget.selectedMember!.initials,
-                    style: GoogleFonts.poppins(
-                      color: Color(0xFF4ECDC4),
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [Color(0xFF4ECDC4), Color(0xFF44A08D)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Color(0xFF4ECDC4).withOpacity(0.3),
+                        blurRadius: 8,
+                        offset: Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Center(
+                    child: Text(
+                      widget.selectedMember!.initials,
+                      style: GoogleFonts.poppins(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.5,
+                      ),
                     ),
                   ),
                 ),
-                SizedBox(width: 12),
+                SizedBox(width: 16),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -182,18 +348,46 @@ class _CoachMessagesPageState extends State<CoachMessagesPage> {
                         widget.selectedMember!.fullName,
                         style: GoogleFonts.poppins(
                           color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 0.3,
                         ),
                       ),
-                      Text(
-                        widget.selectedMember!.approvalStatusMessage,
-                        style: GoogleFonts.poppins(
-                          color: widget.selectedMember!.isFullyApproved 
-                              ? Colors.green[400] 
-                              : Colors.orange[400],
-                          fontSize: 12,
-                        ),
+                      SizedBox(height: 2),
+                      Row(
+                        children: [
+                          Container(
+                            width: 8,
+                            height: 8,
+                            decoration: BoxDecoration(
+                              color: widget.selectedMember!.hasActiveSubscription 
+                                  ? Colors.green[400] 
+                                  : Colors.grey[400],
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: (widget.selectedMember!.hasActiveSubscription 
+                                      ? Colors.green 
+                                      : Colors.grey).withOpacity(0.5),
+                                  blurRadius: 4,
+                                  offset: Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                          ),
+                          SizedBox(width: 6),
+                          Text(
+                            widget.selectedMember!.hasActiveSubscription ? 'ACTIVE' : 'INACTIVE',
+                            style: GoogleFonts.poppins(
+                              color: widget.selectedMember!.hasActiveSubscription 
+                                  ? Colors.green[400] 
+                                  : Colors.grey[400],
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -208,13 +402,7 @@ class _CoachMessagesPageState extends State<CoachMessagesPage> {
                 fontWeight: FontWeight.w600,
               ),
             ),
-      actions: [
-        if (widget.selectedMember != null)
-          IconButton(
-            icon: Icon(Icons.refresh, color: Colors.white),
-            onPressed: _loadMessages,
-          ),
-      ],
+      actions: [],
     );
   }
 
@@ -324,7 +512,7 @@ class _CoachMessagesPageState extends State<CoachMessagesPage> {
 
     return ListView.builder(
       controller: _scrollController,
-      padding: EdgeInsets.all(16),
+      padding: EdgeInsets.fromLTRB(16, 16, 16, 80), // Extra bottom padding
       itemCount: messages.length,
       itemBuilder: (context, index) {
         final message = messages[index];
@@ -337,57 +525,119 @@ class _CoachMessagesPageState extends State<CoachMessagesPage> {
 
   Widget _buildMessageBubble(Message message, bool isMe) {
     return Container(
-      margin: EdgeInsets.only(bottom: 12),
+      margin: EdgeInsets.only(bottom: 16),
       child: Row(
         mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
         children: [
           if (!isMe) ...[
-            CircleAvatar(
-              radius: 16,
-              backgroundColor: Color(0xFF4ECDC4).withOpacity(0.2),
-              child: Text(
-                widget.selectedMember!.initials,
-                style: GoogleFonts.poppins(
-                  color: Color(0xFF4ECDC4),
-                  fontSize: 10,
-                  fontWeight: FontWeight.w600,
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Color(0xFF4ECDC4), Color(0xFF44A08D)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: Color(0xFF4ECDC4).withOpacity(0.3),
+                    blurRadius: 6,
+                    offset: Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Center(
+                child: Text(
+                  widget.selectedMember!.initials,
+                  style: GoogleFonts.poppins(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 0.3,
+                  ),
                 ),
               ),
             ),
-            SizedBox(width: 8),
+            SizedBox(width: 12),
           ],
           Flexible(
             child: Container(
-              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              padding: EdgeInsets.symmetric(horizontal: 18, vertical: 14),
               decoration: BoxDecoration(
-                color: isMe ? Color(0xFF4ECDC4) : Color(0xFF1A1A1A),
-                borderRadius: BorderRadius.circular(18),
+                gradient: isMe 
+                    ? LinearGradient(
+                        colors: [Color(0xFF4ECDC4), Color(0xFF44A08D)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      )
+                    : LinearGradient(
+                        colors: [Color(0xFF2A2A2A), Color(0xFF1F1F1F)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(
+                  color: isMe 
+                      ? Color(0xFF4ECDC4).withOpacity(0.3)
+                      : Colors.grey.withOpacity(0.2),
+                  width: 1,
+                ),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
-                    blurRadius: 4,
-                    offset: Offset(0, 2),
+                    color: isMe 
+                        ? Color(0xFF4ECDC4).withOpacity(0.2)
+                        : Colors.black.withOpacity(0.3),
+                    blurRadius: isMe ? 12 : 8,
+                    offset: Offset(0, 4),
                   ),
                 ],
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (isMe) ...[
+                    Text(
+                      'You:',
+                      style: GoogleFonts.poppins(
+                        fontSize: 12,
+                        color: Colors.white.withOpacity(0.7),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    SizedBox(height: 2),
+                  ],
                   Text(
                     message.message,
                     style: GoogleFonts.poppins(
-                      color: isMe ? Colors.white : Colors.white,
-                      fontSize: 14,
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
+                      height: 1.4,
                     ),
                   ),
                   if (message.timestamp != null) ...[
                     SizedBox(height: 4),
-                    Text(
-                      _formatTime(message.timestamp!),
-                      style: GoogleFonts.poppins(
-                        color: isMe ? Colors.white70 : Colors.grey[400],
-                        fontSize: 10,
-                      ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          _formatTime(message.timestamp!),
+                          style: GoogleFonts.poppins(
+                            color: isMe ? Colors.white70 : Colors.grey[400],
+                            fontSize: 10,
+                          ),
+                        ),
+                        if (isMe) ...[
+                          SizedBox(width: 4),
+                          Icon(
+                            message.isRead ? Icons.done_all : Icons.done,
+                            size: 12,
+                            color: message.isRead ? Colors.white70 : Colors.grey[400],
+                          ),
+                        ],
+                      ],
                     ),
                   ],
                 ],
@@ -415,37 +665,38 @@ class _CoachMessagesPageState extends State<CoachMessagesPage> {
     return Container(
       padding: EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Color(0xFF1A1A1A),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 4,
-            offset: Offset(0, -2),
-          ),
-        ],
+        color: Color(0xFF0F0F0F),
       ),
       child: SafeArea(
         child: Row(
           children: [
             Expanded(
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Color(0xFF2A2A2A),
-                  borderRadius: BorderRadius.circular(24),
+              child: TextField(
+                controller: _messageController,
+                style: TextStyle(
+                  color: Colors.black,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
                 ),
-                child: TextField(
-                  controller: _messageController,
-                  style: GoogleFonts.poppins(color: Colors.white),
-                  decoration: InputDecoration(
-                    hintText: 'Type a message...',
-                    hintStyle: GoogleFonts.poppins(color: Colors.grey[400]),
-                    border: InputBorder.none,
-                    contentPadding: EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                cursorColor: Colors.black,
+                decoration: InputDecoration(
+                  filled: true,
+                  fillColor: Colors.white,
+                  hintText: 'Type a message...',
+                  hintStyle: TextStyle(
+                    color: Colors.grey[600],
+                    fontSize: 16,
+                    fontWeight: FontWeight.w400,
                   ),
-                  maxLines: null,
-                  textCapitalization: TextCapitalization.sentences,
-                  onSubmitted: (_) => _sendMessage(),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(30),
+                    borderSide: BorderSide.none,
+                  ),
+                  contentPadding: EdgeInsets.symmetric(horizontal: 20, vertical: 16),
                 ),
+                maxLines: null,
+                textCapitalization: TextCapitalization.sentences,
+                onSubmitted: (_) => _sendMessage(),
               ),
             ),
             SizedBox(width: 12),
@@ -484,14 +735,18 @@ class _CoachMessagesPageState extends State<CoachMessagesPage> {
     final now = DateTime.now();
     final difference = now.difference(dateTime);
 
-    if (difference.inDays > 0) {
-      return '${dateTime.day}/${dateTime.month}/${dateTime.year}';
-    } else if (difference.inHours > 0) {
-      return '${difference.inHours}h ago';
-    } else if (difference.inMinutes > 0) {
-      return '${difference.inMinutes}m ago';
+    if (difference.inMinutes < 1) {
+      return 'now';
+    } else if (difference.inMinutes < 60) {
+      return '${difference.inMinutes}m';
+    } else if (difference.inHours < 24) {
+      return '${difference.inHours}h';
+    } else if (difference.inDays == 1) {
+      return 'yesterday';
+    } else if (difference.inDays < 7) {
+      return '${difference.inDays}d';
     } else {
-      return 'Just now';
+      return DateFormat('MMM d').format(dateTime);
     }
   }
 }

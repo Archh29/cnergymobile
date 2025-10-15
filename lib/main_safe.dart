@@ -125,14 +125,14 @@ Future<void> _fixUserIdStorage() async {
         String? userIdString = prefs.getString('user_id');
         if (userIdString != null && userIdString.isNotEmpty) {
           userId = int.tryParse(userIdString);
-          
-          if (userId != null) {
-            // Remove the string version and save as int
-            await prefs.remove('user_id');
-            await prefs.setInt('user_id', userId);
-            print('Fixed user_id storage: converted "$userIdString" to $userId (int)');
-          }
         }
+      }
+      
+      if (userId != null) {
+        // Migrate to the new key and remove the old one
+        await prefs.setInt('current_user_id', userId);
+        await prefs.remove('user_id');
+        print('Migrated user_id to current_user_id: $userId');
       }
     }
     

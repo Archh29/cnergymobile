@@ -2,32 +2,20 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/routine.models.dart';
+import 'auth_service.dart';
 
 class RoutineService {
   static const String baseUrl = "https://api.cnergy.site/routines.php";
   static const String exerciseUrl = "https://api.cnergy.site/exercises.php";
 
-  // Get current user ID from SharedPreferences
+  // Get current user ID from AuthService
   static Future<int> getCurrentUserId() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      
-      String? userIdString = prefs.getString('user_id');
-      if (userIdString != null && userIdString.isNotEmpty) {
-        int userId = int.parse(userIdString);
-        print('Retrieved user ID from SharedPreferences: $userId');
-        return userId;
+      final userId = AuthService.getCurrentUserId();
+      if (userId == null) {
+        throw Exception('User not logged in - no user ID found');
       }
-      
-      int? userIdInt = prefs.getInt('user_id');
-      if (userIdInt != null) {
-        print('Retrieved user ID (int) from SharedPreferences: $userIdInt');
-        return userIdInt;
-      }
-      
-      print('No user ID found in SharedPreferences - user may not be logged in');
-      throw Exception('User not logged in - no user ID found');
-      
+      return userId;
     } catch (e) {
       print('Error getting user ID: $e');
       throw Exception('Failed to get user ID: $e');

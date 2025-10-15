@@ -1,3 +1,5 @@
+import '../../utils/date_utils.dart';
+
 class UserModel {
   final int id;
   final String email;
@@ -39,6 +41,28 @@ class UserModel {
     return name;
   }
 
+  // Get formatted birthdate (MM/DD/YYYY)
+  String get formattedBirthdate {
+    return CnergyDateUtils.toDisplayDate(bday);
+  }
+
+  // Get formatted creation date (MM/DD/YYYY)
+  String get formattedCreatedAt {
+    if (createdAt == null) return 'Unknown';
+    return CnergyDateUtils.toDisplayDate(createdAt!);
+  }
+
+  // Get formatted last attempt date (MM/DD/YYYY HH:mm)
+  String get formattedLastAttempt {
+    if (lastAttempt == null) return 'Never';
+    return CnergyDateUtils.toDisplayDateTime(lastAttempt!);
+  }
+
+  // Calculate age from birthdate
+  int get age {
+    return CnergyDateUtils.calculateAge(bday);
+  }
+
   // Factory constructor to create UserModel from JSON
   factory UserModel.fromJson(Map<String, dynamic> json) {
     return UserModel(
@@ -48,12 +72,12 @@ class UserModel {
       userTypeId: json['user_type_id'] != null ? int.tryParse(json['user_type_id'].toString()) : null,
       genderId: json['gender_id'] != null ? int.tryParse(json['gender_id'].toString()) : null,
       failedAttempt: int.tryParse(json['failed_attempt']?.toString() ?? '0') ?? 0,
-      lastAttempt: json['last_attempt'] != null ? DateTime.tryParse(json['last_attempt'].toString()) : null,
+      lastAttempt: json['last_attempt'] != null ? CnergyDateUtils.parseApiDateTime(json['last_attempt'].toString()) : null,
       fname: json['fname']?.toString() ?? '',
       mname: json['mname']?.toString() ?? '',
       lname: json['lname']?.toString() ?? '',
-      bday: DateTime.tryParse(json['bday']?.toString() ?? '') ?? DateTime.now(),
-      createdAt: json['created_at'] != null ? DateTime.tryParse(json['created_at'].toString()) : null,
+      bday: CnergyDateUtils.parseApiDate(json['bday']?.toString() ?? '') ?? DateTime.now(),
+      createdAt: json['created_at'] != null ? CnergyDateUtils.parseApiDateTime(json['created_at'].toString()) : null,
       isPremium: json['is_premium'] == true || json['is_premium'] == 1 || json['is_premium'] == '1', // Handle different boolean formats
     );
   }
@@ -67,11 +91,11 @@ class UserModel {
       'user_type_id': userTypeId,
       'gender_id': genderId,
       'failed_attempt': failedAttempt,
-      'last_attempt': lastAttempt?.toIso8601String(),
+      'last_attempt': lastAttempt != null ? CnergyDateUtils.toApiDateTime(lastAttempt!) : null,
       'fname': fname,
       'mname': mname,
       'lname': lname,
-      'bday': bday.toIso8601String().split('T')[0], // Format as YYYY-MM-DD
+      'bday': CnergyDateUtils.toApiDate(bday), // Format as YYYY-MM-DD
       'is_premium': isPremium,
     };
   }

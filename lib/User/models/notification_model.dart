@@ -1,3 +1,5 @@
+import '../../utils/date_utils.dart';
+
 class NotificationModel {
   final int id;
   final String message;
@@ -17,12 +19,12 @@ class NotificationModel {
 
   factory NotificationModel.fromJson(Map<String, dynamic> json) {
     return NotificationModel(
-      id: json['id'],
-      message: json['message'],
-      timestamp: json['timestamp'],
+      id: int.tryParse(json['id'].toString()) ?? 0,
+      message: json['message'] ?? '',
+      timestamp: json['timestamp'] ?? '',
       statusName: json['status_name'] ?? 'Unknown',
       typeName: json['type_name'] ?? 'info',
-      isUnread: json['is_unread'] == 1,
+      isUnread: json['is_unread'] == 1 || json['is_unread'] == '1',
     );
   }
 
@@ -72,19 +74,28 @@ class NotificationModel {
   // Helper method to format timestamp
   String getFormattedTime() {
     try {
-      final dateTime = DateTime.parse(timestamp);
-      final now = DateTime.now();
-      final difference = now.difference(dateTime);
+      final dateTime = CnergyDateUtils.parseApiDateTime(timestamp) ?? DateTime.now();
+      return CnergyDateUtils.getRelativeDate(dateTime);
+    } catch (e) {
+      return 'Unknown';
+    }
+  }
 
-      if (difference.inDays > 0) {
-        return '${difference.inDays}d ago';
-      } else if (difference.inHours > 0) {
-        return '${difference.inHours}h ago';
-      } else if (difference.inMinutes > 0) {
-        return '${difference.inMinutes}m ago';
-      } else {
-        return 'Just now';
-      }
+  // Get formatted date (MM/DD/YYYY)
+  String getFormattedDate() {
+    try {
+      final dateTime = CnergyDateUtils.parseApiDateTime(timestamp) ?? DateTime.now();
+      return CnergyDateUtils.toDisplayDate(dateTime);
+    } catch (e) {
+      return 'Unknown';
+    }
+  }
+
+  // Get formatted datetime (MM/DD/YYYY HH:mm)
+  String getFormattedDateTime() {
+    try {
+      final dateTime = CnergyDateUtils.parseApiDateTime(timestamp) ?? DateTime.now();
+      return CnergyDateUtils.toDisplayDateTime(dateTime);
     } catch (e) {
       return 'Unknown';
     }

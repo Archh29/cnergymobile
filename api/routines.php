@@ -746,20 +746,41 @@ switch ($action) {
                     
                     foreach ($input['exercises'] as $exercise) {
                         $exerciseId = $exercise['exercise_id'] ?? $exercise['id'] ?? null;
-                        $sets = $exercise['sets'] ?? $exercise['target_sets'] ?? 3;
-                        $reps = $exercise['reps'] ?? $exercise['target_reps'] ?? '10';
-                        $weight = $exercise['weight'] ?? $exercise['target_weight'] ?? 0;
                         
                         if ($exerciseId && !in_array($exerciseId, $addedExerciseIds)) {
-                            $exerciseStmt->execute([
-                                $workoutId,
-                                $exerciseId,
-                                is_numeric($reps) ? $reps : 10,
-                                $sets,
-                                is_numeric($weight) ? $weight : 0
-                            ]);
+                            // Handle individual set configurations
+                            if (isset($exercise['sets']) && is_array($exercise['sets'])) {
+                                // Process each set individually
+                                foreach ($exercise['sets'] as $setIndex => $set) {
+                                    $reps = $set['reps'] ?? $exercise['reps'] ?? $exercise['target_reps'] ?? '10';
+                                    $weight = $set['weight'] ?? $exercise['weight'] ?? $exercise['target_weight'] ?? 0;
+                                    
+                                    $exerciseStmt->execute([
+                                        $workoutId,
+                                        $exerciseId,
+                                        is_numeric($reps) ? $reps : 10,
+                                        1, // Each set is inserted as a separate row
+                                        is_numeric($weight) ? $weight : 0
+                                    ]);
+                                }
+                                error_log("Added " . count($exercise['sets']) . " sets for exercise ID $exerciseId with individual weights");
+                            } else {
+                                // Fallback to old format
+                                $sets = $exercise['target_sets'] ?? 3;
+                                $reps = $exercise['target_reps'] ?? '10';
+                                $weight = $exercise['target_weight'] ?? 0;
+                                
+                                $exerciseStmt->execute([
+                                    $workoutId,
+                                    $exerciseId,
+                                    is_numeric($reps) ? $reps : 10,
+                                    $sets,
+                                    is_numeric($weight) ? $weight : 0
+                                ]);
+                                error_log("Added exercise ID $exerciseId with fallback format");
+                            }
+                            
                             $addedExerciseIds[] = $exerciseId; // Mark as added
-                            error_log("Added exercise ID $exerciseId to workout (unique)");
                         } elseif ($exerciseId && in_array($exerciseId, $addedExerciseIds)) {
                             error_log("Skipped duplicate exercise ID $exerciseId");
                         }

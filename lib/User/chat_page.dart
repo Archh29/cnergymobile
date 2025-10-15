@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:intl/intl.dart';
 import './models/messages_model.dart';
 import './services/messages_service.dart';
 
@@ -31,6 +33,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   bool isLoading = true;
   bool isSending = false;
   String errorMessage = '';
+  Timer? _messageTimer;
 
   @override
   void initState() {
@@ -43,40 +46,81 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
       CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
     );
     _loadMessages();
+    // Start automatic message polling every 1 second
+    _startMessagePolling();
+  }
+
+  void _startMessagePolling() {
+    _messageTimer = Timer.periodic(Duration(seconds: 1), (timer) {
+      if (mounted) {
+        print('🔄 Auto-polling for new messages');
+        _loadMessages(isPolling: true);
+      } else {
+        // Stop polling if widget is not mounted
+        timer.cancel();
+      }
+    });
+  }
+
+  void _stopMessagePolling() {
+    _messageTimer?.cancel();
+    _messageTimer = null;
   }
 
   @override
   void dispose() {
+    _stopMessagePolling();
     _animationController.dispose();
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
 
-  Future<void> _loadMessages() async {
+  Future<void> _loadMessages({bool isPolling = false}) async {
     try {
-      setState(() {
-        isLoading = true;
-        errorMessage = '';
-      });
+      if (!isPolling) {
+        setState(() {
+          isLoading = true;
+          errorMessage = '';
+        });
+      }
 
       final loadedMessages = await MessageService.getMessages(
         widget.conversationId, 
         widget.currentUserId
       );
       
-      setState(() {
-        messages = loadedMessages;
-        isLoading = false;
-      });
-      
-      _animationController.forward();
-      _scrollToBottom();
+      if (mounted) {
+        // Only update UI if messages have changed
+        bool hasChanged = messages.length != loadedMessages.length ||
+            messages.any((msg) => 
+              loadedMessages.any((newMsg) => 
+                newMsg.id == msg.id && 
+                (newMsg.message != msg.message || 
+                 newMsg.timestamp != msg.timestamp)
+              )
+            );
+        
+        if (hasChanged || !isPolling) {
+          setState(() {
+            messages = loadedMessages;
+            isLoading = false;
+          });
+          
+          if (!isPolling) {
+            _animationController.forward();
+          }
+          _scrollToBottom();
+          print('✅ Loaded ${loadedMessages.length} messages${isPolling ? ' (polling)' : ''}');
+        }
+      }
     } catch (e) {
-      setState(() {
-        errorMessage = e.toString();
-        isLoading = false;
-      });
+      if (mounted && !isPolling) {
+        setState(() {
+          errorMessage = e.toString();
+          isLoading = false;
+        });
+      }
     }
   }
 
@@ -137,10 +181,18 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     final now = DateTime.now();
     final difference = now.difference(dateTime);
     
-    if (difference.inDays > 0) {
-      return '${dateTime.day}/${dateTime.month} ${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
+    if (difference.inMinutes < 1) {
+      return 'now';
+    } else if (difference.inMinutes < 60) {
+      return '${difference.inMinutes}m';
+    } else if (difference.inHours < 24) {
+      return '${difference.inHours}h';
+    } else if (difference.inDays == 1) {
+      return 'yesterday';
+    } else if (difference.inDays < 7) {
+      return '${difference.inDays}d';
     } else {
-      return '${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
+      return DateFormat('MMM d').format(dateTime);
     }
   }
 
@@ -160,7 +212,11 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
             ),
             child: Icon(Icons.arrow_back, color: Colors.white, size: 20),
           ),
-          onPressed: () => Navigator.pop(context),
+          onPressed: () {
+            print('🔙 Chat back button pressed - returning to messages');
+            // Navigate back to messages page
+            Navigator.pop(context);
+          },
         ),
         title: Row(
           children: [
@@ -214,20 +270,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
             ),
           ],
         ),
-        actions: [
-          IconButton(
-            icon: Container(
-              padding: EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Color(0xFF1A1A1A),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(Icons.refresh, color: Colors.white, size: 20),
-            ),
-            onPressed: _loadMessages,
-          ),
-          SizedBox(width: 16),
-        ],
+        actions: [],
       ),
       body: isLoading
           ? Center(
@@ -330,58 +373,77 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                       ),
                       // Message Input
                       Container(
-                        padding: EdgeInsets.all(20),
-                        decoration: BoxDecoration(
-                          color: Color(0xFF1A1A1A),
-                          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-                        ),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  color: Color(0xFF2A2A2A),
-                                  borderRadius: BorderRadius.circular(25),
-                                ),
+                        color: Color(0xFF0F0F0F),
+                        padding: EdgeInsets.fromLTRB(16, 12, 16, 16),
+                        child: SafeArea(
+                          child: Row(
+                            children: [
+                              Expanded(
                                 child: TextField(
                                   controller: _messageController,
-                                  style: GoogleFonts.poppins(color: Colors.white),
+                                  style: GoogleFonts.poppins(
+                                    color: Colors.black,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w500,
+                                  ),
                                   decoration: InputDecoration(
+                                    filled: true,
+                                    fillColor: Colors.white,
                                     hintText: "Type a message...",
-                                    hintStyle: GoogleFonts.poppins(color: Colors.grey[500]),
-                                    border: InputBorder.none,
-                                    contentPadding: EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                                    hintStyle: GoogleFonts.poppins(
+                                      color: Colors.grey[500],
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w400,
+                                    ),
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(30),
+                                      borderSide: BorderSide.none,
+                                    ),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(30),
+                                      borderSide: BorderSide.none,
+                                    ),
+                                    focusedBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(30),
+                                      borderSide: BorderSide.none,
+                                    ),
+                                    contentPadding: EdgeInsets.symmetric(horizontal: 20, vertical: 16),
                                   ),
                                   onSubmitted: (_) => _sendMessage(),
                                   maxLines: null,
+                                  cursorColor: Colors.orange,
                                 ),
                               ),
-                            ),
-                            SizedBox(width: 12),
-                            Container(
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: [widget.avatarColor, widget.avatarColor.withOpacity(0.8)],
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                ),
-                                shape: BoxShape.circle,
-                              ),
-                              child: IconButton(
-                                icon: isSending 
-                                    ? SizedBox(
-                                        width: 20,
-                                        height: 20,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                              SizedBox(width: 12),
+                              GestureDetector(
+                                onTap: isSending ? null : _sendMessage,
+                                child: Container(
+                                  width: 48,
+                                  height: 48,
+                                  decoration: BoxDecoration(
+                                    color: Color(0xFFFF6B35),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: isSending 
+                                      ? Center(
+                                          child: SizedBox(
+                                            width: 20,
+                                            height: 20,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                            ),
+                                          ),
+                                        )
+                                      : Icon(
+                                          Icons.send_rounded,
+                                          color: Colors.white,
+                                          size: 22,
                                         ),
-                                      )
-                                    : Icon(Icons.send, color: Colors.white),
-                                onPressed: isSending ? null : _sendMessage,
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
                     ],
@@ -429,7 +491,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
             child: Container(
               padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(
-                color: isOtherUser ? Color(0xFF1A1A1A) : widget.avatarColor.withOpacity(0.2),
+                color: isOtherUser ? Color(0xFF1A1A1A) : widget.avatarColor,
                 borderRadius: BorderRadius.only(
                   topLeft: Radius.circular(isOtherUser ? 4 : 20),
                   topRight: Radius.circular(isOtherUser ? 20 : 4),
@@ -437,16 +499,35 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                   bottomRight: Radius.circular(20),
                 ),
                 border: isOtherUser ? Border.all(color: widget.avatarColor.withOpacity(0.3)) : null,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.3),
+                    blurRadius: 4,
+                    offset: Offset(0, 2),
+                  ),
+                ],
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (!isOtherUser) ...[
+                    Text(
+                      'You:',
+                      style: GoogleFonts.poppins(
+                        fontSize: 12,
+                        color: Colors.white.withOpacity(0.7),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    SizedBox(height: 2),
+                  ],
                   Text(
                     message,
                     style: GoogleFonts.poppins(
                       fontSize: 14,
                       color: Colors.white,
                       height: 1.4,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                   SizedBox(height: 4),

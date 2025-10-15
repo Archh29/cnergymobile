@@ -73,6 +73,28 @@ class Conversation {
       otherUser: UserInfo.fromJson(json['other_user']),
     );
   }
+
+  Conversation copyWith({
+    int? id,
+    int? participant1Id,
+    int? participant2Id,
+    DateTime? createdAt,
+    String? lastMessage,
+    DateTime? lastMessageTime,
+    int? unreadCount,
+    UserInfo? otherUser,
+  }) {
+    return Conversation(
+      id: id ?? this.id,
+      participant1Id: participant1Id ?? this.participant1Id,
+      participant2Id: participant2Id ?? this.participant2Id,
+      createdAt: createdAt ?? this.createdAt,
+      lastMessage: lastMessage ?? this.lastMessage,
+      lastMessageTime: lastMessageTime ?? this.lastMessageTime,
+      unreadCount: unreadCount ?? this.unreadCount,
+      otherUser: otherUser ?? this.otherUser,
+    );
+  }
 }
 
 class UserInfo {

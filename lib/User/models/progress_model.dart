@@ -6,6 +6,7 @@ class ProgressModel {
   final double? chestCm;
   final double? waistCm;
   final double? hipsCm;
+  final String? notes;
   final DateTime dateRecorded;
 
   ProgressModel({
@@ -16,6 +17,7 @@ class ProgressModel {
     this.chestCm,
     this.waistCm,
     this.hipsCm,
+    this.notes,
     required this.dateRecorded,
   });
 
@@ -28,6 +30,7 @@ class ProgressModel {
       chestCm: json['chest_cm'] != null ? double.tryParse(json['chest_cm'].toString()) : null,
       waistCm: json['waist_cm'] != null ? double.tryParse(json['waist_cm'].toString()) : null,
       hipsCm: json['hips_cm'] != null ? double.tryParse(json['hips_cm'].toString()) : null,
+      notes: json['notes']?.toString(),
       dateRecorded: DateTime.parse(json['date_recorded']),
     );
   }
@@ -41,6 +44,7 @@ class ProgressModel {
       if (chestCm != null) 'chest_cm': chestCm,
       if (waistCm != null) 'waist_cm': waistCm,
       if (hipsCm != null) 'hips_cm': hipsCm,
+      if (notes != null) 'notes': notes,
       'date_recorded': dateRecorded.toIso8601String().split('T')[0],
     };
   }

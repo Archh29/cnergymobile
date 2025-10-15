@@ -3,6 +3,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'models/user_model.dart';
 import 'services/user_service.dart';
+import '../User/services/auth_service.dart';
+import '../login_screen.dart';
 
 class CoachProfilePage extends StatefulWidget {
   @override
@@ -855,11 +857,14 @@ class _CoachProfilePageState extends State<CoachProfilePage>
     );
 
     if (confirm == true) {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.clear();
-      await prefs.setBool('isLoggedIn', false);
-      await prefs.remove('role');
-      Navigator.pushReplacementNamed(context, '/login');
+      // Use AuthService logout method for consistency
+      await AuthService.logout();
+      
+      // Navigate to login screen
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (context) => LoginScreen()),
+        (Route<dynamic> route) => false,
+      );
     }
   }
 }

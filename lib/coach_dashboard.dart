@@ -5,12 +5,16 @@ import 'package:google_fonts/google_fonts.dart';
 // Import all Coach components
 import './Coach/coach_member_selector.dart';
 import './Coach/coach_messages_page.dart' as CoachMessages;
+import './Coach/coach_messages_dashboard.dart';
 import './Coach/coach_profile_page.dart';
 import './Coach/coach_progress_page.dart';
 import './Coach/coach_routine_page.dart';
 import './Coach/session_management_page.dart';
+import './Coach/coach_create_program_page.dart';
 import './Coach/models/member_model.dart';
 import './Coach/services/coach_service.dart';
+import './User/services/auth_service.dart';
+import './login_screen.dart';
 
 class CoachDashboard extends StatefulWidget {
   @override
@@ -63,9 +67,43 @@ class _CoachDashboardState extends State<CoachDashboard> with TickerProviderStat
   @override
   void initState() {
     super.initState();
+    print('🔄 CoachDashboard initState called - Hot reload should work now');
     _loadSelectedIndex();
     _loadAssignedMembers();
     _initializeAnimations();
+    _forceRefreshAuthData();
+    
+    // Log coach info for debugging
+    if (AuthService.isLoggedIn()) {
+      print('✅ Coach is logged in, proceeding with dashboard');
+      print('👨‍🏫 Coach: ${AuthService.getUserFullName()}');
+      print('🆔 Coach ID: ${AuthService.getCurrentUserId()}');
+    }
+  }
+
+  @override
+  void didUpdateWidget(CoachDashboard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    print('🔄 CoachDashboard didUpdateWidget called - Hot reload detected');
+    // Force refresh when widget updates (hot reload)
+    _forceRefreshAuthData();
+  }
+
+  // Force refresh auth data to ensure hot reload works properly
+  Future<void> _forceRefreshAuthData() async {
+    try {
+      await AuthService.forceRefresh();
+      print('🔄 Coach dashboard auth data refreshed');
+      
+      // Force a rebuild after refresh
+      if (mounted) {
+        setState(() {
+          // This will trigger a rebuild
+        });
+      }
+    } catch (e) {
+      print('❌ Error refreshing auth data: $e');
+    }
   }
 
   void _initializeAnimations() {
@@ -121,22 +159,26 @@ class _CoachDashboardState extends State<CoachDashboard> with TickerProviderStat
     });
   }
 
-  // Method to navigate to messages page
+  // Method to navigate to messages dashboard
   void _navigateToMessages() {
-    if (selectedMember != null) {
+    final currentUserId = AuthService.getCurrentUserId();
+    if (currentUserId != null) {
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (context) => CoachMessages.CoachMessagesPage(selectedMember: selectedMember),
+          builder: (context) => CoachMessagesDashboard(currentUserId: currentUserId),
         ),
       );
     } else {
-      // Show a message if no member is selected
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Please select a member first'),
-          backgroundColor: Colors.orange,
+          content: const Text('Unable to get user information'),
+          backgroundColor: Colors.red,
           behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
         ),
       );
     }
@@ -457,11 +499,11 @@ class _CoachDashboardState extends State<CoachDashboard> with TickerProviderStat
           ],
         ),
         child: FloatingActionButton(
-          onPressed: _navigateToMessages,
+          onPressed: _showQuickActionsMenu,
           backgroundColor: Colors.transparent,
           elevation: 0,
           child: Icon(
-            Icons.chat_bubble_outline,
+            Icons.add,
             color: Colors.white,
             size: isSmallScreen ? 20 : 24, // Smaller icon
           ),
@@ -542,6 +584,167 @@ class _CoachDashboardState extends State<CoachDashboard> with TickerProviderStat
         ),
       ),
     );
+  }
+
+  void _showQuickActionsMenu() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        decoration: BoxDecoration(
+          color: Color(0xFF1A1A1A),
+          borderRadius: BorderRadius.only(
+            topLeft: Radius.circular(20),
+            topRight: Radius.circular(20),
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              margin: EdgeInsets.symmetric(vertical: 12),
+              decoration: BoxDecoration(
+                color: Colors.grey[600],
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Padding(
+              padding: EdgeInsets.all(20),
+              child: Column(
+                children: [
+                  Text(
+                    'Quick Actions',
+                    style: GoogleFonts.poppins(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  SizedBox(height: 20),
+                  _buildQuickActionTile(
+                    icon: Icons.fitness_center,
+                    title: 'Create Program',
+                    subtitle: 'Create a new program template',
+                    color: Color(0xFF4ECDC4),
+                    onTap: () {
+                      Navigator.pop(context);
+                      _navigateToCreateProgram();
+                    },
+                  ),
+                  SizedBox(height: 12),
+                  _buildQuickActionTile(
+                    icon: Icons.chat_bubble_outline,
+                    title: 'Messages',
+                    subtitle: 'View messages from members',
+                    color: Color(0xFF45B7D1),
+                    onTap: () {
+                      Navigator.pop(context);
+                      _navigateToMessages();
+                    },
+                  ),
+                  SizedBox(height: 12),
+                  _buildQuickActionTile(
+                    icon: Icons.people_outline,
+                    title: 'Add Member',
+                    subtitle: 'Assign a new member to you',
+                    color: Color(0xFF96CEB4),
+                    onTap: () {
+                      Navigator.pop(context);
+                      setState(() {
+                        _selectedIndex = 2; // Members tab
+                      });
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildQuickActionTile({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Color(0xFF2A2A2A),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.grey[700]!),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(
+                icon,
+                color: color,
+                size: 24,
+              ),
+            ),
+            SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: GoogleFonts.poppins(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
+                    ),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    style: GoogleFonts.poppins(
+                      fontSize: 14,
+                      color: Colors.grey[400],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              Icons.arrow_forward_ios,
+              color: Colors.grey[400],
+              size: 16,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _navigateToCreateProgram() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => CoachCreateProgramPage(),
+      ),
+    ).then((result) {
+      // Refresh routines if a program was created
+      if (result == true) {
+        // You can add refresh logic here if needed
+        print('Program created successfully');
+      }
+    });
   }
 }
 

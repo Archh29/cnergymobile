@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import './models/user_model.dart';
 import './models/coach_model.dart';
 import './services/coach_service.dart';
+import './services/auth_service.dart';
 import 'manage_subscriptions_page.dart';
 
 class PersonalTrainingPage extends StatefulWidget {
@@ -107,8 +108,7 @@ class _PersonalTrainingPageState extends State<PersonalTrainingPage>
       setState(() { _loadingCoachRequest = true; });
       int? userId = widget.currentUser?.id;
       if (userId == null) {
-        final prefs = await SharedPreferences.getInstance();
-        userId = int.tryParse(prefs.getString('user_id') ?? '');
+        userId = AuthService.getCurrentUserId();
       }
       if (userId == null) {
         if (!mounted) return;

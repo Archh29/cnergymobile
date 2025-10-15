@@ -53,6 +53,9 @@ class WorkoutExerciseModel {
   
   // Individual set configurations
   List<WorkoutSetModel>? targetSets;
+  
+  // Previous performance data
+  List<Map<String, dynamic>>? previousLifts;
 
   WorkoutExerciseModel({
     this.exerciseId,
@@ -71,6 +74,7 @@ class WorkoutExerciseModel {
     this.isCompleted = false,
     List<WorkoutSetModel>? loggedSets,
     this.targetSets,
+    this.previousLifts,
   }) : loggedSets = loggedSets ?? [];
 
   factory WorkoutExerciseModel.fromJson(Map<String, dynamic> json) {
@@ -114,6 +118,9 @@ class WorkoutExerciseModel {
           return null;
         }
       })(),
+      previousLifts: (json['previous_lifts'] as List<dynamic>?)
+          ?.map((lift) => Map<String, dynamic>.from(lift))
+          .toList(),
     );
   }
 
@@ -135,6 +142,7 @@ class WorkoutExerciseModel {
       'is_completed': isCompleted,
       'logged_sets': loggedSets.map((s) => s.toJson()).toList(),
       'target_sets': targetSets?.map((s) => s.toJson()).toList(),
+      'previous_lifts': previousLifts,
     };
   }
 

@@ -66,10 +66,148 @@ class _ManageSubscriptionsPageState extends State<ManageSubscriptionsPage> {
       final uid = AuthService.getCurrentUserId();
       if (uid == null) return;
       
+      // Get available subscription plans (for subscribing to new plans)
       _subscriptionPlansFuture = SubscriptionService.getAvailablePlansForUser(uid);
     } catch (e) {
       print('Error loading available plans: $e');
       _subscriptionPlansFuture = Future.value([]);
+    }
+  }
+
+  Future<List<SubscriptionPlan>> _getUserAvailedPlans(int userId) async {
+    try {
+      // Get user's subscription history to find availed plans
+      final historyData = await SubscriptionService.getSubscriptionHistory(userId);
+      print('Debug: History data received: $historyData');
+      
+      if (historyData == null) {
+        print('Debug: No history data received');
+        return [];
+      }
+
+      List<SubscriptionPlan> availedPlans = [];
+
+      // Check if there's a current subscription
+      if (historyData['current_subscription'] != null) {
+        final currentSub = historyData['current_subscription'];
+        final planName = currentSub['plan_name']?.toString() ?? 'Unknown Plan';
+        final isMembership = planName.toLowerCase().contains('gym membership fee') || 
+                            planName.toLowerCase().contains('membership');
+        final isMemberRate = planName.toLowerCase().contains('member rate');
+        final isDayPass = planName.toLowerCase().contains('day pass');
+        
+        // Convert price string to double safely
+        final priceStr = currentSub['original_price']?.toString() ?? 
+                        currentSub['price']?.toString() ?? 
+                        currentSub['discounted_price']?.toString() ?? '0';
+        final price = double.tryParse(priceStr) ?? 0.0;
+        
+        final discountedPriceStr = currentSub['discounted_price']?.toString();
+        final discountedPrice = discountedPriceStr != null ? double.tryParse(discountedPriceStr) : null;
+        
+        final plan = SubscriptionPlan(
+          id: currentSub['id'] ?? 0,
+          planName: planName,
+          price: price,
+          discountedPrice: discountedPrice,
+          durationMonths: isMembership ? 12 : isDayPass ? 0 : 1,
+          isMemberOnly: isMembership || isMemberRate,
+          isAvailable: true,
+          features: [],
+          description: isMembership 
+              ? 'Annual membership - Can access everything, unlimited access' 
+              : isDayPass
+                  ? 'Day pass - 1 day access, standard rate, limited access'
+                  : isMemberRate
+                      ? 'Monthly access (member rate) - Discounted rate, 1 month, unlimited access'
+                      : 'Monthly access (standard rate) - Standard rate, 1 month, limited access',
+        );
+        availedPlans.add(plan);
+        print('Debug: Added current subscription: ${plan.planName} - ₱${plan.price}');
+      }
+
+      // Add coach packages from requests array
+      if (historyData['requests'] != null) {
+        final requests = historyData['requests'] as List<dynamic>;
+        print('Debug: Found ${requests.length} coach requests');
+        
+        for (var coach in requests) {
+          if (coach['status'] == 'active' || coach['status'] == 'approved') {
+            final coachName = coach['coach_name'] ?? 'Unknown Coach';
+            final rateStr = coach['session_package_rate']?.toString() ?? 
+                           coach['monthly_rate']?.toString() ?? '0';
+            final rate = double.tryParse(rateStr) ?? 0.0;
+            final rateType = coach['rate_type']?.toString() ?? 'package';
+            
+            final plan = SubscriptionPlan(
+              id: coach['request_id'] ?? 0,
+              planName: 'Coach Package - $coachName',
+              price: rate,
+              discountedPrice: null,
+              durationMonths: rateType == 'monthly' ? 1 : 0,
+              isMemberOnly: false,
+              isAvailable: true,
+              features: [],
+              description: 'Personal training with $coachName (${coach['coach_specialty'] ?? 'General Training'})',
+            );
+            availedPlans.add(plan);
+            print('Debug: Added coach package: ${plan.planName} - ₱${plan.price}');
+          }
+        }
+      }
+
+      // Add gym membership and other subscriptions from the subscriptions array
+      // We need to get this from a different API call since it's not in the current response
+      try {
+        final userSubs = await SubscriptionService.getUserSubscriptions(userId);
+        print('Debug: Found ${userSubs.length} user subscriptions');
+        
+        for (var sub in userSubs) {
+          final planName = sub.planName;
+          final isMembership = planName.toLowerCase().contains('gym membership fee') || 
+                              planName.toLowerCase().contains('membership');
+          final isMemberRate = planName.toLowerCase().contains('member rate');
+          final isDayPass = planName.toLowerCase().contains('day pass');
+          
+          // Skip if this is the same as current subscription
+          if (historyData['current_subscription'] != null && 
+              sub.id.toString() == historyData['current_subscription']['id'].toString()) {
+            continue;
+          }
+          
+          final plan = SubscriptionPlan(
+            id: sub.id,
+            planName: planName,
+            price: sub.price,
+            discountedPrice: sub.discountedPrice,
+            durationMonths: isMembership ? 12 : isDayPass ? 0 : 1,
+            isMemberOnly: isMembership || isMemberRate,
+            isAvailable: true,
+            features: [],
+            description: isMembership 
+                ? 'Annual membership - Can access everything, unlimited access' 
+                : isDayPass
+                    ? 'Day pass - 1 day access, standard rate, limited access'
+                    : isMemberRate
+                        ? 'Monthly access (member rate) - Discounted rate, 1 month, unlimited access'
+                        : 'Monthly access (standard rate) - Standard rate, 1 month, limited access',
+          );
+          availedPlans.add(plan);
+          print('Debug: Added subscription: ${plan.planName} - ₱${plan.price}');
+        }
+      } catch (e) {
+        print('Debug: Error getting user subscriptions: $e');
+      }
+
+      print('Debug: Total availed plans found: ${availedPlans.length}');
+      for (var plan in availedPlans) {
+        print('Debug: Plan - ${plan.planName}, Price: ₱${plan.price}, Type: ${plan.isMembershipPlan ? "Membership" : "Monthly"}');
+      }
+
+      return availedPlans;
+    } catch (e) {
+      print('Error getting user availed plans: $e');
+      return [];
     }
   }
 
@@ -405,7 +543,7 @@ class _ManageSubscriptionsPageState extends State<ManageSubscriptionsPage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Membership Plans',
+                          'Plans Availed',
                           style: GoogleFonts.poppins(
                             fontSize: 22,
                             color: Colors.white,
@@ -431,6 +569,40 @@ class _ManageSubscriptionsPageState extends State<ManageSubscriptionsPage> {
                             ),
                           ),
                         ],
+                        SizedBox(height: 12),
+                        GestureDetector(
+                          onTap: () => _showPlansAvailedDetails(),
+                          child: Container(
+                            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color: Colors.white.withOpacity(0.3),
+                                width: 1,
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.list_alt,
+                                  color: Colors.white,
+                                  size: 16,
+                                ),
+                                SizedBox(width: 8),
+                                Text(
+                                  'View Plans Availed Details',
+                                  style: GoogleFonts.poppins(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
                         if (isUserMember)
                           Container(
                             margin: EdgeInsets.only(top: 8),
@@ -798,7 +970,7 @@ class _ManageSubscriptionsPageState extends State<ManageSubscriptionsPage> {
               ),
               SizedBox(height: 16),
               Text(
-                plan.planName,
+                plan.getDisplayName(),
                 style: GoogleFonts.poppins(
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
@@ -1256,7 +1428,7 @@ class _ManageSubscriptionsPageState extends State<ManageSubscriptionsPage> {
               ),
               SizedBox(height: 8),
               Text(
-                plan.planName,
+                plan.getDisplayName(),
                 style: GoogleFonts.poppins(
                   fontSize: 18,
                   fontWeight: FontWeight.w600,
@@ -1478,7 +1650,11 @@ class _ManageSubscriptionsPageState extends State<ManageSubscriptionsPage> {
     
     try {
       final date = DateTime.parse(dateString);
-      return '${date.day}/${date.month}/${date.year} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+      final hour = date.hour;
+      final minute = date.minute;
+      final period = hour >= 12 ? 'PM' : 'AM';
+      final displayHour = hour > 12 ? hour - 12 : (hour == 0 ? 12 : hour);
+      return '${date.day}/${date.month}/${date.year} $displayHour:${minute.toString().padLeft(2, '0')} $period';
     } catch (e) {
       return 'Invalid Date';
     }
@@ -1518,6 +1694,313 @@ class _ManageSubscriptionsPageState extends State<ManageSubscriptionsPage> {
     } catch (e) {
       // Ignore errors when showing snackbar
       print('Error showing snackbar: $e');
+    }
+  }
+
+  void _showPlansAvailedDetails() async {
+    try {
+      final uid = AuthService.getCurrentUserId();
+      if (uid == null) return;
+
+      // Get user's availed plans
+      final availedPlans = await _getUserAvailedPlans(uid);
+      
+      if (availedPlans.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('No availed plans found'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      showDialog(
+        context: context,
+        barrierDismissible: true,
+        builder: (BuildContext context) {
+          return Dialog(
+            backgroundColor: Colors.transparent,
+            child: Container(
+              width: double.maxFinite,
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.8,
+              ),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    const Color(0xFF2D2D2D),
+                    const Color(0xFF1E1E1E),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.3),
+                    blurRadius: 20,
+                    offset: const Offset(0, 10),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Header
+                  Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          const Color(0xFF4ECDC4).withOpacity(0.2),
+                          const Color(0xFF45B7D1).withOpacity(0.2),
+                        ],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: const BorderRadius.only(
+                        topLeft: Radius.circular(20),
+                        topRight: Radius.circular(20),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF4ECDC4).withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Icon(
+                            Icons.list_alt,
+                            color: Color(0xFF4ECDC4),
+                            size: 24,
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Plans Availed Details',
+                                style: GoogleFonts.poppins(
+                                  color: Colors.white,
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              Text(
+                                'Your subscription history',
+                                style: GoogleFonts.poppins(
+                                  color: Colors.white.withOpacity(0.8),
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  // Content
+                  Flexible(
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      padding: const EdgeInsets.all(20),
+                      itemCount: availedPlans.length,
+                      itemBuilder: (context, index) {
+                        final plan = availedPlans[index];
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 16),
+                          padding: const EdgeInsets.all(20),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                const Color(0xFF2D2D2D),
+                                const Color(0xFF1E1E1E),
+                              ],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: plan.isMembershipPlan 
+                                  ? const Color(0xFF9C27B0).withOpacity(0.3)
+                                  : plan.planName.toLowerCase().contains('coach')
+                                      ? const Color(0xFFFF9800).withOpacity(0.3)
+                                      : const Color(0xFF4CAF50).withOpacity(0.3),
+                              width: 1.5,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: plan.isMembershipPlan 
+                                    ? const Color(0xFF9C27B0).withOpacity(0.1)
+                                    : plan.planName.toLowerCase().contains('coach')
+                                        ? const Color(0xFFFF9800).withOpacity(0.1)
+                                        : const Color(0xFF4CAF50).withOpacity(0.1),
+                                blurRadius: 8,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: plan.isMembershipPlan 
+                                          ? const Color(0xFF9C27B0).withOpacity(0.2)
+                                          : plan.planName.toLowerCase().contains('coach')
+                                              ? const Color(0xFFFF9800).withOpacity(0.2)
+                                              : const Color(0xFF4CAF50).withOpacity(0.2),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Icon(
+                                      plan.isMembershipPlan 
+                                          ? Icons.card_membership 
+                                          : plan.planName.toLowerCase().contains('coach')
+                                              ? Icons.fitness_center
+                                              : Icons.subscriptions,
+                                      color: plan.isMembershipPlan 
+                                          ? const Color(0xFF9C27B0)
+                                          : plan.planName.toLowerCase().contains('coach')
+                                              ? const Color(0xFFFF9800)
+                                              : const Color(0xFF4CAF50),
+                                      size: 20,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Text(
+                                      plan.getDisplayName(),
+                                      style: GoogleFonts.poppins(
+                                        color: Colors.white,
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                    decoration: BoxDecoration(
+                                      color: plan.isMembershipPlan 
+                                          ? const Color(0xFF9C27B0)
+                                          : plan.planName.toLowerCase().contains('coach')
+                                              ? const Color(0xFFFF9800)
+                                              : const Color(0xFF4CAF50),
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
+                                    child: Text(
+                                      plan.isMembershipPlan 
+                                          ? 'MEMBERSHIP' 
+                                          : plan.planName.toLowerCase().contains('coach')
+                                              ? 'COACH'
+                                              : 'MONTHLY',
+                                      style: GoogleFonts.poppins(
+                                        color: Colors.white,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 16),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'Price',
+                                          style: GoogleFonts.poppins(
+                                            color: Colors.white.withOpacity(0.7),
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          plan.getFormattedPrice(),
+                                          style: GoogleFonts.poppins(
+                                            color: Colors.white,
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'Duration',
+                                          style: GoogleFonts.poppins(
+                                            color: Colors.white.withOpacity(0.7),
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          plan.getDurationText(),
+                                          style: GoogleFonts.poppins(
+                                            color: Colors.white,
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              if (plan.description?.isNotEmpty == true) ...[
+                                const SizedBox(height: 12),
+                                Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withOpacity(0.05),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    plan.description!,
+                                    style: GoogleFonts.poppins(
+                                      color: Colors.white.withOpacity(0.8),
+                                      fontSize: 13,
+                                      height: 1.4,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+    } catch (e) {
+      print('Error showing plans availed details: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error loading plans details'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 }
@@ -1646,7 +2129,7 @@ class DynamicSubscriptionCard extends StatelessWidget {
                   
                   // Plan Name
                   Text(
-                    plan.planName,
+                    plan.getDisplayName(),
                     style: GoogleFonts.poppins(
                       color: Colors.white,
                       fontSize: 22,

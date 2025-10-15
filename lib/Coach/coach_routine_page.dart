@@ -149,7 +149,7 @@ class _CoachRoutinePageState extends State<CoachRoutinePage> with SingleTickerPr
               tabs: [
                 Tab(
                   child: Text(
-                    "CLIENT ROUTINES",
+                    "CLIENT PROGRAMS",
                     style: GoogleFonts.poppins(
                       fontWeight: FontWeight.w600,
                       fontSize: 12,
@@ -199,7 +199,7 @@ class _CoachRoutinePageState extends State<CoachRoutinePage> with SingleTickerPr
                     ? _navigateToClientSelection()
                     : _createNewTemplate(),
                 label: Text(
-                  _tabController.index == 0 ? "CREATE ROUTINE" : "CREATE TEMPLATE",
+                  _tabController.index == 0 ? "CREATE PROGRAM" : "CREATE PROGRAM",
                   style: GoogleFonts.poppins(
                     fontWeight: FontWeight.w600,
                     color: Colors.white,
@@ -240,33 +240,56 @@ class _CoachRoutinePageState extends State<CoachRoutinePage> with SingleTickerPr
 
   Widget _buildEmptyClientsState() {
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.people_outline,
-            color: Colors.grey[600],
-            size: 64,
-          ),
-          SizedBox(height: 16),
-          Text(
-            'No clients assigned yet',
-            style: GoogleFonts.poppins(
-              color: Colors.grey[400],
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
+      child: Padding(
+        padding: EdgeInsets.all(20),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.people_outline,
+              color: Colors.grey[600],
+              size: 64,
             ),
-          ),
-          SizedBox(height: 8),
-          Text(
-            'Clients will appear here once they request you as their coach',
-            style: GoogleFonts.poppins(
-              color: Colors.grey[500],
-              fontSize: 14,
+            SizedBox(height: 16),
+            Text(
+              'No clients assigned yet',
+              style: GoogleFonts.poppins(
+                color: Colors.grey[400],
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+              ),
             ),
-            textAlign: TextAlign.center,
-          ),
-        ],
+            SizedBox(height: 8),
+            Text(
+              'Clients will appear here once they request you as their coach',
+              style: GoogleFonts.poppins(
+                color: Colors.grey[500],
+                fontSize: 14,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: _createNewTemplate,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Color(0xFF4ECDC4),
+                foregroundColor: Colors.white,
+                padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+              icon: Icon(Icons.add_rounded, color: Colors.white),
+              label: Text(
+                'Create Program',
+                style: GoogleFonts.poppins(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -343,7 +366,7 @@ class _CoachRoutinePageState extends State<CoachRoutinePage> with SingleTickerPr
                         ),
                       ),
                       Text(
-                        '${routines.length} routine${routines.length != 1 ? 's' : ''}',
+                        '${routines.length} program${routines.length != 1 ? 's' : ''}',
                         style: GoogleFonts.poppins(
                           color: Colors.grey[400],
                           fontSize: 14,
@@ -397,7 +420,7 @@ class _CoachRoutinePageState extends State<CoachRoutinePage> with SingleTickerPr
                   ),
                   SizedBox(width: 12),
                   Text(
-                    'No routines created yet',
+                    'No programs created yet',
                     style: GoogleFonts.poppins(
                       color: Colors.grey[500],
                       fontSize: 14,
@@ -531,13 +554,19 @@ class _CoachRoutinePageState extends State<CoachRoutinePage> with SingleTickerPr
       return _buildEmptyTemplatesState();
     }
 
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: coachTemplates.length,
-      itemBuilder: (context, index) {
-        final template = coachTemplates[index];
-        return _buildTemplateCard(template);
-      },
+    return Column(
+      children: [
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.all(16),
+            itemCount: coachTemplates.length,
+            itemBuilder: (context, index) {
+              final template = coachTemplates[index];
+              return _buildTemplateCard(template);
+            },
+          ),
+        ),
+      ],
     );
   }
 
@@ -562,30 +591,12 @@ class _CoachRoutinePageState extends State<CoachRoutinePage> with SingleTickerPr
           ),
           SizedBox(height: 8),
           Text(
-            'Create workout templates to quickly assign to your clients',
+            'Create workout programs to quickly assign to your clients',
             style: GoogleFonts.poppins(
               color: Colors.grey[500],
               fontSize: 14,
             ),
             textAlign: TextAlign.center,
-          ),
-          SizedBox(height: 24),
-          ElevatedButton(
-            onPressed: _createNewTemplate,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Color(0xFF4ECDC4),
-              foregroundColor: Colors.white,
-              padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-            child: Text(
-              'Create Your First Template',
-              style: GoogleFonts.poppins(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
           ),
         ],
       ),

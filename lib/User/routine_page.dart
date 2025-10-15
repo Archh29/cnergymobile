@@ -7,6 +7,9 @@ import './create_routine_page.dart';
 import './start_workout_preview.dart';
 import './widgets/session_status_widget.dart';
 import './muscle_group_selection_page.dart';
+import './workout_session_page.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
 
 class RoutinePage extends StatefulWidget {
   @override
@@ -25,6 +28,7 @@ class _RoutinePageState extends State<RoutinePage> with SingleTickerProviderStat
   String? _errorMessage;
   Map<String, dynamic>? _membershipDetails;
   int _totalRoutines = 0;
+  bool _hasActiveWorkout = false;
 
   @override
   void initState() {
@@ -38,6 +42,14 @@ class _RoutinePageState extends State<RoutinePage> with SingleTickerProviderStat
       });
     });
     _loadData();
+    _checkActiveWorkout();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Check for active workout when page becomes visible
+    _checkActiveWorkout();
   }
 
   bool _canCreateRoutine() {
@@ -48,6 +60,26 @@ class _RoutinePageState extends State<RoutinePage> with SingleTickerProviderStat
     bool canCreate = myRoutines.length < 1;
     print('🔒 Basic user - has ${myRoutines.length} routines, can create: $canCreate');
     return canCreate;
+  }
+
+  Future<void> _checkActiveWorkout() async {
+    try {
+      // Check if there's an active workout session in SharedPreferences
+      final prefs = await SharedPreferences.getInstance();
+      final routineId = prefs.getString('active_workout_routine_id');
+      final routineName = prefs.getString('active_workout_routine_name');
+      
+      setState(() {
+        _hasActiveWorkout = routineId != null && routineName != null;
+      });
+      
+      print('🔍 Active workout check: $_hasActiveWorkout (ID: $routineId, Name: $routineName)');
+    } catch (e) {
+      print('❌ Error checking active workout: $e');
+      setState(() {
+        _hasActiveWorkout = false;
+      });
+    }
   }
 
   Future<void> _loadData() async {
@@ -775,10 +807,13 @@ class _RoutinePageState extends State<RoutinePage> with SingleTickerProviderStat
                 tabs: [
                   Tab(text: "My Programs"),
                   Tab(text: "Coach Assigned"),
-                  Tab(text: "Templates"),
+                  Tab(text: "Explore"),
                 ],
               ),
             ),
+            
+            // Workout in Progress Banner (above programs)
+            if (_hasActiveWorkout) _buildWorkoutInProgressBanner(),
             
             Expanded(
               child: TabBarView(
@@ -819,6 +854,9 @@ class _RoutinePageState extends State<RoutinePage> with SingleTickerProviderStat
     }
 
     List<RoutineModel> displayRoutines = myRoutines;
+    
+    // Sort routines to put today's programs at the top
+    displayRoutines = _sortRoutinesByToday(displayRoutines);
     
     if (!isProMember && displayRoutines.length > 1) {
       displayRoutines = displayRoutines.take(1).toList();
@@ -933,7 +971,8 @@ class _RoutinePageState extends State<RoutinePage> with SingleTickerProviderStat
     if (_isLoading) return _buildLoadingState();
     if (_errorMessage != null) return _buildErrorState();
 
-    final list = coachAssignedRoutines;
+    // Sort coach routines to put today's programs at the top
+    final list = _sortRoutinesByToday(coachAssignedRoutines);
     if (list.isEmpty) {
       return Center(
         child: Container(
@@ -1035,7 +1074,7 @@ class _RoutinePageState extends State<RoutinePage> with SingleTickerProviderStat
               ),
               SizedBox(height: 20),
               Text(
-                'Routine Templates',
+                'Explore Programs',
                 style: GoogleFonts.poppins(
                   color: Colors.white,
                   fontSize: 24,
@@ -1044,7 +1083,7 @@ class _RoutinePageState extends State<RoutinePage> with SingleTickerProviderStat
               ),
               SizedBox(height: 12),
               Text(
-                'No templates yet. Templates created by admins will appear here.',
+                'No programs to explore yet. Programs created by admins will appear here.',
                 style: GoogleFonts.poppins(
                   color: Colors.grey[400],
                   fontSize: 14,
@@ -1070,6 +1109,288 @@ class _RoutinePageState extends State<RoutinePage> with SingleTickerProviderStat
           return _buildRoutineCard(routine, showActions: false);
         },
       ),
+    );
+  }
+
+  Widget _buildWorkoutInProgressBanner() {
+    return Container(
+      margin: EdgeInsets.fromLTRB(20, 0, 20, 16),
+      padding: EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Color(0xFF2A2A2A),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: Color(0xFF007AFF).withOpacity(0.3),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          // Workout Icon
+          Container(
+            width: 50,
+            height: 50,
+            decoration: BoxDecoration(
+              color: Color(0xFF007AFF).withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              Icons.fitness_center,
+              color: Color(0xFF007AFF),
+              size: 24,
+            ),
+          ),
+          SizedBox(width: 16),
+          
+          // Text Content
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Workout in Progress',
+                  style: GoogleFonts.poppins(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                SizedBox(height: 4),
+                Text(
+                  'You have an active workout session',
+                  style: GoogleFonts.poppins(
+                    color: Colors.grey[400],
+                    fontSize: 14,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          
+          // Action Buttons
+          Row(
+            children: [
+              // Resume Button
+              GestureDetector(
+                onTap: () {
+                  // Go back to the workout session
+                  Navigator.pop(context);
+                },
+                child: Container(
+                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Color(0xFF007AFF),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.play_arrow,
+                        color: Colors.white,
+                        size: 16,
+                      ),
+                      SizedBox(width: 4),
+                      Text(
+                        'Resume',
+                        style: GoogleFonts.poppins(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              SizedBox(width: 8),
+              
+              // Discard Button
+              GestureDetector(
+                onTap: () {
+                  _showDiscardConfirmation();
+                },
+                child: Container(
+                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.red,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.close,
+                        color: Colors.white,
+                        size: 16,
+                      ),
+                      SizedBox(width: 4),
+                      Text(
+                        'Discard',
+                        style: GoogleFonts.poppins(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+
+  void _showDiscardConfirmation() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          child: Container(
+            margin: EdgeInsets.symmetric(horizontal: 20),
+            padding: EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Color(0xFF1A1A1A),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: Color(0xFF333333),
+                width: 1,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.5),
+                  blurRadius: 20,
+                  offset: Offset(0, 10),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Warning Icon
+                Container(
+                  width: 60,
+                  height: 60,
+                  decoration: BoxDecoration(
+                    color: Colors.red.withOpacity(0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.warning_rounded,
+                    color: Colors.red,
+                    size: 30,
+                  ),
+                ),
+                SizedBox(height: 20),
+                
+                // Title
+                Text(
+                  'Discard Workout?',
+                  style: GoogleFonts.poppins(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                SizedBox(height: 12),
+                
+                // Message
+                Text(
+                  'Are you sure you want to discard this workout? All your progress will be lost and cannot be recovered.',
+                  style: GoogleFonts.poppins(
+                    color: Colors.grey[300],
+                    fontSize: 14,
+                    height: 1.5,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                SizedBox(height: 24),
+                
+                // Action Buttons
+                Row(
+                  children: [
+                    // Cancel Button
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () {
+                          Navigator.of(context).pop();
+                        },
+                        child: Container(
+                          padding: EdgeInsets.symmetric(vertical: 14),
+                          decoration: BoxDecoration(
+                            color: Color(0xFF2A2A2A),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: Color(0xFF444444),
+                              width: 1,
+                            ),
+                          ),
+                          child: Text(
+                            'Cancel',
+                            style: GoogleFonts.poppins(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ),
+                    ),
+                    SizedBox(width: 12),
+                    
+                    // Discard Button
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () async {
+                          Navigator.of(context).pop();
+                          setState(() {
+                            _hasActiveWorkout = false;
+                          });
+                          // Clear the workout data
+                          final prefs = await SharedPreferences.getInstance();
+                          await prefs.remove('active_workout_routine_id');
+                          await prefs.remove('active_workout_routine_name');
+                        },
+                        child: Container(
+                          padding: EdgeInsets.symmetric(vertical: 14),
+                          decoration: BoxDecoration(
+                            color: Colors.red,
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.red.withOpacity(0.3),
+                                blurRadius: 8,
+                                offset: Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: Text(
+                            'Discard',
+                            style: GoogleFonts.poppins(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -1171,6 +1492,8 @@ class _RoutinePageState extends State<RoutinePage> with SingleTickerProviderStat
               children: [
                 _buildInfoChip(Icons.format_list_numbered_rounded, "${routine.exercises} exercises", routineColor),
                 _buildInfoChip(Icons.trending_up_rounded, routine.difficulty, routineColor),
+                if (routine.scheduledDays?.isNotEmpty == true)
+                  _buildInfoChip(Icons.calendar_today_rounded, routine.scheduledDays!.first, routineColor),
               ],
             ),
             SizedBox(height: 20),
@@ -1258,5 +1581,32 @@ class _RoutinePageState extends State<RoutinePage> with SingleTickerProviderStat
         ),
       ),
     );
+  }
+
+  // Get current workout day
+  String _getCurrentWorkoutDay() {
+    final now = DateTime.now();
+    final days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    return days[now.weekday - 1];
+  }
+
+  // Sort routines to put today's programs at the top
+  List<RoutineModel> _sortRoutinesByToday(List<RoutineModel> routines) {
+    final currentDay = _getCurrentWorkoutDay();
+    
+    // Separate routines into today's programs and others
+    final todayRoutines = <RoutineModel>[];
+    final otherRoutines = <RoutineModel>[];
+    
+    for (final routine in routines) {
+      if (routine.scheduledDays?.contains(currentDay) == true) {
+        todayRoutines.add(routine);
+      } else {
+        otherRoutines.add(routine);
+      }
+    }
+    
+    // Return today's routines first, then others
+    return [...todayRoutines, ...otherRoutines];
   }
 }

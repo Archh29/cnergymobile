@@ -572,6 +572,21 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                         child: Image.asset(
                           'assets/images/gym.logo.png',
                           height: 100,
+                          errorBuilder: (context, error, stackTrace) {
+                            return Container(
+                              height: 100,
+                              width: 100,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFF6B35),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                Icons.fitness_center,
+                                size: 50,
+                                color: Colors.white,
+                              ),
+                            );
+                          },
                         ),
                       ),
                       const SizedBox(height: 24),

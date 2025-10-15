@@ -1,12 +1,12 @@
-import "package:flutter/material.dart"
-import "package:google_fonts/google_fonts.dart"
-import "../models/routine.models.dart"
-import "../models/exercise_selection_model.dart"
-import "../models/exercise_model.dart"
-import "../services/routine_service.dart"
-import "../services/exercise_selection_service.dart"
+import "package:flutter/material.dart";
+import "package:google_fonts/google_fonts.dart";
+import "../models/routine.models.dart";
+import "../models/exercise_selection_model.dart";
+import "../models/exercise_model.dart";
+import "../services/routine_service.dart";
+import "../services/exercise_selection_service.dart";
 import '../services/program_template_service.dart' as programservice;
-import "coach_selection_muscle_group_page.dart"
+import "coach_selection_muscle_group_page.dart";
 
 class CoachCreateProgramPage extends StatefulWidget {
   final Color selectedColor;

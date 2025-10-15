@@ -477,7 +477,11 @@ class _GuestSessionStatusScreenState extends State<GuestSessionStatusScreen> {
     if (dateString == null) return 'Unknown';
     try {
       final date = DateTime.parse(dateString);
-      return '${date.day}/${date.month}/${date.year} ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
+      final hour = date.hour;
+      final minute = date.minute;
+      final period = hour >= 12 ? 'PM' : 'AM';
+      final displayHour = hour > 12 ? hour - 12 : (hour == 0 ? 12 : hour);
+      return '${date.day}/${date.month}/${date.year} $displayHour:${minute.toString().padLeft(2, '0')} $period';
     } catch (e) {
       return 'Invalid Date';
     }

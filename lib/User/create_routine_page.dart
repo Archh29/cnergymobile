@@ -30,11 +30,16 @@ class _CreateRoutinePageState extends State<CreateRoutinePage> {
     
   String selectedDifficulty = "Beginner";
   Color selectedColor = Color(0xFF96CEB4);
+  String selectedDay = "Monday";
   List<ExerciseModel> exercises = [];
   bool isLoading = false;
 
   final List<String> availableDifficulties = [
     "Beginner", "Intermediate", "Advanced"
+  ];
+  
+  final List<String> availableDays = [
+    "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"
   ];
     
   final List<Color> availableColors = [
@@ -52,6 +57,9 @@ class _CreateRoutinePageState extends State<CreateRoutinePage> {
       nameController.text = widget.existingRoutine.name ?? '';
       notesController.text = widget.existingRoutine.notes ?? '';
       selectedDifficulty = widget.existingRoutine.difficulty ?? 'Beginner';
+      selectedDay = widget.existingRoutine.scheduledDays?.isNotEmpty == true 
+          ? widget.existingRoutine.scheduledDays!.first 
+          : 'Monday';
       
       // Handle color conversion - it might be stored as int or string
       if (widget.existingRoutine.color != null) {
@@ -353,6 +361,16 @@ class _CreateRoutinePageState extends State<CreateRoutinePage> {
             ),
           ),
           SizedBox(height: 16),
+          
+          // Day Selection
+          _buildDropdownField(
+            'Training Day',
+            selectedDay,
+            availableDays,
+            (value) => setState(() => selectedDay = value!),
+            icon: Icons.calendar_today,
+          ),
+          SizedBox(height: 16),
                     
           // Color Selection
           Text(
@@ -444,8 +462,9 @@ class _CreateRoutinePageState extends State<CreateRoutinePage> {
     String label,
     String value,
     List<String> items,
-    ValueChanged<String?> onChanged,
-  ) {
+    ValueChanged<String?> onChanged, {
+    IconData? icon,
+  }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -473,7 +492,15 @@ class _CreateRoutinePageState extends State<CreateRoutinePage> {
               items: items.map((String item) {
                 return DropdownMenuItem<String>(
                   value: item,
-                  child: Text(item),
+                  child: Row(
+                    children: [
+                      if (icon != null) ...[
+                        Icon(icon, color: Colors.grey[400], size: 18),
+                        SizedBox(width: 8),
+                      ],
+                      Text(item),
+                    ],
+                  ),
                 );
               }).toList(),
               onChanged: onChanged,
@@ -602,7 +629,7 @@ class _CreateRoutinePageState extends State<CreateRoutinePage> {
         completionRate: 0,
         totalSessions: 0,
         notes: notesController.text.trim(),
-        scheduledDays: [],
+        scheduledDays: [selectedDay],
         version: 1.0,
         detailedExercises: exercises,
       );

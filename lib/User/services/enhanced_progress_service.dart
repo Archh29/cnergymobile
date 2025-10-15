@@ -7,24 +7,20 @@ import '../models/attendance_model.dart';
 import '../models/progress_model.dart';
 import '../models/personal_record_model.dart';
 import '../models/routine.models.dart';
+import 'auth_service.dart';
 
 class EnhancedProgressService {
   static const String baseUrl = "https://api.cnergy.site/userprogress.php";
   static const String routinesUrl = "https://api.cnergy.site/routines.php";
 
-  // Get current user ID
+  // Get current user ID from AuthService
   static Future<int> getCurrentUserId() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      String? userIdString = prefs.getString('user_id');
-      if (userIdString != null && userIdString.isNotEmpty) {
-        return int.parse(userIdString);
+      final userId = AuthService.getCurrentUserId();
+      if (userId == null) {
+        throw Exception('User not logged in');
       }
-      int? userIdInt = prefs.getInt('user_id');
-      if (userIdInt != null) {
-        return userIdInt;
-      }
-      throw Exception('User not logged in');
+      return userId;
     } catch (e) {
       throw Exception('Failed to get user ID: $e');
     }

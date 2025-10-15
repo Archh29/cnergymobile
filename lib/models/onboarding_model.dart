@@ -1,3 +1,5 @@
+import '../utils/date_utils.dart';
+
 class User {
   final int? id;
   final String email;
@@ -33,8 +35,8 @@ class User {
       'fname': fname,
       'mname': mname,
       'lname': lname,
-      'bday': bday.toIso8601String().split('T')[0],
-      'created_at': createdAt?.toIso8601String(),
+      'bday': CnergyDateUtils.toApiDate(bday),
+      'created_at': createdAt != null ? CnergyDateUtils.toApiDateTime(createdAt!) : null,
     };
   }
 
@@ -48,8 +50,8 @@ class User {
       fname: json['fname'],
       mname: json['mname'],
       lname: json['lname'],
-      bday: DateTime.parse(json['bday']),
-      createdAt: json['created_at'] != null ? DateTime.parse(json['created_at']) : null,
+      bday: CnergyDateUtils.parseApiDate(json['bday']) ?? DateTime.now(),
+      createdAt: json['created_at'] != null ? CnergyDateUtils.parseApiDateTime(json['created_at']) : null,
     );
   }
 }
@@ -100,7 +102,7 @@ class MemberProfileDetails {
       'fitness_level': fitnessLevel,
       'fitness_goals': fitnessGoals,
       'gender_id': genderId,
-      'birthdate': birthdate.toIso8601String().split('T')[0],
+      'birthdate': CnergyDateUtils.toApiDate(birthdate),
       'height_cm': heightCm,
       'weight_kg': weightKg,
       'target_weight': targetWeight,
@@ -109,9 +111,9 @@ class MemberProfileDetails {
       'workout_days_per_week': workoutDaysPerWeek,
       'equipment_access': equipmentAccess,
       'profile_completed': profileCompleted,
-      'profile_completed_at': profileCompletedAt?.toIso8601String(),
-      'onboarding_completed_at': onboardingCompletedAt?.toIso8601String(),
-      'created_at': createdAt?.toIso8601String(),
+      'profile_completed_at': profileCompletedAt != null ? CnergyDateUtils.toApiDateTime(profileCompletedAt!) : null,
+      'onboarding_completed_at': onboardingCompletedAt != null ? CnergyDateUtils.toApiDateTime(onboardingCompletedAt!) : null,
+      'created_at': createdAt != null ? CnergyDateUtils.toApiDateTime(createdAt!) : null,
     };
   }
 
@@ -122,7 +124,7 @@ class MemberProfileDetails {
       fitnessLevel: json['fitness_level'],
       fitnessGoals: List<String>.from(json['fitness_goals'] ?? []),
       genderId: json['gender_id'],
-      birthdate: DateTime.parse(json['birthdate']),
+      birthdate: CnergyDateUtils.parseApiDate(json['birthdate']) ?? DateTime.now(),
       heightCm: double.parse(json['height_cm'].toString()),
       weightKg: double.parse(json['weight_kg'].toString()),
       targetWeight: json['target_weight'] != null ? double.parse(json['target_weight'].toString()) : null,
@@ -131,9 +133,9 @@ class MemberProfileDetails {
       workoutDaysPerWeek: json['workout_days_per_week'],
       equipmentAccess: json['equipment_access'],
       profileCompleted: json['profile_completed'] == 1,
-      profileCompletedAt: json['profile_completed_at'] != null ? DateTime.parse(json['profile_completed_at']) : null,
-      onboardingCompletedAt: json['onboarding_completed_at'] != null ? DateTime.parse(json['onboarding_completed_at']) : null,
-      createdAt: json['created_at'] != null ? DateTime.parse(json['created_at']) : null,
+      profileCompletedAt: json['profile_completed_at'] != null ? CnergyDateUtils.parseApiDateTime(json['profile_completed_at']) : null,
+      onboardingCompletedAt: json['onboarding_completed_at'] != null ? CnergyDateUtils.parseApiDateTime(json['onboarding_completed_at']) : null,
+      createdAt: json['created_at'] != null ? CnergyDateUtils.parseApiDateTime(json['created_at']) : null,
     );
   }
 }

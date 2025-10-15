@@ -15,6 +15,32 @@ class AuthService {
   static bool _isInitialized = false;
   static bool get isInitialized => _isInitialized;
 
+  // Force refresh user data - useful for hot reload
+  static Future<void> forceRefresh() async {
+    print('🔄 Force refreshing AuthService data...');
+    
+    // Clear all cached data
+    _isInitialized = false;
+    _currentUserId = null;
+    _currentUser = null;
+    
+    // Reload from storage
+    await _loadUserFromStorage();
+    
+    // If ID is saved but user data is missing, fetch it
+    if (_currentUserId != null && _currentUser == null) {
+      print('📡 User ID found but data missing, fetching from server...');
+      try {
+        await _fetchUserFromServer(_currentUserId!);
+      } catch (e) {
+        print('❌ Failed to fetch user data during force refresh: $e');
+      }
+    }
+    
+    _isInitialized = true;
+    print('✅ AuthService force refresh completed - All cached data cleared');
+  }
+
   // Initialize auth service - call this in main() or app startup
   static Future<void> initialize() async {
     print('🔄 Initializing AuthService...');
@@ -413,13 +439,31 @@ class AuthService {
   // Check if user is customer
   static bool isCustomer() {
     final userTypeId = _getUserTypeAsInt(_currentUser ?? {});
-    print('🔍 isCustomer check - userTypeId: $userTypeId, isCustomer: ${userTypeId == 4}');
-    return userTypeId == 4;
+    final userRole = _currentUser?['user_role']?.toString().toLowerCase();
+    print('🔍 isCustomer check - userTypeId: $userTypeId, userRole: $userRole, isCustomer: ${userTypeId == 4 && userRole != 'coach'}');
+    return userTypeId == 4 && userRole != 'coach';
   }
 
   // Check if user is coach
   static bool isCoach() {
-    return _getUserTypeAsInt(_currentUser ?? {}) == 3;
+    final userTypeId = _getUserTypeAsInt(_currentUser ?? {});
+    final userRole = _currentUser?['user_role']?.toString().toLowerCase();
+    final userType = _currentUser?['user_type']?.toString().toLowerCase();
+    final userId = _currentUserId;
+    
+    print('🔍 isCoach check - userTypeId: $userTypeId, userRole: $userRole, userType: $userType, userId: $userId');
+    
+    // Manual override removed - let the system determine user type properly
+    
+    // Handle case where coach might have user_type_id 4 instead of 3
+    // Check multiple possible fields for coach identification
+    bool isCoachByRole = userRole == 'coach' || userType == 'coach';
+    bool isCoachById = userTypeId == 3;
+    bool isCoachByFallback = userTypeId == 4 && isCoachByRole;
+    
+    print('🔍 isCoach details - isCoachByRole: $isCoachByRole, isCoachById: $isCoachById, isCoachByFallback: $isCoachByFallback');
+    
+    return isCoachById || isCoachByFallback;
   }
 
   // Check if user is admin

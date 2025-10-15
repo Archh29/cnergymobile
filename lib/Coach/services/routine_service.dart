@@ -145,6 +145,7 @@ class RoutineService {
     String? color,
     List<String>? tags,
     String? notes,
+    List<String>? scheduledDays,
   }) async {
     try {
       // Debug logging
@@ -188,6 +189,7 @@ class RoutineService {
         'tags': tags ?? [],
         'notes': notes ?? description ?? '',
         'duration': duration ?? '30',
+        'scheduled_days': scheduledDays ?? ['Monday'],
         'exercises': exercises.map((exercise) => {
           'id': exercise.id,
           'name': exercise.name,

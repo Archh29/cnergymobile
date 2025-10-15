@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../utils/date_utils.dart';
 
 class GoalModel {
   final int? id;
@@ -24,10 +25,10 @@ class GoalModel {
       id: json['id'] != null ? int.tryParse(json['id'].toString()) : null,
       userId: int.parse(json['user_id'].toString()),
       goal: json['goal'] ?? '',
-      targetDate: json['target_date'] != null ? DateTime.parse(json['target_date']) : null,
+      targetDate: json['target_date'] != null ? CnergyDateUtils.parseApiDate(json['target_date']) : null,
       status: GoalStatus.fromString(json['status'] ?? 'active'),
-      createdAt: DateTime.parse(json['created_at']),
-      updatedAt: json['updated_at'] != null ? DateTime.parse(json['updated_at']) : null,
+      createdAt: CnergyDateUtils.parseApiDateTime(json['created_at']) ?? DateTime.now(),
+      updatedAt: json['updated_at'] != null ? CnergyDateUtils.parseApiDateTime(json['updated_at']) : null,
     );
   }
 
@@ -36,10 +37,10 @@ class GoalModel {
       if (id != null) 'id': id,
       'user_id': userId,
       'goal': goal,
-      if (targetDate != null) 'target_date': targetDate!.toIso8601String().split('T')[0],
+      if (targetDate != null) 'target_date': CnergyDateUtils.toApiDate(targetDate!),
       'status': status.value,
-      'created_at': createdAt.toIso8601String(),
-      if (updatedAt != null) 'updated_at': updatedAt!.toIso8601String(),
+      'created_at': CnergyDateUtils.toApiDateTime(createdAt),
+      if (updatedAt != null) 'updated_at': CnergyDateUtils.toApiDateTime(updatedAt!),
     };
   }
 
@@ -71,13 +72,12 @@ class GoalModel {
 
   String get formattedTargetDate {
     if (targetDate == null) return 'No deadline';
-    final now = DateTime.now();
-    final difference = targetDate!.difference(now).inDays;
-    
-    if (difference == 0) return 'Due today';
-    if (difference == 1) return 'Due tomorrow';
-    if (difference > 0) return 'Due in $difference days';
-    return 'Overdue by ${-difference} days';
+    return CnergyDateUtils.toDisplayDate(targetDate!);
+  }
+
+  String get relativeTargetDate {
+    if (targetDate == null) return 'No deadline';
+    return CnergyDateUtils.getRelativeDate(targetDate!);
   }
 }
 

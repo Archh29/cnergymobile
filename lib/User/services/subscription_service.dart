@@ -62,6 +62,16 @@ class SubscriptionService {
           final data = json.decode(response.body);
           print('Debug: Successfully decoded current subscription JSON response');
           if (data['success'] == true) {
+            // If there's an active coach, get more detailed coach data
+            if (data['active_coach'] != null) {
+              final coachId = data['active_coach']['coach_id'];
+              if (coachId != null) {
+                final detailedCoachData = await _getDetailedCoachData(userId, coachId);
+                if (detailedCoachData != null) {
+                  data['active_coach'] = detailedCoachData;
+                }
+              }
+            }
             return data;
           } else {
             print('Error: ${data['message']}');
@@ -76,6 +86,36 @@ class SubscriptionService {
       return null;
     } catch (e) {
       print('Error getting current subscription: $e');
+      return null;
+    }
+  }
+
+  // Get detailed coach data including start date
+  static Future<Map<String, dynamic>?> _getDetailedCoachData(int userId, int coachId) async {
+    try {
+      print('Debug: Getting detailed coach data for user: $userId, coach: $coachId');
+      
+      final response = await http.get(
+        Uri.parse('https://api.cnergy.site/coach_api.php?action=get-user-coach-request&user_id=$userId'),
+        headers: {'Content-Type': 'application/json'},
+      );
+      
+      print('Debug: Detailed coach response status: ${response.statusCode}');
+      print('Debug: Detailed coach response body: ${response.body}');
+      
+      if (response.statusCode == 200) {
+        try {
+          final data = json.decode(response.body);
+          if (data['success'] == true && data['coach_request'] != null) {
+            return data['coach_request'];
+          }
+        } catch (e) {
+          print('Error decoding detailed coach data: $e');
+        }
+      }
+      return null;
+    } catch (e) {
+      print('Error getting detailed coach data: $e');
       return null;
     }
   }
@@ -129,25 +169,29 @@ class SubscriptionService {
     }
   }
 
-  // Helper method to format date
+  // Helper method to format date (MM/DD/YYYY)
   static String formatDate(String? dateString) {
     if (dateString == null || dateString.isEmpty) return 'N/A';
     
     try {
       final date = DateTime.parse(dateString);
-      return '${date.day}/${date.month}/${date.year}';
+      return '${date.month.toString().padLeft(2, '0')}/${date.day.toString().padLeft(2, '0')}/${date.year}';
     } catch (e) {
       return 'Invalid Date';
     }
   }
 
-  // Helper method to format date with time
+  // Helper method to format date with time (MM/DD/YYYY HH:mm)
   static String formatDateTime(String? dateString) {
     if (dateString == null || dateString.isEmpty) return 'N/A';
     
     try {
       final date = DateTime.parse(dateString);
-      return '${date.day}/${date.month}/${date.year} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+      final hour = date.hour;
+      final minute = date.minute;
+      final period = hour >= 12 ? 'PM' : 'AM';
+      final displayHour = hour > 12 ? hour - 12 : (hour == 0 ? 12 : hour);
+      return '${date.month.toString().padLeft(2, '0')}/${date.day.toString().padLeft(2, '0')}/${date.year} $displayHour:${minute.toString().padLeft(2, '0')} $period';
     } catch (e) {
       return 'Invalid Date';
     }
