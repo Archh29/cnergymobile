@@ -150,7 +150,7 @@ class CoachService {
         bio: 'Certified strength and conditioning specialist with expertise in powerlifting and functional movement.',
         imageUrl: '',
         isAvailable: true,
-        hourlyRate: 75.0,
+        sessionRate: 75.0,
         certifications: ['NASM-CPT', 'CSCS', 'FMS'],
       ),
       CoachModel(
@@ -163,7 +163,7 @@ class CoachService {
         bio: 'Nutrition and fitness expert specializing in sustainable weight loss and lifestyle transformation.',
         imageUrl: '',
         isAvailable: true,
-        hourlyRate: 65.0,
+        sessionRate: 65.0,
         certifications: ['ACE-CPT', 'Precision Nutrition'],
       ),
       CoachModel(
@@ -176,7 +176,7 @@ class CoachService {
         bio: 'Former competitive bodybuilder with extensive experience in muscle building and contest preparation.',
         imageUrl: '',
         isAvailable: false,
-        hourlyRate: 85.0,
+        sessionRate: 85.0,
         certifications: ['IFBB Pro Card', 'NASM-CPT'],
       ),
       CoachModel(
@@ -189,7 +189,7 @@ class CoachService {
         bio: 'Movement specialist focused on functional training, mobility, and injury prevention.',
         imageUrl: '',
         isAvailable: true,
-        hourlyRate: 60.0,
+        sessionRate: 60.0,
         certifications: ['FMS', 'SFMA', 'TRX'],
       ),
     ];

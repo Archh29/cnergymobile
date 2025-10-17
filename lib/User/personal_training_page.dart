@@ -966,7 +966,7 @@ class _PersonalTrainingPageState extends State<PersonalTrainingPage>
   Widget _buildPricingSection(CoachModel coach) {
     List<Widget> pricingOptions = [];
     
-    // Hourly rate (always available)
+    // Session rate (always available)
     pricingOptions.add(
       Container(
         padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -981,7 +981,7 @@ class _PersonalTrainingPageState extends State<PersonalTrainingPage>
             Icon(Icons.access_time, color: Color(0xFF4ECDC4), size: 14),
             SizedBox(width: 4),
             Text(
-              '₱${coach.hourlyRate.toInt()}/hr',
+              '₱${coach.sessionRate.toInt()}/session',
               style: GoogleFonts.poppins(
                 color: Color(0xFF4ECDC4),
                 fontSize: 12,
@@ -1068,15 +1068,15 @@ class _PersonalTrainingPageState extends State<PersonalTrainingPage>
   }) {
     List<Widget> rateOptions = [];
 
-    // Hourly rate option
+    // Session rate option
     rateOptions.add(
       _buildRateOption(
-        title: 'Hourly Rate',
+        title: 'Session Rate',
         subtitle: 'Pay per session',
-        price: '₱${coach.hourlyRate.toInt()}/hr',
-        icon: Icons.access_time,
+        price: '₱${coach.sessionRate.toInt()}/session',
+        icon: Icons.fitness_center,
         isSelected: selectedRateType == 'hourly',
-        onTap: () => onRateChanged('hourly', coach.hourlyRate, null),
+        onTap: () => onRateChanged('hourly', coach.sessionRate, null),
       ),
     );
 
@@ -1534,7 +1534,7 @@ class _PersonalTrainingPageState extends State<PersonalTrainingPage>
 
   void _showHireDialog(CoachModel coach) {
     String selectedRateType = 'hourly';
-    double selectedRate = coach.hourlyRate;
+    double selectedRate = coach.sessionRate;
     int? selectedSessionCount;
     
     showDialog(
@@ -1682,7 +1682,7 @@ class _PersonalTrainingPageState extends State<PersonalTrainingPage>
         String packageText = '';
         switch (rateType) {
           case 'hourly':
-            packageText = 'Hourly rate (₱${rate.toInt()}/hr)';
+            packageText = 'Session rate (₱${rate.toInt()}/session)';
             break;
           case 'monthly':
             packageText = 'Monthly package (₱${rate.toInt()}/mo)';

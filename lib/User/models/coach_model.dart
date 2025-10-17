@@ -8,7 +8,7 @@ class CoachModel {
   final String bio;
   final String imageUrl;
   final bool isAvailable;
-  final double hourlyRate;
+  final double sessionRate;
   final double? monthlyRate;
   final double? sessionPackageRate;
   final int? sessionPackageCount;
@@ -24,7 +24,7 @@ class CoachModel {
     required this.bio,
     required this.imageUrl,
     required this.isAvailable,
-    required this.hourlyRate,
+    required this.sessionRate,
     this.monthlyRate,
     this.sessionPackageRate,
     this.sessionPackageCount,
@@ -42,7 +42,7 @@ class CoachModel {
       bio: json['bio'] ?? '',
       imageUrl: json['image_url'] ?? '',
       isAvailable: json['is_available'] ?? true,
-      hourlyRate: (json['hourly_rate'] ?? 0.0).toDouble(),
+      sessionRate: (json['hourly_rate'] ?? 0.0).toDouble(),
       monthlyRate: json['monthly_rate'] != null ? (json['monthly_rate'] as num).toDouble() : null,
       sessionPackageRate: json['session_package_rate'] != null ? (json['session_package_rate'] as num).toDouble() : null,
       sessionPackageCount: json['session_package_count'],
@@ -61,7 +61,7 @@ class CoachModel {
       'bio': bio,
       'image_url': imageUrl,
       'is_available': isAvailable,
-      'hourly_rate': hourlyRate,
+      'hourly_rate': sessionRate,
       'monthly_rate': monthlyRate,
       'session_package_rate': sessionPackageRate,
       'session_package_count': sessionPackageCount,

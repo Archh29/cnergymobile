@@ -1,8 +1,5 @@
 {
   "projects": {
-    "default": "cynergy-gym",
-    "cnergy": "cnergy-505e4"
-  },
-  "targets": {},
-  "etags": {}
+    "default": "cnergy-8a421"
+  }
 }
