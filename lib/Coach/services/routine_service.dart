@@ -354,14 +354,21 @@ class RoutineService {
         throw Exception('Routine ID is required and must be a valid number');
       }
 
-      final response = await http.put(
-        Uri.parse('$baseUrl/routines/$routineId'),
+      final requestData = {
+        'action': 'updateRoutine',
+        'routineId': routineIdInt,
+        'updates': updates,
+      };
+
+      final response = await http.post(
+        Uri.parse(baseUrl),
         headers: {'Content-Type': 'application/json'},
-        body: json.encode(updates),
+        body: json.encode(requestData),
       );
 
       if (response.statusCode == 200) {
-        return true;
+        final data = json.decode(response.body);
+        return data['success'] == true;
       } else {
         throw Exception('Failed to update routine');
       }
@@ -379,13 +386,20 @@ class RoutineService {
         throw Exception('Routine ID is required and must be a valid number');
       }
 
-      final response = await http.delete(
-        Uri.parse('$baseUrl/routines/$routineId'),
+      final requestData = {
+        'action': 'deleteRoutine',
+        'routineId': routineIdInt,
+      };
+
+      final response = await http.post(
+        Uri.parse(baseUrl),
         headers: {'Content-Type': 'application/json'},
+        body: json.encode(requestData),
       );
 
-      if (response.statusCode == 200 || response.statusCode == 204) {
-        return true;
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return data['success'] == true;
       } else {
         throw Exception('Failed to delete routine');
       }

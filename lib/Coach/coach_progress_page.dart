@@ -9,6 +9,7 @@ import 'detail_pages/attendance_detail_page.dart';
 import 'detail_pages/workout_logs_detail_page.dart';
 import 'detail_pages/personal_records_detail_page.dart';
 import 'detail_pages/progress_over_time_detail_page.dart';
+import 'widgets/coach_progressive_overload_tracker.dart';
 
 class CoachProgressPage extends StatefulWidget {
   final MemberModel selectedMember;
@@ -510,6 +511,8 @@ class _CoachProgressPageState extends State<CoachProgressPage>
                         _buildMemberSelector(),
                         SizedBox(height: 12),
                         _buildMemberHeader(),
+                        SizedBox(height: 20),
+                        _buildProgressiveOverloadSection(),
                         SizedBox(height: 20),
                 _buildBodyWeightSection(),
                 SizedBox(height: 20),
@@ -3038,5 +3041,291 @@ class _CoachProgressPageState extends State<CoachProgressPage>
     } catch (e) {
       return 'Invalid Time';
     }
+  }
+
+  Widget _buildProgressiveOverloadSection() {
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => CoachProgressiveOverloadTracker(
+              selectedMember: currentMember!,
+            ),
+          ),
+        );
+      },
+      child: Container(
+        padding: EdgeInsets.all(28),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFF2A2A2A), Color(0xFF1F1F1F)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: Color(0xFF3A3A3A),
+            width: 1,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 4,
+              spreadRadius: 0,
+              offset: Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Color(0xFF4ECDC4).withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    Icons.trending_up,
+                    color: Color(0xFF4ECDC4),
+                    size: 24,
+                  ),
+                ),
+                SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Progressive Overload',
+                        style: GoogleFonts.poppins(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      SizedBox(height: 4),
+                      Text(
+                        'Track ${currentMember?.fullName}\'s strength progression',
+                        style: GoogleFonts.poppins(
+                          color: Colors.grey[400],
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(
+                  Icons.arrow_forward_ios,
+                  color: Colors.grey[400],
+                  size: 16,
+                ),
+              ],
+            ),
+            SizedBox(height: 20),
+            FutureBuilder<Map<String, dynamic>>(
+              future: _getProgressiveOverloadStats(),
+              builder: (context, snapshot) {
+                if (snapshot.hasData) {
+                  final data = snapshot.data!;
+                  return Row(
+                    children: [
+                      Expanded(
+                        child: _buildEnhancedOverloadStatCard(
+                          'Programs',
+                          '${data['programs'] ?? 0}',
+                          Icons.list_alt,
+                          Color(0xFF4ECDC4),
+                        ),
+                      ),
+                      SizedBox(width: 16),
+                      Expanded(
+                        child: _buildEnhancedOverloadStatCard(
+                          'Workouts',
+                          '${data['workouts'] ?? 0}',
+                          Icons.fitness_center,
+                          Color(0xFF96CEB4),
+                        ),
+                      ),
+                    ],
+                  );
+                } else {
+                  return Row(
+                    children: [
+                      Expanded(
+                        child: _buildEnhancedOverloadStatCard(
+                          'Programs',
+                          '0',
+                          Icons.list_alt,
+                          Color(0xFF4ECDC4),
+                        ),
+                      ),
+                      SizedBox(width: 16),
+                      Expanded(
+                        child: _buildEnhancedOverloadStatCard(
+                          'Workouts',
+                          '0',
+                          Icons.fitness_center,
+                          Color(0xFF96CEB4),
+                        ),
+                      ),
+                    ],
+                  );
+                }
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<Map<String, dynamic>> _getProgressiveOverloadStats() async {
+    try {
+      print('🔍 COACH PROGRESSIVE OVERLOAD: Starting stats calculation...');
+      
+      // Use the already loaded data from the main progress page
+      final programs = memberRoutines; // Use the already loaded member routines
+      print('🔍 COACH PROGRESSIVE OVERLOAD: Using ${programs.length} member routines from main data');
+      
+      // Get actual workout data from progress tracker (where real workout sessions are saved)
+      final progressData = await _getClientProgressData();
+      
+      // Count unique workout sessions by grouping progress data by date + hour
+      Set<String> uniqueWorkoutSessions = {};
+      for (final exerciseData in progressData.values) {
+        for (final record in exerciseData) {
+          // Parse the date from the record map
+          final dateStr = record['date'] ?? record['created_at'] ?? record['timestamp'];
+          if (dateStr != null) {
+            try {
+              final date = DateTime.parse(dateStr);
+              final sessionKey = '${date.year}-${date.month}-${date.day}-${date.hour}';
+              uniqueWorkoutSessions.add(sessionKey);
+            } catch (e) {
+              print('Error parsing date: $dateStr');
+            }
+          }
+        }
+      }
+      
+      final completedWorkouts = uniqueWorkoutSessions.length;
+      
+      print('🔍 Coach Progressive Overload Stats:');
+      print('  - Programs: ${programs.length}');
+      print('  - Unique workout sessions: $completedWorkouts');
+      print('  - Session keys: ${uniqueWorkoutSessions.toList()}');
+      
+      return {
+        'programs': programs.length,
+        'workouts': completedWorkouts,
+      };
+    } catch (e) {
+      print('❌ COACH PROGRESSIVE OVERLOAD: Error getting progressive overload stats: $e');
+      return {
+        'programs': 0,
+        'workouts': 0,
+      };
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> _getClientPrograms() async {
+    try {
+      print('🔍 COACH PROGRESSIVE OVERLOAD: Fetching programs for member ID: ${currentMember!.id}');
+      final response = await http.get(
+        Uri.parse('https://api.cnergy.site/coach_api.php?action=getMemberRoutines&member_id=${currentMember!.id}'),
+        headers: {"Content-Type": "application/json"},
+      );
+      
+      print('🔍 COACH PROGRESSIVE OVERLOAD: API response status: ${response.statusCode}');
+      print('🔍 COACH PROGRESSIVE OVERLOAD: API response body: ${response.body}');
+      
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data['success'] == true) {
+          final programs = List<Map<String, dynamic>>.from(data['data']);
+          print('🔍 COACH PROGRESSIVE OVERLOAD: Found ${programs.length} programs');
+          return programs;
+        }
+      }
+      
+      return [];
+    } catch (e) {
+      print('❌ COACH PROGRESSIVE OVERLOAD: Error fetching client programs: $e');
+      return [];
+    }
+  }
+
+  Future<Map<String, List<Map<String, dynamic>>>> _getClientProgressData() async {
+    try {
+      print('🔍 COACH PROGRESSIVE OVERLOAD: Fetching progress data for member ID: ${currentMember!.id}');
+      final response = await http.get(
+        Uri.parse('https://api.cnergy.site/progress_tracker.php?action=get_all_progress&user_id=${currentMember!.id}'),
+        headers: {"Content-Type": "application/json"},
+      );
+      
+      print('🔍 COACH PROGRESSIVE OVERLOAD: Progress API response status: ${response.statusCode}');
+      print('🔍 COACH PROGRESSIVE OVERLOAD: Progress API response body: ${response.body}');
+      
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data['success'] == true) {
+          final Map<String, dynamic> progressData = data['data'] ?? {};
+          final Map<String, List<Map<String, dynamic>>> result = {};
+          
+          progressData.forEach((exerciseName, liftsData) {
+            if (liftsData is List) {
+              result[exerciseName] = (liftsData as List).cast<Map<String, dynamic>>();
+            }
+          });
+          
+          print('🔍 COACH PROGRESSIVE OVERLOAD: Found progress data for ${result.keys.length} exercises');
+          return result;
+        }
+      }
+      
+      return {};
+    } catch (e) {
+      print('❌ COACH PROGRESSIVE OVERLOAD: Error fetching client progress data: $e');
+      return {};
+    }
+  }
+
+  Widget _buildEnhancedOverloadStatCard(String title, String value, IconData icon, Color color) {
+    return Container(
+      padding: EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Color(0xFF1A1A1A),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: Color(0xFF3A3A3A),
+          width: 1,
+        ),
+      ),
+      child: Column(
+        children: [
+          Icon(icon, color: color, size: 24),
+          SizedBox(height: 8),
+          Text(
+            value,
+            style: GoogleFonts.poppins(
+              color: Colors.white,
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          Text(
+            title,
+            style: GoogleFonts.poppins(
+              color: Colors.grey[400],
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

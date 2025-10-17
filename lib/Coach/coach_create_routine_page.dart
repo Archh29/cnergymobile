@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import './models/member_model.dart';
 import './models/exercise_selection_model.dart';
 import './models/exercise_model.dart';
+import './models/routine.models.dart';
 import './services/routine_service.dart';
 import './services/exercise_selection_service.dart';
 import 'coach_selection_muscle_group_page.dart';
@@ -11,12 +12,14 @@ class CoachCreateRoutinePage extends StatefulWidget {
   final MemberModel? selectedClient;
   final Color selectedColor;
   final bool isTemplate;
+  final RoutineModel? editingRoutine;
 
   const CoachCreateRoutinePage({
     Key? key,
     this.selectedClient,
     this.selectedColor = const Color(0xFF4ECDC4),
     this.isTemplate = false,
+    this.editingRoutine,
   }) : super(key: key);
 
   @override
@@ -29,16 +32,11 @@ class _CoachCreateRoutinePageState extends State<CoachCreateRoutinePage> {
     
   String selectedDifficulty = "Beginner";
   Color selectedColor = Color(0xFF96CEB4);
-  String selectedDay = "Monday";
   List<ExerciseModel> exercises = [];
   bool isLoading = false;
 
   final List<String> availableDifficulties = [
     "Beginner", "Intermediate", "Advanced"
-  ];
-  
-  final List<String> availableDays = [
-    "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"
   ];
     
   final List<Color> availableColors = [
@@ -51,13 +49,66 @@ class _CoachCreateRoutinePageState extends State<CoachCreateRoutinePage> {
   void initState() {
     super.initState();
     selectedColor = widget.selectedColor;
-    // Pre-fill routine name based on whether it's a template or for a specific client
-    if (widget.isTemplate) {
-      nameController.text = "My Workout Template";
-    } else if (widget.selectedClient != null) {
-      nameController.text = "${widget.selectedClient!.fname}'s Program";
+    
+    // If editing an existing routine, populate the form with existing data
+    if (widget.editingRoutine != null) {
+      nameController.text = widget.editingRoutine!.name;
+      notesController.text = widget.editingRoutine!.notes;
+      selectedDifficulty = widget.editingRoutine!.difficultyText;
+      
+      // Parse the color from the routine
+      try {
+        if (widget.editingRoutine!.color.isNotEmpty) {
+          selectedColor = Color(int.parse(widget.editingRoutine!.color));
+        }
+      } catch (e) {
+        print('Error parsing routine color: ${widget.editingRoutine!.color}');
+      }
+      
+      // Parse exercises from the routine
+      print('🔍 DEBUG: Editing routine - Name: ${widget.editingRoutine!.name}');
+      print('🔍 DEBUG: Detailed exercises: ${widget.editingRoutine!.detailedExercises?.length ?? 0}');
+      print('🔍 DEBUG: Exercise list string: "${widget.editingRoutine!.exerciseList}"');
+      
+      if (widget.editingRoutine!.detailedExercises != null && widget.editingRoutine!.detailedExercises!.isNotEmpty) {
+        // The detailedExercises are already ExerciseModel objects
+        exercises = List<ExerciseModel>.from(widget.editingRoutine!.detailedExercises!);
+        print('✅ DEBUG: Loaded ${exercises.length} exercises from detailedExercises');
+        print('✅ DEBUG: First exercise: ${exercises.isNotEmpty ? exercises.first.name : 'None'}');
+      } else if (widget.editingRoutine!.exerciseList.isNotEmpty) {
+        // Fallback: parse from exercise list string
+        exercises = _parseExercisesFromString(widget.editingRoutine!.exerciseList);
+        print('✅ DEBUG: Loaded ${exercises.length} exercises from exerciseList string');
+      } else {
+        print('⚠️ DEBUG: No exercises found in routine data');
+        print('⚠️ DEBUG: detailedExercises: ${widget.editingRoutine!.detailedExercises}');
+        print('⚠️ DEBUG: exerciseList: "${widget.editingRoutine!.exerciseList}"');
+        // Create a default exercise if none exist
+        exercises = [
+          ExerciseModel(
+            id: 1,
+            name: 'Sample Exercise',
+            targetMuscle: 'General',
+            color: selectedColor.value.toString(),
+            restTime: 60,
+            targetReps: '10',
+            targetSets: 3,
+            targetWeight: '0',
+            category: 'Strength',
+            difficulty: 'Beginner',
+          )
+        ];
+        print('✅ DEBUG: Created default exercise');
+      }
     } else {
-      nameController.text = "New Program";
+      // Pre-fill routine name based on whether it's a template or for a specific client
+      if (widget.isTemplate) {
+        nameController.text = "My Workout Template";
+      } else if (widget.selectedClient != null) {
+        nameController.text = "${widget.selectedClient!.fname}'s Program";
+      } else {
+        nameController.text = "New Program";
+      }
     }
   }
 
@@ -76,7 +127,9 @@ class _CoachCreateRoutinePageState extends State<CoachCreateRoutinePage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              widget.isTemplate ? 'Create Template' : 'Create Program',
+              widget.editingRoutine != null 
+                  ? 'Edit Program' 
+                  : widget.isTemplate ? 'Create Template' : 'Create Program',
               style: GoogleFonts.poppins(
                 color: Colors.white,
                 fontSize: 18,
@@ -84,9 +137,11 @@ class _CoachCreateRoutinePageState extends State<CoachCreateRoutinePage> {
               ),
             ),
             Text(
-              widget.isTemplate 
-                  ? 'Create a reusable workout template'
-                  : 'For ${widget.selectedClient?.fullName ?? 'Client'}',
+              widget.editingRoutine != null
+                  ? 'Update ${widget.editingRoutine!.name}'
+                  : widget.isTemplate 
+                      ? 'Create a reusable workout template'
+                      : 'For ${widget.selectedClient?.fullName ?? 'Client'}',
               style: GoogleFonts.poppins(
                 fontSize: 12,
                 color: selectedColor,
@@ -343,6 +398,7 @@ class _CoachCreateRoutinePageState extends State<CoachCreateRoutinePage> {
   }
 
   Widget _buildExerciseCard(ExerciseModel exercise, int index) {
+    print('🏋️ DEBUG: Building exercise card $index: ${exercise.name}');
     final exerciseColor = Color(int.parse(exercise.color));
         
     return Container(
@@ -459,13 +515,7 @@ class _CoachCreateRoutinePageState extends State<CoachCreateRoutinePage> {
           ),
           SizedBox(height: 16),
           
-          // Day Selection
-          _buildDropdownField(
-            'Training Day',
-            selectedDay,
-            availableDays,
-            (value) => setState(() => selectedDay = value!),
-          ),
+          // Training day selection removed - now handled by schedule page
           SizedBox(height: 16),
                     
           // Color Selection
@@ -621,7 +671,9 @@ class _CoachCreateRoutinePageState extends State<CoachCreateRoutinePage> {
                 ),
               )
             : Text(
-                widget.isTemplate ? 'Create Template' : 'Create Program for ${widget.selectedClient?.fname ?? 'Client'}',
+                widget.editingRoutine != null 
+                    ? 'Update Program'
+                    : widget.isTemplate ? 'Create Template' : 'Create Program for ${widget.selectedClient?.fname ?? 'Client'}',
                 style: GoogleFonts.poppins(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
@@ -711,7 +763,36 @@ class _CoachCreateRoutinePageState extends State<CoachCreateRoutinePage> {
     try {
       bool success;
       
-      if (widget.isTemplate) {
+      if (widget.editingRoutine != null) {
+        // Update existing routine
+        print('🔄 DEBUG: Updating routine ${widget.editingRoutine!.id}');
+        print('📝 DEBUG: Routine name: ${nameController.text.trim()}');
+        print('📝 DEBUG: Number of exercises: ${exercises.length}');
+        for (int i = 0; i < exercises.length; i++) {
+          print('🏋️ DEBUG: Exercise $i: ${exercises[i].name} (${exercises[i].targetSets} sets, ${exercises[i].targetReps} reps)');
+        }
+        
+        final updates = {
+          'name': nameController.text.trim(),
+          'notes': notesController.text.trim(),
+          'difficulty': selectedDifficulty,
+          'color': selectedColor.value.toString(),
+          'exercises': exercises.map((exercise) => {
+            'id': exercise.id,
+            'name': exercise.name,
+            'reps': exercise.targetReps,
+            'sets': exercise.targetSets,
+            'weight': exercise.targetWeight,
+          }).toList(),
+        };
+        
+        print('📤 DEBUG: Sending updates: $updates');
+        success = await RoutineService.updateRoutine(
+          widget.editingRoutine!.id,
+          updates,
+        );
+        print('✅ DEBUG: Update result: $success');
+      } else if (widget.isTemplate) {
         // Create template
         success = await RoutineService.createCoachTemplate(
           templateName: nameController.text.trim(),
@@ -744,7 +825,7 @@ class _CoachCreateRoutinePageState extends State<CoachCreateRoutinePage> {
           color: selectedColor.value.toString(),
           tags: [],
           notes: notesController.text.trim(),
-          scheduledDays: [selectedDay],
+          scheduledDays: [], // No longer using scheduled days - will be handled by schedule page
         );
       }
 
@@ -754,18 +835,20 @@ class _CoachCreateRoutinePageState extends State<CoachCreateRoutinePage> {
         Navigator.pop(context, true);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(widget.isTemplate 
-                ? 'Template created successfully!' 
-                : 'Routine created successfully for ${widget.selectedClient!.fname}!'),
+            content: Text(widget.editingRoutine != null
+                ? 'Routine updated successfully!'
+                : widget.isTemplate 
+                    ? 'Template created successfully!' 
+                    : 'Routine created successfully for ${widget.selectedClient!.fname}!'),
             backgroundColor: Color(0xFF4ECDC4),
           ),
         );
       } else {
-        throw Exception('Failed to create ${widget.isTemplate ? 'template' : 'routine'}');
+        throw Exception('Failed to ${widget.editingRoutine != null ? 'update' : 'create'} ${widget.isTemplate ? 'template' : 'routine'}');
       }
     } catch (e) {
       if (!mounted) return;
-      _showError('Error creating ${widget.isTemplate ? 'template' : 'routine'}: ${e.toString()}');
+      _showError('Error ${widget.editingRoutine != null ? 'updating' : 'creating'} ${widget.isTemplate ? 'template' : 'routine'}: ${e.toString()}');
     } finally {
       if (mounted) {
         setState(() => isLoading = false);
@@ -780,5 +863,30 @@ class _CoachCreateRoutinePageState extends State<CoachCreateRoutinePage> {
         backgroundColor: Colors.red,
       ),
     );
+  }
+
+  // Helper method to parse exercises from string
+  List<ExerciseModel> _parseExercisesFromString(String exerciseList) {
+    if (exerciseList.isEmpty) return [];
+    
+    final exerciseNames = exerciseList.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+    final exercises = <ExerciseModel>[];
+    
+    for (int i = 0; i < exerciseNames.length; i++) {
+      exercises.add(ExerciseModel(
+        id: i + 1,
+        name: exerciseNames[i],
+        targetMuscle: 'General',
+        color: selectedColor.value.toString(),
+        restTime: 60,
+        targetReps: '10',
+        targetSets: 3,
+        targetWeight: '0',
+        category: 'Strength',
+        difficulty: 'Beginner',
+      ));
+    }
+    
+    return exercises;
   }
 }

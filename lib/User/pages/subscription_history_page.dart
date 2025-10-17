@@ -41,23 +41,9 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
         print('Debug: Retrieved current subscription: $currentData');
         
          setState(() {
-           // Parse membership_info.php response format
-           if (historyData != null && historyData['success'] == true && historyData['data'] != null) {
-             final membershipData = historyData['data'];
-             _subscriptionData = {
-               'subscription_history': [membershipData], // Convert single membership to list
-               'success': true
-             };
-             _currentSubscription = {
-               'subscription': membershipData,
-               'subscription_status': membershipData['status'],
-               'days_remaining': membershipData['days_remaining'],
-               'is_premium': membershipData['has_membership']
-             };
-           } else {
-             _subscriptionData = historyData;
-             _currentSubscription = currentData;
-           }
+           // Use the subscription history data directly
+           _subscriptionData = historyData;
+           _currentSubscription = currentData;
            _isLoading = false;
          });
       } else {
@@ -129,7 +115,7 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
           children: [
             _buildCurrentSubscriptionCard(),
             const SizedBox(height: 20),
-            _buildSectionTitle('Request History'),
+            _buildSectionTitle('Subscription History'),
             const SizedBox(height: 12),
             _buildRequestsList(),
           ],
@@ -145,12 +131,53 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
 
      final activeCoachData = _currentSubscription!['active_coach'];
      final activeCoach = (activeCoachData is Map<String, dynamic>) ? activeCoachData : null;
-     final subscription = _currentSubscription!['subscription'];
+     // Get the Monthly Access subscription from subscription history
+     final subscriptionHistory = _subscriptionData?['subscription_history'] as List<dynamic>? ?? [];
+     Map<String, dynamic>? subscription;
+     for (final sub in subscriptionHistory) {
+       if (sub['plan_name']?.toString().toLowerCase().contains('monthly access') == true) {
+         subscription = sub;
+         break;
+       }
+     }
      final subscriptionStatus = _currentSubscription!['subscription_status'] ?? 'Inactive';
-     final daysRemaining = _currentSubscription!['days_remaining'] ?? 0;
+     
+     // Calculate days remaining for the Monthly Access subscription
+     int daysRemaining = 0;
+     if (subscription != null && subscription['end_date'] != null) {
+       try {
+         final end = DateTime.parse(subscription['end_date']);
+         final now = DateTime.now();
+         daysRemaining = end.difference(now).inDays;
+       } catch (e) {
+         daysRemaining = 0;
+       }
+     }
+     
      final isPremium = _currentSubscription!['is_premium'] ?? false;
      final hasActiveSubscription = subscription != null && daysRemaining > 0;
-     final membershipStatus = hasActiveSubscription ? 'PREMIUM' : 'STANDARD';
+     
+     // Determine the correct membership status based on plan type
+     String membershipStatus = 'STANDARD';
+     if (hasActiveSubscription && subscription != null) {
+       final planName = subscription['plan_name']?.toString() ?? '';
+       final isMemberRate = (planName.toLowerCase().contains('member rate') && 
+                            !planName.toLowerCase().contains('non-member')) || 
+                           (planName.toLowerCase().contains('member monthly') && 
+                            !planName.toLowerCase().contains('non-member'));
+       final isNonMemberPlan = planName.toLowerCase().contains('non-member') || 
+                              planName.toLowerCase().contains('non member') ||
+                              planName.toLowerCase().contains('standard');
+       
+       if (isMemberRate) {
+         membershipStatus = 'PREMIUM';
+       } else if (isNonMemberPlan) {
+         membershipStatus = 'STANDARD';
+       } else {
+         // Default for other subscription types
+         membershipStatus = 'ACCESS';
+       }
+     }
 
     return Container(
       width: double.infinity,
@@ -214,9 +241,11 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
                  Container(
                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                    decoration: BoxDecoration(
-                     color: hasActiveSubscription 
-                         ? const Color(0xFFFFD700) 
-                         : const Color(0xFF757575),
+                     color: membershipStatus == 'PREMIUM' 
+                         ? const Color(0xFF4CAF50)  // Green for premium
+                         : membershipStatus == 'STANDARD'
+                             ? const Color(0xFF757575)  // Gray for standard
+                             : const Color(0xFF2196F3),  // Blue for access
                      borderRadius: BorderRadius.circular(20),
                    ),
                    child: Text(
@@ -338,6 +367,43 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
     }
   }
 
+  // Helper method to format plan duration based on plan data
+  String _formatPlanDuration(Map<String, dynamic>? subscription) {
+    if (subscription == null) return 'Unknown';
+    
+    final durationMonths = subscription['duration_months'] ?? 0;
+    final durationDays = subscription['duration_days'] ?? 0;
+    
+    // If duration_days is specified and > 0, use days
+    if (durationDays > 0) {
+      if (durationDays == 1) {
+        return '1 day';
+      } else {
+        return '$durationDays days';
+      }
+    }
+    
+    // Otherwise use months
+    if (durationMonths > 0) {
+      if (durationMonths == 1) {
+        return '1 month';
+      } else if (durationMonths == 12) {
+        return '1 year';
+      } else if (durationMonths > 12) {
+        final years = (durationMonths / 12).floor();
+        final remainingMonths = durationMonths % 12;
+        if (remainingMonths > 0) {
+          return '$years year${years > 1 ? 's' : ''} $remainingMonths month${remainingMonths > 1 ? 's' : ''}';
+        }
+        return '$years year${years > 1 ? 's' : ''}';
+      } else {
+        return '$durationMonths months';
+      }
+    }
+    
+    return 'Unknown';
+  }
+
 
   Widget _buildSubscriptionInfo(Map<String, dynamic> subscription, int daysRemaining) {
     // Handle both membership and coach subscription data
@@ -345,16 +411,24 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
     final price = subscription['price'] ?? subscription['discounted_price'] ?? '0';
     final startDate = subscription['start_date'];
     final endDate = subscription['end_date'];
-    final status = subscription['display_status'] ?? subscription['status'] ?? subscription['status_name'] ?? 'Unknown';
-    final isExpired = subscription['is_expired'] ?? false;
-    final isExpiringSoon = subscription['is_expiring_soon'] ?? false;
+    // final status = subscription['display_status'] ?? subscription['status'] ?? subscription['status_name'] ?? 'Unknown';
+    // final isExpired = subscription['is_expired'] ?? false;
+    // final isExpiringSoon = subscription['is_expiring_soon'] ?? false;
     
     // Determine if this is a membership or coach subscription
     final isMembership = planName.toLowerCase().contains('member') || 
                         planName.toLowerCase().contains('monthly') ||
                         planName.toLowerCase().contains('access');
     final isCoachSubscription = subscription['coach_name'] != null;
-    final isMemberRate = planName.toLowerCase().contains('member rate');
+    
+    // More specific plan type detection
+    final isMemberRate = (planName.toLowerCase().contains('member rate') && 
+                         !planName.toLowerCase().contains('non-member')) || 
+                        (planName.toLowerCase().contains('member monthly') && 
+                         !planName.toLowerCase().contains('non-member'));
+    final isNonMemberPlan = planName.toLowerCase().contains('non-member') || 
+                           planName.toLowerCase().contains('non member') ||
+                           planName.toLowerCase().contains('standard');
     
     String subscriptionType = 'Subscription';
     Color typeColor = const Color(0xFF2196F3);
@@ -365,10 +439,15 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
         subscriptionType = 'Monthly Premium Access';
         typeColor = const Color(0xFF4CAF50);
         typeLabel = 'PREMIUM';
-      } else {
+      } else if (isNonMemberPlan) {
         subscriptionType = 'Monthly Standard Access';
         typeColor = const Color(0xFF757575);
         typeLabel = 'STANDARD';
+      } else {
+        // Default for other membership types
+        subscriptionType = 'Monthly Access';
+        typeColor = const Color(0xFF2196F3);
+        typeLabel = 'ACCESS';
       }
     } else if (isCoachSubscription) {
       subscriptionType = 'Coach Package';
@@ -463,7 +542,7 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
                      crossAxisAlignment: CrossAxisAlignment.start,
                      children: [
                        Text(
-                         isMembership ? (isMemberRate ? 'Monthly (Member Rate)' : 'Monthly (Standard Rate)') : planName,
+                         planName, // Use the actual plan name from the API
                          style: GoogleFonts.poppins(
                            color: Colors.white,
                            fontSize: 16,
@@ -544,7 +623,7 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
                      Expanded(
                        child: _buildDateItem(
                          'Duration',
-                         _calculateMembershipDuration(startDate, endDate),
+                         _formatPlanDuration(subscription),
                          Icons.timer,
                          typeColor,
                        ),
@@ -613,8 +692,8 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
      final requestedAt = coach['requested_at'];
      final coachApprovedAt = coach['coach_approved_at'];
      final staffApprovedAt = coach['staff_approved_at'];
-     final rateType = coach['rate_type'] ?? 'package';
-     const Color coachColor = Color(0xFFFF9800);
+    // final rateType = coach['rate_type'] ?? 'package';
+    // const Color coachColor = Color(0xFFFF9800);
      
      // Use the latest approval date as start date (when both coach and staff approved)
      String? startDate;
@@ -842,37 +921,44 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
    }
 
   Widget _buildMembershipCard() {
-    // Since you have member benefits, show membership card based on current subscription
-    final currentSub = _currentSubscription?['subscription'];
-    final isPremium = _currentSubscription?['is_premium'] ?? false;
+    // Get the Monthly Access subscription from subscription history
+    final subscriptionHistory = _subscriptionData?['subscription_history'] as List<dynamic>? ?? [];
     
-    // Show membership card if user has any subscription (since you have member benefits)
-    if (currentSub == null) {
-      return const SizedBox.shrink(); // Don't show card if no subscription
-    }
-    
-    // Use current subscription data for membership card
-    final startDate = currentSub?['start_date'];
-    // Calculate end date for annual membership (1 year from start)
-    String? endDate;
-    if (startDate != null) {
-      try {
-        final start = DateTime.parse(startDate);
-        final end = DateTime(start.year + 1, start.month, start.day);
-        endDate = end.toIso8601String().split('T')[0];
-      } catch (e) {
-        endDate = currentSub?['end_date'];
+    // Find the Gym Membership Fee subscription (the one with 12 months duration)
+    Map<String, dynamic>? membershipSub;
+    for (final sub in subscriptionHistory) {
+      if (sub['plan_name']?.toString().toLowerCase().contains('gym membership') == true) {
+        membershipSub = sub;
+        break;
       }
-    } else {
-      endDate = currentSub?['end_date'];
     }
     
-    final membershipType = 'Annual';
-    final isExpired = currentSub?['is_expired'] ?? false;
-    final isExpiringSoon = currentSub?['is_expiring_soon'] ?? false;
-    final daysRemaining = _currentSubscription?['days_remaining'] ?? 0;
-    final price = '500'; // Annual membership fee
-    final planName = 'Membership';
+    // Show membership card if user has gym membership subscription
+    if (membershipSub == null) {
+      return const SizedBox.shrink(); // Don't show card if no gym membership
+    }
+    
+    // Use gym membership subscription data for membership card
+    final startDate = membershipSub['start_date'];
+    final endDate = membershipSub['end_date'];
+    
+    // Get plan duration from subscription data
+    final planDuration = _formatPlanDuration(membershipSub);
+    
+    // Calculate days remaining for gym membership
+    int daysRemaining = 0;
+    if (endDate != null) {
+      try {
+        final end = DateTime.parse(endDate);
+        final now = DateTime.now();
+        daysRemaining = end.difference(now).inDays;
+      } catch (e) {
+        daysRemaining = 0;
+      }
+    }
+    
+    final price = membershipSub['price']?.toString() ?? '0';
+    // final planName = monthlyAccessSub['plan_name'] ?? 'Membership';
     
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1041,7 +1127,7 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
                     Expanded(
                       child: _buildDateItem(
                         'Duration',
-                        '1 year',
+                        planDuration,
                         Icons.timer,
                         const Color(0xFF9C27B0),
                       ),
@@ -1136,20 +1222,152 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
   }
 
   Widget _buildRequestsList() {
-    final requests = _subscriptionData!['requests'] as List<dynamic>? ?? [];
+    // Get subscription history from the API response
+    final subscriptionHistory = _subscriptionData!['subscription_history'] as List<dynamic>? ?? [];
     
-    if (requests.isEmpty) {
+    // Don't filter out subscriptions - show all active subscriptions
+    // The user can have multiple active subscriptions (membership + monthly access)
+    final filteredHistory = subscriptionHistory;
+    
+    // Debug logging
+    print('Debug: Total subscription history count: ${subscriptionHistory.length}');
+    print('Debug: Showing all subscriptions (no filtering)');
+    print('Debug: Filtered history count: ${filteredHistory.length}');
+    for (int i = 0; i < subscriptionHistory.length; i++) {
+      final sub = subscriptionHistory[i];
+      print('Debug: Subscription $i - ID: ${sub['id']}, Plan: ${sub['plan_name']}, Price: ${sub['price']}, Duration: ${sub['duration_months']} months');
+    }
+    
+    if (filteredHistory.isEmpty) {
       return _buildEmptyState();
     }
 
     return ListView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      itemCount: requests.length,
+      itemCount: filteredHistory.length,
       itemBuilder: (context, index) {
-        final request = requests[index];
-        return _buildRequestCard(request);
+        final subscription = filteredHistory[index];
+        return _buildSubscriptionHistoryCard(subscription);
       },
+    );
+  }
+
+  Widget _buildSubscriptionHistoryCard(Map<String, dynamic> subscription) {
+    final planName = subscription['plan_name'] ?? 'Unknown Plan';
+    final price = subscription['price']?.toString() ?? '0';
+    final startDate = subscription['start_date'];
+    final endDate = subscription['end_date'];
+    final status = subscription['display_status'] ?? 'Unknown';
+    final planDuration = _formatPlanDuration(subscription);
+    
+    // Debug logging
+    print('Debug: Building subscription history card for plan: $planName, price: $price, duration: $planDuration');
+    
+    // Calculate days remaining
+    int daysRemaining = 0;
+    if (endDate != null) {
+      try {
+        final end = DateTime.parse(endDate);
+        final now = DateTime.now();
+        daysRemaining = end.difference(now).inDays;
+      } catch (e) {
+        daysRemaining = 0;
+      }
+    }
+    
+    // Determine status color
+    Color statusColor = const Color(0xFF4CAF50); // Green for active
+    if (status.toLowerCase().contains('expired')) {
+      statusColor = const Color(0xFFF44336); // Red for expired
+    } else if (status.toLowerCase().contains('pending')) {
+      statusColor = const Color(0xFFFF9800); // Orange for pending
+    }
+    
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF2D2D2D),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: statusColor.withOpacity(0.3),
+          width: 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: statusColor,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  status.toLowerCase().contains('active') ? Icons.check_circle : 
+                  status.toLowerCase().contains('expired') ? Icons.cancel :
+                  Icons.schedule,
+                  color: Colors.white,
+                  size: 16,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      planName,
+                      style: GoogleFonts.poppins(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Text(
+                      status,
+                      style: GoogleFonts.poppins(
+                        color: statusColor,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Text(
+                SubscriptionService.formatDate(startDate),
+                style: GoogleFonts.poppins(
+                  color: const Color(0xFFB0B0B0),
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _buildSubscriptionHistoryDetails(subscription, planDuration, daysRemaining),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSubscriptionHistoryDetails(Map<String, dynamic> subscription, String planDuration, int daysRemaining) {
+    final price = subscription['price']?.toString() ?? '0';
+    final startDate = subscription['start_date'];
+    final endDate = subscription['end_date'];
+    
+    return Column(
+      children: [
+        _buildDetailRow('Price', '₱$price'),
+        _buildDetailRow('Duration', planDuration),
+        _buildDetailRow('Start Date', SubscriptionService.formatDate(startDate)),
+        _buildDetailRow('End Date', SubscriptionService.formatDate(endDate)),
+        if (daysRemaining > 0)
+          _buildDetailRow('Days Remaining', '$daysRemaining days'),
+      ],
     );
   }
 

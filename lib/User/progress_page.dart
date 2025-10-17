@@ -19,6 +19,8 @@ import './services/profile_service.dart';
 import './services/gym_utils_service.dart';
 import './services/body_measurements_service.dart';
 import './services/auth_service.dart';
+import './services/subscription_service.dart';
+import './manage_subscriptions_page.dart';
 import './muscle_analytics_page.dart';
 import './widgets/progress_tracker_widget.dart';
 import './widgets/progressive_overload_tracker.dart';
@@ -50,6 +52,7 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
   List<ProgressModel> bodyMeasurements = [];
   List<Map<String, dynamic>> _bodyMeasurementsData = [];
   String _selectedMeasurementPeriod = '30d';
+  bool _hasAnnualMembership = false;
     
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
@@ -66,6 +69,7 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
     );
     _loadDashboardData();
     _loadBodyMeasurementsData();
+    _checkAnnualMembership();
   }
 
   @override
@@ -404,10 +408,9 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
         print('Error fetching height for BMI calculation: $e');
         // Fallback to cached userHeight
         if (userHeight != null && userHeight! > 0) {
-      calculatedBMI = GymUtilsService.calculateBMI(latest.weight!, userHeight!);
+          calculatedBMI = GymUtilsService.calculateBMI(latest.weight!, userHeight!);
         }
       }
-    } else {
     }
     
     final result = {
@@ -420,6 +423,124 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
     };
     
     return result;
+  }
+
+  // Check if user has annual membership (Plan ID 1)
+  Future<void> _checkAnnualMembership() async {
+    print('🚀 Progress Page - _checkAnnualMembership() method called!');
+    try {
+      final userId = AuthService.getCurrentUserId();
+      print('🔍 Progress Page - Checking annual membership for user ID: $userId');
+      
+      if (userId == null) {
+        print('❌ Progress Page - User ID is null, setting _hasAnnualMembership to false');
+        _hasAnnualMembership = false;
+        if (mounted) setState(() {});
+        return;
+      }
+
+      final subscriptionData = await SubscriptionService.getCurrentSubscription(userId);
+      print('🔍 Progress Page - Subscription data received: $subscriptionData');
+      
+      if (subscriptionData != null && subscriptionData['subscription'] != null) {
+        final subscription = subscriptionData['subscription'];
+        final planId = subscription['plan_id'];
+        
+        // Check if user has Plan ID 1 (Gym Membership Fee - Annual Membership)
+        _hasAnnualMembership = planId == 1;
+        
+        if (mounted) {
+          setState(() {});
+        }
+        
+        print('✅ Progress Page - Annual membership check: $_hasAnnualMembership (Plan ID: $planId)');
+      } else {
+        print('❌ Progress Page - No subscription data found, setting _hasAnnualMembership to false');
+        _hasAnnualMembership = false;
+        if (mounted) setState(() {});
+      }
+    } catch (e) {
+      print('❌ Progress Page - Error checking annual membership: $e');
+      _hasAnnualMembership = false;
+      if (mounted) setState(() {});
+    }
+  }
+
+  // Helper method to create locked overlay for premium features
+  Widget _buildLockedState(String featureName) {
+    return Container(
+      padding: EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Color(0xFF1A1A1A),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: Color(0xFF4ECDC4).withOpacity(0.3),
+          width: 1,
+        ),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            padding: EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Color(0xFF4ECDC4).withOpacity(0.1),
+              borderRadius: BorderRadius.circular(50),
+            ),
+            child: Icon(
+              Icons.lock_outline,
+              color: Color(0xFF4ECDC4),
+              size: 40,
+            ),
+          ),
+          SizedBox(height: 20),
+          Text(
+            'Premium Feature',
+            style: GoogleFonts.poppins(
+              color: Colors.white,
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          SizedBox(height: 8),
+          Text(
+            '$featureName is available for annual members only.',
+            style: GoogleFonts.poppins(
+              color: Colors.grey[400],
+              fontSize: 14,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          SizedBox(height: 20),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => ManageSubscriptionsPage(),
+                ),
+              );
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Color(0xFF4ECDC4),
+              foregroundColor: Colors.white,
+              padding: EdgeInsets.symmetric(horizontal: 32, vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              elevation: 2,
+            ),
+            child: Text(
+              'Upgrade to Annual Membership',
+              style: GoogleFonts.poppins(
+                fontWeight: FontWeight.w600,
+                fontSize: 14,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -579,16 +700,21 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
 
 
   Widget _buildProgressiveOverloadSection() {
-    return GestureDetector(
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => ProgressiveOverloadTracker(),
-          ),
-        );
-      },
-      child: Container(
+    if (!_hasAnnualMembership) {
+      return _buildLockedState('Progress Tracking');
+    }
+    
+    return
+      GestureDetector(
+        onTap: _hasAnnualMembership ? () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => ProgressiveOverloadTracker(),
+            ),
+          );
+        } : null,
+        child: Container(
         padding: EdgeInsets.all(28),
         decoration: BoxDecoration(
           gradient: LinearGradient(
@@ -754,7 +880,7 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
           ],
         ),
       ),
-    );
+      );
   }
 
   Widget _buildEnhancedOverloadStatCard(String title, String value, IconData icon, Color color) {
@@ -849,20 +975,25 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
   }
 
   Widget _buildWorkoutHeatmapSection() {
-    return GestureDetector(
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => WorkoutHeatmapPage(
-              heatmapData: workoutHeatmapData,
-              workoutSessions: allSessions,
-              attendanceData: allAttendance,
+    if (!_hasAnnualMembership) {
+      return _buildLockedState('Workout Heatmap');
+    }
+    
+    return
+      GestureDetector(
+        onTap: _hasAnnualMembership ? () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => WorkoutHeatmapPage(
+                heatmapData: workoutHeatmapData,
+                workoutSessions: allSessions,
+                attendanceData: allAttendance,
+              ),
             ),
-          ),
-        );
-      },
-      child: Container(
+          );
+        } : null,
+        child: Container(
         padding: EdgeInsets.all(24),
         decoration: BoxDecoration(
           color: Color(0xFF1A1A1A),
@@ -950,7 +1081,7 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
           ],
         ),
       ),
-    );
+      );
   }
 
   Widget _buildMonthGrid(int year, int month) {
@@ -1081,24 +1212,29 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
 
 
   Widget _buildMeasurementsSection() {
-    return GestureDetector(
-      onTap: () async {
-        final result = await Navigator.push(
-            context,
-            MaterialPageRoute(
-            builder: (context) => MeasurementsPage(
-              currentMeasurements: latestMeasurements,
-              progressData: progressData,
+    if (!_hasAnnualMembership) {
+      return _buildLockedState('Body Weight Tracker');
+    }
+    
+    return
+      GestureDetector(
+        onTap: _hasAnnualMembership ? () async {
+          final result = await Navigator.push(
+              context,
+              MaterialPageRoute(
+              builder: (context) => MeasurementsPage(
+                currentMeasurements: latestMeasurements,
+                progressData: progressData,
+                ),
               ),
-            ),
-          );
-        
-        // If measurements were updated, refresh the data
-        if (result == true) {
-          await _loadDashboardData();
-        }
-      },
-      child: Container(
+            );
+          
+          // If measurements were updated, refresh the data
+          if (result == true) {
+            await _loadDashboardData();
+          }
+        } : null,
+        child: Container(
         padding: EdgeInsets.all(24),
         decoration: BoxDecoration(
           color: Color(0xFF1A1A1A),
@@ -1159,7 +1295,7 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
           ],
         ),
       ),
-    );
+      );
   }
 
   Widget _buildPersonalRecordsSection() {
@@ -2109,9 +2245,11 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Colors.grey[700]!, width: 1),
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
+      child: Wrap(
+        alignment: WrapAlignment.center,
+        spacing: 8,
+        runSpacing: 8,
+        children: [
           _buildFilterChip('14d', '14 Days'),
           _buildFilterChip('30d', '30 Days'),
           _buildFilterChip('3m', '3 Months'),
@@ -2305,6 +2443,7 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
     final value = part['value'] as double;
     final change = part['change'] as double;
     final key = part['key'] as String;
+    final isCompact = MediaQuery.of(context).size.width < 340;
     
     Color changeColor;
     IconData changeIcon;
@@ -2328,7 +2467,7 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
       onTap: () => _showBodyPartLogs(name, key),
       child: Container(
         margin: EdgeInsets.only(bottom: 16),
-        padding: EdgeInsets.all(20),
+        padding: EdgeInsets.all(isCompact ? 12 : 20),
         decoration: BoxDecoration(
           gradient: LinearGradient(
             colors: [
@@ -2361,8 +2500,8 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
         child: Row(
           children: [
             Container(
-              width: 56,
-              height: 56,
+              width: isCompact ? 44 : 56,
+              height: isCompact ? 44 : 56,
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: [
@@ -2381,10 +2520,10 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
               child: Icon(
                 icon,
                 color: Color(0xFF6C5CE7),
-                size: 24,
+                size: isCompact ? 20 : 24,
               ),
             ),
-            SizedBox(width: 16),
+            SizedBox(width: isCompact ? 12 : 16),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -2392,16 +2531,18 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
                   Text(
                     name,
                     style: GoogleFonts.poppins(
-                      fontSize: 16,
+                      fontSize: isCompact ? 14 : 16,
                       fontWeight: FontWeight.w600,
                       color: Colors.white,
                     ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                   SizedBox(height: 4),
                   Text(
                     '${value.toStringAsFixed(1)} cm',
                     style: GoogleFonts.poppins(
-                      fontSize: 20,
+                      fontSize: isCompact ? 18 : 20,
                       fontWeight: FontWeight.bold,
                       color: Colors.white,
                     ),
@@ -2409,71 +2550,77 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
                 ],
               ),
             ),
-            Column(
-              children: [
-                Container(
-                  padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        changeColor.withOpacity(0.2),
-                        changeColor.withOpacity(0.1),
-                      ],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: changeColor.withOpacity(0.3),
-                      width: 1,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        changeIcon,
-                        color: changeColor,
-                        size: 18,
-                      ),
-                      SizedBox(width: 6),
-                      Text(
-                        changeText,
-                        style: GoogleFonts.poppins(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: changeColor,
+            Flexible(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.topRight,
+                child: Column(
+                  children: [
+                    Container(
+                      padding: EdgeInsets.symmetric(horizontal: isCompact ? 8 : 12, vertical: isCompact ? 6 : 8),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            changeColor.withOpacity(0.2),
+                            changeColor.withOpacity(0.1),
+                          ],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: changeColor.withOpacity(0.3),
+                          width: 1,
                         ),
                       ),
-                    ],
-                  ),
-                ),
-                SizedBox(height: 8),
-                Container(
-                  width: 32,
-                  height: 32,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        Color(0xFF6C5CE7).withOpacity(0.2),
-                        Color(0xFF5A4FCF).withOpacity(0.1),
-                      ],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            changeIcon,
+                            color: changeColor,
+                            size: isCompact ? 16 : 18,
+                          ),
+                          SizedBox(width: 6),
+                          Text(
+                            changeText,
+                            style: GoogleFonts.poppins(
+                              fontSize: isCompact ? 12 : 13,
+                              fontWeight: FontWeight.w600,
+                              color: changeColor,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: Color(0xFF6C5CE7).withOpacity(0.3),
-                      width: 1,
+                    SizedBox(height: 8),
+                    Container(
+                      width: isCompact ? 28 : 32,
+                      height: isCompact ? 28 : 32,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            Color(0xFF6C5CE7).withOpacity(0.2),
+                            Color(0xFF5A4FCF).withOpacity(0.1),
+                          ],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: Color(0xFF6C5CE7).withOpacity(0.3),
+                          width: 1,
+                        ),
+                      ),
+                      child: Icon(
+                        Icons.arrow_forward_ios_rounded,
+                        color: Color(0xFF6C5CE7),
+                        size: isCompact ? 14 : 16,
+                      ),
                     ),
-                  ),
-                  child: Icon(
-                    Icons.arrow_forward_ios_rounded,
-                    color: Color(0xFF6C5CE7),
-                    size: 16,
-                  ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ],
             ),
@@ -2848,48 +2995,63 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
     }
     
     try {
-      // Save to local storage for now (since we don't have API yet)
       final userId = await AuthService.getCurrentUserId();
       if (userId != null) {
-        final prefs = await SharedPreferences.getInstance();
-        final now = DateTime.now();
-        final timestamp = now.millisecondsSinceEpoch;
-        
-        // Create measurement entry
-        final measurementEntry = {
-          'id': timestamp.toString(),
-          'user_id': userId,
-          'date_recorded': now.toIso8601String(),
-          'chest': measurements['chest'],
-          'shoulders': measurements['shoulders'],
-          'biceps_left': measurements['biceps_left'],
-          'biceps_right': measurements['biceps_right'],
-          'waist': measurements['waist'],
-          'thighs': measurements['thighs'],
-          'created_at': now.toIso8601String(),
-        };
-        
-        // Get existing measurements
-        final existingData = prefs.getString('body_measurements_$userId') ?? '[]';
-        final List<dynamic> measurementsList = json.decode(existingData);
-        
-        // Add new measurement
-        measurementsList.add(measurementEntry);
-        
-        // Save back to storage
-        await prefs.setString('body_measurements_$userId', json.encode(measurementsList));
-        
-        Navigator.pop(context);
-        
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Body measurements saved successfully!'),
-            backgroundColor: Color(0xFF6C5CE7),
-          ),
+        // Save to database first (primary storage)
+        final result = await BodyMeasurementsService.addBodyMeasurement(
+          weight: measurements['weight'] ?? 0.0,
+          chestCm: measurements['chest'],
+          waistCm: measurements['waist'],
+          hipsCm: measurements['thighs'], // Map thighs to hips for database
+          armsCm: measurements['biceps_left'], // Use left bicep as arms measurement
+          notes: 'Body measurements entry',
         );
         
-        // Refresh the body measurements data
-        _loadBodyMeasurementsData();
+        if (result['success'] == true) {
+          // Also save to local storage for backup/offline access
+          final prefs = await SharedPreferences.getInstance();
+          final now = DateTime.now();
+          final timestamp = now.millisecondsSinceEpoch;
+          
+          // Create measurement entry
+          final measurementEntry = {
+            'id': timestamp.toString(),
+            'user_id': userId,
+            'date_recorded': now.toIso8601String(),
+            'chest': measurements['chest'],
+            'shoulders': measurements['shoulders'],
+            'biceps_left': measurements['biceps_left'],
+            'biceps_right': measurements['biceps_right'],
+            'waist': measurements['waist'],
+            'thighs': measurements['thighs'],
+            'created_at': now.toIso8601String(),
+          };
+          
+          // Get existing measurements
+          final existingData = prefs.getString('body_measurements_$userId') ?? '[]';
+          final List<dynamic> measurementsList = json.decode(existingData);
+          
+          // Add new measurement
+          measurementsList.add(measurementEntry);
+          
+          // Save back to storage
+          await prefs.setString('body_measurements_$userId', json.encode(measurementsList));
+          
+          Navigator.pop(context);
+          
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Body measurements saved successfully!'),
+              backgroundColor: Color(0xFF6C5CE7),
+            ),
+          );
+          
+          // Refresh both data sources
+          _loadBodyMeasurementsData();
+          _loadBodyMeasurements();
+        } else {
+          throw Exception(result['message'] ?? 'Failed to save measurements');
+        }
       } else {
         throw Exception('User not logged in');
       }
@@ -3436,12 +3598,59 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
         // Convert to the format expected by the UI
         _bodyMeasurementsData = measurementsList.cast<Map<String, dynamic>>();
         
+        // Check if we have local data that needs to be migrated to database
+        if (_bodyMeasurementsData.isNotEmpty) {
+          await _migrateLocalDataToDatabase();
+        }
+        
         if (mounted) {
           setState(() {});
         }
       }
     } catch (e) {
       print('Error loading body measurements: $e');
+    }
+  }
+
+  Future<void> _migrateLocalDataToDatabase() async {
+    try {
+      final userId = await AuthService.getCurrentUserId();
+      if (userId == null) return;
+
+      // Get existing database measurements to avoid duplicates
+      final dbMeasurements = await BodyMeasurementsService.getBodyMeasurements();
+      final dbDates = dbMeasurements.map((m) => m.dateRecorded.toIso8601String().split('T')[0]).toSet();
+
+      int migratedCount = 0;
+      
+      // Migrate local measurements that don't exist in database
+      for (final localMeasurement in _bodyMeasurementsData) {
+        final localDate = DateTime.parse(localMeasurement['date_recorded']).toIso8601String().split('T')[0];
+        
+        if (!dbDates.contains(localDate)) {
+          // This local measurement doesn't exist in database, migrate it
+          final result = await BodyMeasurementsService.addBodyMeasurement(
+            weight: (localMeasurement['weight'] ?? 0.0).toDouble(),
+            chestCm: (localMeasurement['chest'] ?? 0.0).toDouble(),
+            waistCm: (localMeasurement['waist'] ?? 0.0).toDouble(),
+            hipsCm: (localMeasurement['thighs'] ?? 0.0).toDouble(),
+            armsCm: (localMeasurement['biceps_left'] ?? 0.0).toDouble(),
+            notes: 'Migrated from local storage',
+          );
+          
+          if (result['success'] == true) {
+            migratedCount++;
+          }
+        }
+      }
+      
+      if (migratedCount > 0) {
+        print('✅ Successfully migrated $migratedCount body measurements to database');
+        // Refresh the database measurements after migration
+        _loadBodyMeasurements();
+      }
+    } catch (e) {
+      print('Error migrating local data to database: $e');
     }
   }
 

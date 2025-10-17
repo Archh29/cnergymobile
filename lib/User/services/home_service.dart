@@ -1,16 +1,45 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+import '../models/schedule_model.dart';
 
 class HomeService {
   static const String baseUrl = 'https://api.cnergy.site/';
   static const String homeEndpoint = '$baseUrl/user_home.php';
 
-  // Fetch all home data from single API endpoint
-  static Future<Map<String, dynamic>> getHomeData() async {
+  // Get current user ID from SharedPreferences
+  static Future<int?> getCurrentUserId() async {
     try {
-      print('🔄 Fetching data from: $homeEndpoint');
+      final prefs = await SharedPreferences.getInstance();
+      
+      String? userIdString = prefs.getString('user_id');
+      if (userIdString != null && userIdString.isNotEmpty) {
+        return int.parse(userIdString);
+      }
+      
+      int? userIdInt = prefs.getInt('user_id');
+      if (userIdInt != null) {
+        return userIdInt;
+      }
+      
+      return null;
+    } catch (e) {
+      print('Error getting user ID: $e');
+      return null;
+    }
+  }
+
+  // Fetch all home data from single API endpoint
+  static Future<Map<String, dynamic>> getHomeData({int? userId}) async {
+    try {
+      String url = homeEndpoint;
+      if (userId != null) {
+        url += '?user_id=$userId';
+      }
+      
+      print('🔄 Fetching data from: $url');
       final response = await http.get(
-        Uri.parse(homeEndpoint),
+        Uri.parse(url),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
@@ -23,7 +52,7 @@ class HomeService {
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         if (data['success'] == true) {
-          return {
+          Map<String, dynamic> result = {
             'announcements': (data['data']['announcements'] as List)
                 .map((item) => AnnouncementItem.fromJson(item))
                 .toList(),
@@ -34,6 +63,13 @@ class HomeService {
                 .map((item) => PromotionItem.fromJson(item))
                 .toList(),
           };
+          
+          // Add today's workout if available (for display only)
+          if (data['data']['todayWorkout'] != null) {
+            result['today_workout'] = TodayWorkout.fromJson(data['data']['todayWorkout']);
+          }
+          
+          return result;
         } else {
           throw Exception('API returned success: false - ${data['error'] ?? 'Unknown error'}');
         }
@@ -47,6 +83,8 @@ class HomeService {
         'announcements': <AnnouncementItem>[],
         'merchandise': <MerchItem>[],
         'promotions': <PromotionItem>[],
+        'today_workout': null,
+        'weekly_schedule': <WeeklyScheduleItem>[],
       };
     }
   }
@@ -115,8 +153,8 @@ class MerchItem {
       description: json['description'] ?? '',
       color: json['color'] ?? '#96CEB4',
       icon: json['icon'] ?? 'fitness_center',
-      imageUrl: json['imageUrl'],
-      createdAt: json['createdAt'],
+      imageUrl: json['imageUrl'], // API returns 'imageUrl' 
+      createdAt: json['createdAt'], // API returns 'createdAt'
     );
   }
 }

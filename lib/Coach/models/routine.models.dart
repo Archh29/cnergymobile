@@ -280,27 +280,104 @@ class RoutineModel {
   }
 
   // JSON serialization
+  static int _parseExerciseCount(Map<String, dynamic> json) {
+    print('🔍 EXERCISE COUNT: Parsing exercise count from JSON');
+    print('🔍 EXERCISE COUNT: exercise_count: ${json['exercise_count']}');
+    print('🔍 EXERCISE COUNT: exercises: ${json['exercises']}');
+    print('🔍 EXERCISE COUNT: exercise_list: ${json['exercise_list']}');
+    
+    // First try to get the count from API fields
+    int? count = json['exercise_count'] ?? json['exercises'];
+    print('🔍 EXERCISE COUNT: Initial count from API fields: $count');
+    
+    // If no count provided, try to count from exercise_list
+    if (count == null || count == 0) {
+      final exerciseList = json['exercise_list'] ?? '';
+      print('🔍 EXERCISE COUNT: Checking exercise_list: $exerciseList');
+      if (exerciseList.isNotEmpty && exerciseList != 'No exercises added') {
+        final exercises = exerciseList.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+        print('🔍 EXERCISE COUNT: Parsed exercises from list: $exercises (count: ${exercises.length})');
+        return exercises.length;
+      }
+    }
+    
+    // If still no count, check workout_details for exercises
+    if (count == null || count == 0) {
+      if (json['workout_details'] != null && json['workout_details'] is Map) {
+        final workoutDetails = json['workout_details'] as Map<String, dynamic>;
+        print('🔍 EXERCISE COUNT: Checking workout_details: ${workoutDetails.keys.toList()}');
+        if (workoutDetails['exercises'] != null && workoutDetails['exercises'] is List) {
+          final exerciseCount = (workoutDetails['exercises'] as List).length;
+          print('🔍 EXERCISE COUNT: Found exercises in workout_details: $exerciseCount');
+          return exerciseCount;
+        }
+      }
+    }
+    
+    print('🔍 EXERCISE COUNT: Final count: ${count ?? 0}');
+    return count ?? 0;
+  }
+
   factory RoutineModel.fromJson(Map<String, dynamic> json) {
+    print('🔍 ROUTINE MODEL: Parsing JSON with keys: ${json.keys.toList()}');
+    print('🔍 ROUTINE MODEL: Full JSON data: $json');
+    print('🔍 ROUTINE MODEL: detailedExercises field: ${json['detailedExercises']}');
+    print('🔍 ROUTINE MODEL: detailedExercises type: ${json['detailedExercises'].runtimeType}');
+    print('🔍 ROUTINE MODEL: detailedExercises length: ${json['detailedExercises'] is List ? (json['detailedExercises'] as List).length : 'not a list'}');
+    
+    // Try different possible field names for the routine name
+    String routineName = json['name'] ?? 
+                        json['title'] ?? 
+                        json['program_name'] ?? 
+                        json['routine_name'] ?? 
+                        json['program_title'] ?? 
+                        json['goal'] ?? 
+                        json['description'] ?? 
+                        'Unnamed Routine';
+    
+    print('🔍 ROUTINE MODEL: Initial routine name: $routineName');
+    print('🔍 ROUTINE MODEL: name field: ${json['name']}');
+    print('🔍 ROUTINE MODEL: title field: ${json['title']}');
+    print('🔍 ROUTINE MODEL: program_name field: ${json['program_name']}');
+    print('🔍 ROUTINE MODEL: routine_name field: ${json['routine_name']}');
+    print('🔍 ROUTINE MODEL: goal field: ${json['goal']}');
+    print('🔍 ROUTINE MODEL: description field: ${json['description']}');
+    
+    // Check if workout_details contains the name
+    if (json['workout_details'] != null && json['workout_details'] is Map) {
+      final workoutDetails = json['workout_details'] as Map<String, dynamic>;
+      print('🔍 ROUTINE MODEL: workout_details keys: ${workoutDetails.keys.toList()}');
+      print('🔍 ROUTINE MODEL: workout_details name: ${workoutDetails['name']}');
+      routineName = workoutDetails['name'] ?? routineName;
+      print('🔍 ROUTINE MODEL: Final routine name after workout_details: $routineName');
+    }
+    
+    // Also check routine_name field
+    if (json['routine_name'] != null && json['routine_name'].toString().isNotEmpty) {
+      routineName = json['routine_name'].toString();
+      print('🔍 ROUTINE MODEL: Using routine_name: $routineName');
+    }
+    
     return RoutineModel(
-      id: json['id']?.toString() ?? '',
-      name: json['name'] ?? '',
+      id: json['id']?.toString() ?? json['routine_id']?.toString() ?? '',
+      name: routineName,
       description: json['description'] ?? '',
       category: RoutineCategory.values.firstWhere(
         (e) => e.toString().split('.').last == json['category'],
         orElse: () => RoutineCategory.strength,
       ),
       difficulty: RoutineDifficulty.values.firstWhere(
-        (e) => e.toString().split('.').last == json['difficulty'],
+        (e) => e.toString().split('.').last.toLowerCase() == (json['difficulty']?.toString().toLowerCase() ?? 'beginner'),
         orElse: () => RoutineDifficulty.beginner,
       ),
       status: RoutineStatus.values.firstWhere(
         (e) => e.toString().split('.').last == json['status'],
         orElse: () => RoutineStatus.active,
       ),
-      exercises: json['exercise_count'] ?? json['exercises'] ?? 0,
+      exercises: _parseExerciseCount(json),
       duration: json['duration'] ?? '',
       exerciseList: json['exercise_list'] ?? '',
-      createdBy: json['created_by']?.toString() ?? '',
+      createdBy: json['created_by']?.toString() ?? json['creator_name']?.toString() ?? '',
       coachId: json['coach_id']?.toString(),
       memberId: json['member_id']?.toString(),
       color: json['color'] ?? '',
@@ -343,11 +420,22 @@ class RoutineModel {
       isFavorite: json['is_favorite'] ?? false,
       averageRating: json['average_rating']?.toDouble(),
       totalRatings: json['total_ratings'],
-      detailedExercises: json['detailedExercises'] != null
-          ? (json['detailedExercises'] as List)
-              .map((e) => ExerciseModel.fromJson(e))
-              .toList()
-          : null,
+      detailedExercises: json['detailedExercises'] != null && json['detailedExercises'] is List
+          ? (() {
+              print('🔍 ROUTINE MODEL: Parsing detailedExercises, count: ${(json['detailedExercises'] as List).length}');
+              final exercises = (json['detailedExercises'] as List)
+                  .map((e) {
+                    print('🔍 ROUTINE MODEL: Parsing exercise: $e');
+                    return ExerciseModel.fromJson(e);
+                  })
+                  .toList();
+              print('🔍 ROUTINE MODEL: Successfully parsed ${exercises.length} exercises');
+              return exercises;
+            })()
+          : (() {
+              print('🔍 ROUTINE MODEL: No detailedExercises found or not a list');
+              return null;
+            })(),
     );
   }
 

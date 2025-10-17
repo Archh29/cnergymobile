@@ -9,12 +9,15 @@ import './Coach/coach_messages_dashboard.dart';
 import './Coach/coach_profile_page.dart';
 import './Coach/coach_progress_page.dart';
 import './Coach/coach_routine_page.dart';
+import './Coach/coach_schedule_page.dart';
 import './Coach/session_management_page.dart';
 import './Coach/coach_create_program_page.dart';
+import './Coach/coach_workout_preview_page.dart';
 import './Coach/models/member_model.dart';
 import './Coach/services/coach_service.dart';
 import './User/services/auth_service.dart';
 import './login_screen.dart';
+import './account_verification_page.dart';
 
 class CoachDashboard extends StatefulWidget {
   @override
@@ -43,6 +46,12 @@ class _CoachDashboardState extends State<CoachDashboard> with TickerProviderStat
       activeIcon: Icons.analytics,
       label: 'Progress',
       color: Color(0xFF96CEB4),
+    ),
+    NavigationItem(
+      icon: Icons.calendar_today_outlined,
+      activeIcon: Icons.calendar_today,
+      label: 'Schedule',
+      color: Color(0xFF9B59B6),
     ),
     NavigationItem(
       icon: Icons.people_outline,
@@ -87,6 +96,8 @@ class _CoachDashboardState extends State<CoachDashboard> with TickerProviderStat
     print('🔄 CoachDashboard didUpdateWidget called - Hot reload detected');
     // Force refresh when widget updates (hot reload)
     _forceRefreshAuthData();
+    // Also reload members after hot reload
+    _loadAssignedMembers();
   }
 
   // Force refresh auth data to ensure hot reload works properly
@@ -94,6 +105,17 @@ class _CoachDashboardState extends State<CoachDashboard> with TickerProviderStat
     try {
       await AuthService.forceRefresh();
       print('🔄 Coach dashboard auth data refreshed');
+      
+      // SECURITY FIX: Check if user needs account verification
+      if (AuthService.needsAccountVerification()) {
+        print('🔐 Coach needs account verification, redirecting to AccountVerificationScreen');
+        if (mounted) {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(builder: (context) => const AccountVerificationScreen()),
+          );
+        }
+        return;
+      }
       
       // Force a rebuild after refresh
       if (mounted) {
@@ -136,19 +158,38 @@ class _CoachDashboardState extends State<CoachDashboard> with TickerProviderStat
   }
 
   Future<void> _loadAssignedMembers() async {
+    print('🔄 DEBUG: Starting _loadAssignedMembers() in CoachDashboard');
     setState(() => isLoadingMembers = true);
     
     try {
+      print('🔄 DEBUG: Calling CoachService.getAssignedMembers()');
       final members = await CoachService.getAssignedMembers();
+      print('📊 DEBUG: Retrieved ${members.length} members from CoachService');
+      
       setState(() {
         assignedMembers = members;
+        print('📊 DEBUG: Set assignedMembers to ${assignedMembers.length} members');
+        
         if (members.isNotEmpty && selectedMember == null) {
           selectedMember = members.first;
+          print('✅ DEBUG: Auto-selected first member: ${selectedMember!.fullName}');
+        } else if (members.isEmpty) {
+          print('⚠️ DEBUG: No members found, selectedMember remains null');
+          print('⚠️ DEBUG: This might indicate:');
+          print('   - Coach has no assigned members in database');
+          print('   - API endpoint issue');
+          print('   - Coach ID mismatch');
+          print('   - Database connection issue');
+        } else {
+          print('ℹ️ DEBUG: Members found but selectedMember already set: ${selectedMember?.fullName}');
         }
         isLoadingMembers = false;
       });
+      
+      print('✅ DEBUG: _loadAssignedMembers completed successfully');
     } catch (e) {
-      print('Error loading members: $e');
+      print('❌ DEBUG: Error loading members: $e');
+      print('❌ DEBUG: Stack trace: ${StackTrace.current}');
       setState(() => isLoadingMembers = false);
     }
   }
@@ -189,6 +230,7 @@ class _CoachDashboardState extends State<CoachDashboard> with TickerProviderStat
       return [
         _buildSelectMemberPrompt(),
         _buildSelectMemberPrompt(),
+        _buildSelectMemberPrompt(),
         CoachMemberSelector(
           assignedMembers: assignedMembers,
           selectedMember: selectedMember,
@@ -203,6 +245,7 @@ class _CoachDashboardState extends State<CoachDashboard> with TickerProviderStat
     return [
       CoachRoutinePage(selectedMember: selectedMember!),
       CoachProgressPage(selectedMember: selectedMember!),
+      CoachSchedulePage(selectedMember: selectedMember!),
       CoachMemberSelector(
         assignedMembers: assignedMembers,
         selectedMember: selectedMember,
@@ -273,33 +316,66 @@ class _CoachDashboardState extends State<CoachDashboard> with TickerProviderStat
               ),
             ),
             SizedBox(height: isSmallScreen ? 16 : 20),
-            ElevatedButton.icon(
-              onPressed: () {
-                setState(() => _selectedIndex = 2);
-                _saveSelectedIndex(2);
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Color(0xFF45B7D1),
-                foregroundColor: Colors.white,
-                padding: EdgeInsets.symmetric(
-                  horizontal: isSmallScreen ? 16 : 24, // Responsive padding
-                  vertical: isSmallScreen ? 8 : 12,
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                ElevatedButton.icon(
+                  onPressed: () {
+                    print('🔄 DEBUG: Refresh members button pressed');
+                    _loadAssignedMembers();
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Color(0xFF4ECDC4),
+                    foregroundColor: Colors.white,
+                    padding: EdgeInsets.symmetric(
+                      horizontal: isSmallScreen ? 12 : 16,
+                      vertical: isSmallScreen ? 8 : 10,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(isSmallScreen ? 8 : 12),
+                    ),
+                  ),
+                  icon: Icon(
+                    Icons.refresh,
+                    size: isSmallScreen ? 14 : 16,
+                  ),
+                  label: Text(
+                    'Refresh',
+                    style: GoogleFonts.poppins(
+                      fontSize: isSmallScreen ? 10 : 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(isSmallScreen ? 8 : 12),
+                ElevatedButton.icon(
+                  onPressed: () {
+                    setState(() => _selectedIndex = 2);
+                    _saveSelectedIndex(2);
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Color(0xFF45B7D1),
+                    foregroundColor: Colors.white,
+                    padding: EdgeInsets.symmetric(
+                      horizontal: isSmallScreen ? 16 : 24, // Responsive padding
+                      vertical: isSmallScreen ? 8 : 12,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(isSmallScreen ? 8 : 12),
+                    ),
+                  ),
+                  icon: Icon(
+                    Icons.people,
+                    size: isSmallScreen ? 16 : 18, // Smaller icon
+                  ),
+                  label: Text(
+                    'Go to Members',
+                    style: GoogleFonts.poppins(
+                      fontSize: isSmallScreen ? 12 : 14, // Responsive text
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
-              ),
-              icon: Icon(
-                Icons.people,
-                size: isSmallScreen ? 16 : 18, // Smaller icon
-              ),
-              label: Text(
-                'Go to Members',
-                style: GoogleFonts.poppins(
-                  fontSize: isSmallScreen ? 12 : 14, // Responsive text
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
+              ],
             ),
           ],
         ),
@@ -414,61 +490,70 @@ class _CoachDashboardState extends State<CoachDashboard> with TickerProviderStat
           ),
         ],
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: List.generate(_navigationItems.length, (index) {
-          final item = _navigationItems[index];
-          final isSelected = _selectedIndex == index;
-          
-          return GestureDetector(
-            onTap: () async {
-              await _saveSelectedIndex(index);
-              setState(() {
-                _selectedIndex = index;
-              });
-            },
-            child: AnimatedContainer(
-              duration: Duration(milliseconds: 200),
-              padding: EdgeInsets.symmetric(
-                horizontal: isSmallScreen ? 6 : 12, // Reduced padding
-                vertical: isSmallScreen ? 4 : 8,
-              ),
-              decoration: BoxDecoration(
-                color: isSelected ? item.color.withOpacity(0.1) : Colors.transparent,
-                borderRadius: BorderRadius.circular(isSmallScreen ? 12 : 16),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  AnimatedContainer(
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Container(
+          width: screenWidth, // Ensure full width
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: List.generate(_navigationItems.length, (index) {
+              final item = _navigationItems[index];
+              final isSelected = _selectedIndex == index;
+              
+              return Expanded(
+                child: GestureDetector(
+                  onTap: () async {
+                    await _saveSelectedIndex(index);
+                    setState(() {
+                      _selectedIndex = index;
+                    });
+                  },
+                  child: AnimatedContainer(
                     duration: Duration(milliseconds: 200),
-                    padding: EdgeInsets.all(isSmallScreen ? 4 : 8), // Smaller padding
+                    padding: EdgeInsets.symmetric(
+                      horizontal: isSmallScreen ? 4 : 8, // Reduced padding
+                      vertical: isSmallScreen ? 4 : 8,
+                    ),
                     decoration: BoxDecoration(
-                      color: isSelected ? item.color.withOpacity(0.2) : Colors.transparent,
-                      borderRadius: BorderRadius.circular(isSmallScreen ? 8 : 12),
+                      color: isSelected ? item.color.withOpacity(0.1) : Colors.transparent,
+                      borderRadius: BorderRadius.circular(isSmallScreen ? 12 : 16),
                     ),
-                    child: Icon(
-                      isSelected ? item.activeIcon : item.icon,
-                      color: isSelected ? item.color : Colors.grey[400],
-                      size: isSmallScreen ? 18 : 22, // Smaller icons
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        AnimatedContainer(
+                          duration: Duration(milliseconds: 200),
+                          padding: EdgeInsets.all(isSmallScreen ? 4 : 8), // Smaller padding
+                          decoration: BoxDecoration(
+                            color: isSelected ? item.color.withOpacity(0.2) : Colors.transparent,
+                            borderRadius: BorderRadius.circular(isSmallScreen ? 8 : 12),
+                          ),
+                          child: Icon(
+                            isSelected ? item.activeIcon : item.icon,
+                            color: isSelected ? item.color : Colors.grey[400],
+                            size: isSmallScreen ? 18 : 22, // Smaller icons
+                          ),
+                        ),
+                        SizedBox(height: isSmallScreen ? 2 : 4), // Reduced spacing
+                        Text(
+                          item.label,
+                          style: GoogleFonts.poppins(
+                            fontSize: isSmallScreen ? 8 : 10, // Smaller text
+                            fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                            color: isSelected ? item.color : Colors.grey[400],
+                          ),
+                          overflow: TextOverflow.ellipsis, // Prevent overflow
+                          maxLines: 1,
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
                     ),
                   ),
-                  SizedBox(height: isSmallScreen ? 2 : 4), // Reduced spacing
-                  Text(
-                    item.label,
-                    style: GoogleFonts.poppins(
-                      fontSize: isSmallScreen ? 8 : 10, // Smaller text
-                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-                      color: isSelected ? item.color : Colors.grey[400],
-                    ),
-                    overflow: TextOverflow.ellipsis, // Prevent overflow
-                    maxLines: 1,
-                  ),
-                ],
-              ),
-            ),
-          );
-        }),
+                ),
+              );
+            }),
+          ),
+        ),
       ),
     );
   }
@@ -646,6 +731,17 @@ class _CoachDashboardState extends State<CoachDashboard> with TickerProviderStat
                   ),
                   SizedBox(height: 12),
                   _buildQuickActionTile(
+                    icon: Icons.fitness_center,
+                    title: 'Start Client Workout',
+                    subtitle: 'Begin a coaching session',
+                    color: Color(0xFFFF6B35),
+                    onTap: () {
+                      Navigator.pop(context);
+                      _showClientWorkoutSelector();
+                    },
+                  ),
+                  SizedBox(height: 12),
+                  _buildQuickActionTile(
                     icon: Icons.people_outline,
                     title: 'Add Member',
                     subtitle: 'Assign a new member to you',
@@ -725,6 +821,105 @@ class _CoachDashboardState extends State<CoachDashboard> with TickerProviderStat
               Icons.arrow_forward_ios,
               color: Colors.grey[400],
               size: 16,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showClientWorkoutSelector() {
+    if (assignedMembers.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No clients assigned. Please assign clients first.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => Container(
+        height: MediaQuery.of(context).size.height * 0.7,
+        decoration: BoxDecoration(
+          color: Color(0xFF1A1A1A),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Column(
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              margin: EdgeInsets.symmetric(vertical: 12),
+              decoration: BoxDecoration(
+                color: Colors.grey[600],
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Padding(
+              padding: EdgeInsets.all(20),
+              child: Column(
+                children: [
+                  Text(
+                    'Select Client for Workout',
+                    style: GoogleFonts.poppins(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  SizedBox(height: 20),
+                  Expanded(
+                    child: ListView.builder(
+                      itemCount: assignedMembers.length,
+                      itemBuilder: (context, index) {
+                        final member = assignedMembers[index];
+                        return ListTile(
+                          leading: CircleAvatar(
+                            backgroundColor: Color(0xFF4ECDC4).withOpacity(0.1),
+                            child: Text(
+                              member.fullName[0].toUpperCase(),
+                              style: GoogleFonts.poppins(
+                                color: Color(0xFF4ECDC4),
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                          title: Text(
+                            member.fullName,
+                            style: GoogleFonts.poppins(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          subtitle: Text(
+                            member.email,
+                            style: GoogleFonts.poppins(
+                              color: Colors.grey[400],
+                            ),
+                          ),
+                          trailing: Icon(
+                            Icons.arrow_forward_ios,
+                            color: Colors.grey[400],
+                            size: 16,
+                          ),
+                          onTap: () {
+                            Navigator.pop(context);
+                            setState(() {
+                              selectedMember = member;
+                              _selectedIndex = 0; // Go to routines tab
+                            });
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         ),

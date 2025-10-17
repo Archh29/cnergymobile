@@ -91,6 +91,14 @@ switch ($action) {
         }
         break;
         
+    case 'test-add-member':
+        if ($method === 'POST') {
+            testAddMember($pdo);
+        } else {
+            echo json_encode(['success' => false, 'message' => 'POST method required']);
+        }
+        break;
+        
     case 'member-routines':
         if ($method === 'GET' && isset($_GET['member_id'])) {
             getMemberRoutines($pdo, (int)$_GET['member_id'], (int)($_GET['coach_id'] ?? 0));
@@ -539,6 +547,29 @@ function getCoachAssignedMembers($pdo, $coachId) {
     try {
         error_log("Getting assigned members for coach ID: $coachId");
         
+        // First, let's check what records exist for this coach
+        $debugStmt = $pdo->prepare("
+            SELECT 
+                cml.id as request_id,
+                cml.coach_id,
+                cml.member_id,
+                cml.status,
+                cml.coach_approval,
+                cml.staff_approval,
+                cml.requested_at,
+                cml.coach_approved_at,
+                cml.staff_approved_at
+            FROM coach_member_list cml
+            WHERE cml.coach_id = ?
+        ");
+        $debugStmt->execute([$coachId]);
+        $debugMembers = $debugStmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        error_log("DEBUG: Found " . count($debugMembers) . " total records for coach $coachId");
+        foreach ($debugMembers as $debugMember) {
+            error_log("DEBUG: Record - ID: {$debugMember['request_id']}, Member: {$debugMember['member_id']}, Status: {$debugMember['status']}, Coach Approval: {$debugMember['coach_approval']}, Staff Approval: {$debugMember['staff_approval']}");
+        }
+        
         $stmt = $pdo->prepare("
             SELECT 
                 cml.id as request_id,
@@ -578,10 +609,57 @@ function getCoachAssignedMembers($pdo, $coachId) {
             $member['coach_id'] = $coachId; // Add coach_id as integer
         }
         
-        echo json_encode([
-            'success' => true,
-            'members' => $members
-        ]);
+        // If no members found with strict criteria, try with relaxed criteria
+        if (empty($members)) {
+            error_log("No members found with strict criteria, trying relaxed criteria");
+            
+            $relaxedStmt = $pdo->prepare("
+                SELECT 
+                    cml.id as request_id,
+                    cml.status,
+                    cml.coach_approval,
+                    cml.staff_approval,
+                    cml.requested_at,
+                    cml.coach_approved_at,
+                    cml.staff_approved_at,
+                    cml.expires_at,
+                    cml.remaining_sessions,
+                    cml.rate_type,
+                    u.id,
+                    u.fname,
+                    u.mname,
+                    u.lname,
+                    u.email,
+                    u.bday,
+                    u.created_at as join_date,
+                    'Basic' as membership_type
+                FROM coach_member_list cml
+                JOIN user u ON cml.member_id = u.id
+                WHERE cml.coach_id = ? 
+                AND (cml.status = 'active' OR cml.status = 'pending')
+                ORDER BY cml.requested_at DESC
+            ");
+            $relaxedStmt->execute([$coachId]);
+            $relaxedMembers = $relaxedStmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            error_log("Found " . count($relaxedMembers) . " members with relaxed criteria");
+            
+            // Cast the data types for relaxed members too
+            foreach ($relaxedMembers as &$member) {
+                $member = castMemberData($member);
+                $member['coach_id'] = $coachId;
+            }
+            
+            echo json_encode([
+                'success' => true,
+                'members' => $relaxedMembers
+            ]);
+        } else {
+            echo json_encode([
+                'success' => true,
+                'members' => $members
+            ]);
+        }
     } catch (PDOException $e) {
         error_log("Error in getCoachAssignedMembers: " . $e->getMessage());
         echo json_encode([
@@ -636,12 +714,13 @@ function getMemberRoutines($pdo, $memberId, $coachId = 0) {
         
         error_log("Found " . count($routines) . " coach-created routines for member $memberId");
         
-        // Cast data types properly
+        // Cast data types properly and get detailed exercises
         foreach ($routines as &$routine) {
             $routine['routine_id'] = (int)$routine['routine_id'];
             $routine['created_by'] = (int)$routine['created_by'];
             $routine['member_id'] = (int)$routine['member_id'];
             $routine['exercises'] = (int)($routine['exercises'] ?? 0);
+            $routine['exercise_count'] = (int)($routine['exercises'] ?? 0);
             
             $routineName = 'Untitled Routine';
             $duration = '30';
@@ -659,6 +738,58 @@ function getMemberRoutines($pdo, $memberId, $coachId = 0) {
                 $routine['workout_details'] = null;
             }
             
+            // Get detailed exercises for this routine
+            $exerciseStmt = $pdo->prepare("
+                SELECT 
+                    mwe.id as exercise_id,
+                    e.name as exercise_name,
+                    GROUP_CONCAT(DISTINCT tm.name ORDER BY etm.role, tm.name SEPARATOR ', ') as target_muscle,
+                    mwe.sets,
+                    mwe.reps,
+                    mwe.weight,
+                    60 as rest_time,
+                    '' as notes,
+                    mwe.id as exercise_order,
+                    'General' as category,
+                    'Beginner' as difficulty
+                FROM member_program_workout mpw
+                LEFT JOIN member_workout_exercise mwe ON mpw.id = mwe.member_program_workout_id
+                LEFT JOIN exercise e ON mwe.exercise_id = e.id
+                LEFT JOIN exercise_target_muscle etm ON e.id = etm.exercise_id
+                LEFT JOIN target_muscle tm ON etm.muscle_id = tm.id
+                WHERE mpw.member_program_hdr_id = ?
+                GROUP BY mwe.id, e.name, mwe.sets, mwe.reps, mwe.weight
+                ORDER BY mwe.id ASC
+            ");
+            $exerciseStmt->execute([$routine['routine_id']]);
+            $detailedExercises = $exerciseStmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // Format exercises for the response
+            $formattedExercises = [];
+            foreach ($detailedExercises as $exercise) {
+                if (!empty($exercise['exercise_name'])) {
+                    $formattedExercises[] = [
+                        'id' => (int)$exercise['exercise_id'],
+                        'name' => $exercise['exercise_name'],
+                        'targetMuscle' => $exercise['target_muscle'],
+                        'sets' => (int)$exercise['sets'],
+                        'reps' => $exercise['reps'],
+                        'weight' => $exercise['weight'],
+                        'restTime' => (int)$exercise['rest_time'],
+                        'notes' => $exercise['notes'],
+                        'category' => $exercise['category'],
+                        'difficulty' => $exercise['difficulty'],
+                        'color' => $routine['color'] ?? '#4ECDC4',
+                        'targetReps' => $exercise['reps'],
+                        'targetSets' => (int)$exercise['sets'],
+                        'targetWeight' => $exercise['weight']
+                    ];
+                }
+            }
+            
+            $routine['detailedExercises'] = $formattedExercises;
+            error_log("Found " . count($formattedExercises) . " detailed exercises for routine " . $routine['routine_id']);
+            
             $routine['routine_name'] = (string)$routineName;
             $routine['duration'] = (string)$duration;
             $routine['goal'] = (string)($routine['goal'] ?? '');
@@ -669,6 +800,20 @@ function getMemberRoutines($pdo, $memberId, $coachId = 0) {
             $routine['completion_rate'] = (int)($routine['completion_rate'] ?? 0);
             $routine['difficulty'] = (string)$routine['difficulty'] ?? 'Beginner';
             $routine['total_sessions'] = (int)($routine['total_sessions'] ?? 0);
+            $routine['exercise_list'] = '';
+            $routine['scheduled_days'] = [];
+            $routine['equipment'] = [];
+            $routine['prerequisites'] = [];
+            $routine['images'] = [];
+            $routine['metadata'] = [];
+            $routine['is_public'] = false;
+            $routine['is_favorite'] = false;
+            $routine['average_rating'] = null;
+            $routine['total_ratings'] = null;
+            $routine['video_url'] = null;
+            $routine['estimated_calories'] = null;
+            $routine['target_muscle_groups'] = null;
+            $routine['progress_tracking'] = [];
             
             // Handle tags JSON
             if (!empty($routine['tags'])) {
@@ -681,6 +826,11 @@ function getMemberRoutines($pdo, $memberId, $coachId = 0) {
             } else {
                 $routine['tags'] = [];
             }
+        }
+        
+        // Debug: Log the structure of the first routine
+        if (!empty($routines)) {
+            error_log("DEBUG - First routine structure: " . json_encode($routines[0]));
         }
         
         echo json_encode([
@@ -840,12 +990,13 @@ function getCoachCreatedRoutines($pdo, $memberId) {
         
         error_log("Found " . count($accessibleRoutines) . " accessible coach-created routines for member $memberId");
         
-        // Cast data types properly
+        // Cast data types properly and get detailed exercises
         foreach ($accessibleRoutines as &$routine) {
             $routine['routine_id'] = (int)$routine['routine_id'];
             $routine['created_by'] = (int)$routine['created_by'];
             $routine['member_id'] = (int)$routine['member_id'];
             $routine['exercises'] = (int)($routine['exercises'] ?? 0);
+            $routine['exercise_count'] = (int)($routine['exercises'] ?? 0);
             
             $routineName = 'Untitled Routine';
             $duration = '30';
@@ -863,6 +1014,58 @@ function getCoachCreatedRoutines($pdo, $memberId) {
                 $routine['workout_details'] = null;
             }
             
+            // Get detailed exercises for this routine
+            $exerciseStmt = $pdo->prepare("
+                SELECT 
+                    mwe.id as exercise_id,
+                    e.name as exercise_name,
+                    GROUP_CONCAT(DISTINCT tm.name ORDER BY etm.role, tm.name SEPARATOR ', ') as target_muscle,
+                    mwe.sets,
+                    mwe.reps,
+                    mwe.weight,
+                    60 as rest_time,
+                    '' as notes,
+                    mwe.id as exercise_order,
+                    'General' as category,
+                    'Beginner' as difficulty
+                FROM member_program_workout mpw
+                LEFT JOIN member_workout_exercise mwe ON mpw.id = mwe.member_program_workout_id
+                LEFT JOIN exercise e ON mwe.exercise_id = e.id
+                LEFT JOIN exercise_target_muscle etm ON e.id = etm.exercise_id
+                LEFT JOIN target_muscle tm ON etm.muscle_id = tm.id
+                WHERE mpw.member_program_hdr_id = ?
+                GROUP BY mwe.id, e.name, mwe.sets, mwe.reps, mwe.weight
+                ORDER BY mwe.id ASC
+            ");
+            $exerciseStmt->execute([$routine['routine_id']]);
+            $detailedExercises = $exerciseStmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // Format exercises for the response
+            $formattedExercises = [];
+            foreach ($detailedExercises as $exercise) {
+                if (!empty($exercise['exercise_name'])) {
+                    $formattedExercises[] = [
+                        'id' => (int)$exercise['exercise_id'],
+                        'name' => $exercise['exercise_name'],
+                        'targetMuscle' => $exercise['target_muscle'],
+                        'sets' => (int)$exercise['sets'],
+                        'reps' => $exercise['reps'],
+                        'weight' => $exercise['weight'],
+                        'restTime' => (int)$exercise['rest_time'],
+                        'notes' => $exercise['notes'],
+                        'category' => $exercise['category'],
+                        'difficulty' => $exercise['difficulty'],
+                        'color' => $routine['color'] ?? '#4ECDC4',
+                        'targetReps' => $exercise['reps'],
+                        'targetSets' => (int)$exercise['sets'],
+                        'targetWeight' => $exercise['weight']
+                    ];
+                }
+            }
+            
+            $routine['detailedExercises'] = $formattedExercises;
+            error_log("Found " . count($formattedExercises) . " detailed exercises for routine " . $routine['routine_id']);
+            
             $routine['routine_name'] = (string)$routineName;
             $routine['duration'] = (string)$duration;
             $routine['goal'] = (string)($routine['goal'] ?? '');
@@ -873,6 +1076,20 @@ function getCoachCreatedRoutines($pdo, $memberId) {
             $routine['completion_rate'] = (int)($routine['completion_rate'] ?? 0);
             $routine['difficulty'] = (string)$routine['difficulty'] ?? 'Beginner';
             $routine['total_sessions'] = (int)($routine['total_sessions'] ?? 0);
+            $routine['exercise_list'] = '';
+            $routine['scheduled_days'] = [];
+            $routine['equipment'] = [];
+            $routine['prerequisites'] = [];
+            $routine['images'] = [];
+            $routine['metadata'] = [];
+            $routine['is_public'] = false;
+            $routine['is_favorite'] = false;
+            $routine['average_rating'] = null;
+            $routine['total_ratings'] = null;
+            $routine['video_url'] = null;
+            $routine['estimated_calories'] = null;
+            $routine['target_muscle_groups'] = null;
+            $routine['progress_tracking'] = [];
             
             // Handle tags JSON
             if (!empty($routine['tags'])) {
@@ -885,6 +1102,11 @@ function getCoachCreatedRoutines($pdo, $memberId) {
             } else {
                 $routine['tags'] = [];
             }
+        }
+        
+        // Debug: Log the structure of the first routine
+        if (!empty($accessibleRoutines)) {
+            error_log("DEBUG - First accessible routine structure: " . json_encode($accessibleRoutines[0]));
         }
         
         echo json_encode([
@@ -1728,6 +1950,63 @@ function getUserCoachRequest($pdo, $userId) {
         echo json_encode([
             'success' => false,
             'message' => 'Error fetching user coach request: ' . $e->getMessage()
+        ]);
+    }
+}
+
+function testAddMember($pdo) {
+    try {
+        error_log("TEST: Adding test member to coach 61");
+        
+        // First, let's find a member (user with user_type_id = 1)
+        $memberStmt = $pdo->prepare("SELECT id, fname, lname, email FROM user WHERE user_type_id = 1 LIMIT 1");
+        $memberStmt->execute();
+        $member = $memberStmt->fetch(PDO::FETCH_ASSOC);
+        
+        if (!$member) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'No members found in database'
+            ]);
+            return;
+        }
+        
+        error_log("TEST: Found member {$member['fname']} {$member['lname']} (ID: {$member['id']})");
+        
+        // Check if this member is already assigned to coach 61
+        $existingStmt = $pdo->prepare("SELECT id FROM coach_member_list WHERE coach_id = 61 AND member_id = ?");
+        $existingStmt->execute([$member['id']]);
+        $existing = $existingStmt->fetch(PDO::FETCH_ASSOC);
+        
+        if ($existing) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'Member already assigned to coach 61'
+            ]);
+            return;
+        }
+        
+        // Add the member to coach 61
+        $insertStmt = $pdo->prepare("
+            INSERT INTO coach_member_list 
+            (coach_id, member_id, status, coach_approval, staff_approval, requested_at, coach_approved_at, staff_approved_at, rate_type, remaining_sessions)
+            VALUES (61, ?, 'active', 'approved', 'approved', NOW(), NOW(), NOW(), 'monthly', 999)
+        ");
+        $insertStmt->execute([$member['id']]);
+        
+        error_log("TEST: Successfully added member {$member['id']} to coach 61");
+        
+        echo json_encode([
+            'success' => true,
+            'message' => "Successfully added member {$member['fname']} {$member['lname']} to coach 61",
+            'member_id' => $member['id']
+        ]);
+        
+    } catch (PDOException $e) {
+        error_log("TEST ERROR: " . $e->getMessage());
+        echo json_encode([
+            'success' => false,
+            'message' => 'Error adding test member: ' . $e->getMessage()
         ]);
     }
 }

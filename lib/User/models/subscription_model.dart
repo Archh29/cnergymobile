@@ -7,6 +7,7 @@ class SubscriptionPlan {
   final double? discountedPrice;
   final bool isMemberOnly;
   final int durationMonths;
+  final int? durationDays;
   final bool isAvailable;
   final String? unavailableReason;
   final String? description;
@@ -25,6 +26,7 @@ class SubscriptionPlan {
     this.discountedPrice,
     required this.isMemberOnly,
     this.durationMonths = 1,
+    this.durationDays,
     this.isAvailable = true,
     this.unavailableReason,
     this.description,
@@ -45,6 +47,7 @@ class SubscriptionPlan {
           : null,
       isMemberOnly: json['is_member_only'] == 1 || json['is_member_only'] == true,
       durationMonths: int.tryParse(json['duration_months']?.toString() ?? '1') ?? 1,
+      durationDays: json['duration_days'] != null ? int.tryParse(json['duration_days'].toString()) : null,
       isAvailable: json['is_available'] == true,
       unavailableReason: json['unavailable_reason']?.toString(),
       description: json['description']?.toString(),
@@ -68,6 +71,7 @@ class SubscriptionPlan {
       'discounted_price': discountedPrice,
       'is_member_only': isMemberOnly,
       'duration_months': durationMonths,
+      'duration_days': durationDays,
       'is_available': isAvailable,
       'unavailable_reason': unavailableReason,
       'description': description,
@@ -102,12 +106,17 @@ class SubscriptionPlan {
   }
 
   String getDurationText() {
-    if (planName.toLowerCase().contains('member fee')) {
+    if (durationDays != null && durationDays! > 0) {
+      return durationDays == 1 ? '1 Day' : '$durationDays Days';
+    } else if (durationMonths == 12) {
       return '1 Year';
-    } else if (planName.toLowerCase().contains('day pass')) {
+    } else if (durationMonths == 1) {
+      return '1 Month';
+    } else if (durationMonths == 0) {
       return '1 Day';
+    } else {
+      return '$durationMonths Months';
     }
-    return durationMonths == 1 ? '1 Month' : durationMonths == 0 ? '1 Day' : '$durationMonths Months';
   }
 
   String getPlanTypeText() {

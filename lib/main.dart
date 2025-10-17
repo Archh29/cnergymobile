@@ -245,6 +245,12 @@ class _AuthWrapperState extends State<AuthWrapper> {
     print('✅ User logged in - ID: $userId, Type: ${AuthService.getUserType()}');
     print('🔍 User type checks - isCustomer: ${AuthService.isCustomer()}, isCoach: ${AuthService.isCoach()}, isAdmin: ${AuthService.isAdmin()}, isStaff: ${AuthService.isStaff()}');
 
+    // SECURITY FIX: Check if user needs account verification
+    if (AuthService.needsAccountVerification()) {
+      print('🔐 User needs account verification, showing AccountVerificationScreen');
+      return const AccountVerificationScreen();
+    }
+
     // TEMPORARY FIX: Force show first-time setup if profile is not completed
     print('🔧 TEMPORARY FIX: Checking profile completion for all users...');
     print('🔧 TEMPORARY FIX: User ID: $userId, User Type: ${AuthService.getUserType()}');

@@ -93,7 +93,11 @@ class _ManageSubscriptionsPageState extends State<ManageSubscriptionsPage> {
         final planName = currentSub['plan_name']?.toString() ?? 'Unknown Plan';
         final isMembership = planName.toLowerCase().contains('gym membership fee') || 
                             planName.toLowerCase().contains('membership');
-        final isMemberRate = planName.toLowerCase().contains('member rate');
+        final isMemberRate = planName.toLowerCase().contains('member rate') || 
+                            planName.toLowerCase().contains('member monthly') ||
+                            (planName.toLowerCase().contains('member') && 
+                             !planName.toLowerCase().contains('non-member') && 
+                             !planName.toLowerCase().contains('non member'));
         final isDayPass = planName.toLowerCase().contains('day pass');
         
         // Convert price string to double safely
@@ -105,12 +109,17 @@ class _ManageSubscriptionsPageState extends State<ManageSubscriptionsPage> {
         final discountedPriceStr = currentSub['discounted_price']?.toString();
         final discountedPrice = discountedPriceStr != null ? double.tryParse(discountedPriceStr) : null;
         
+         // Debug: Log the duration values
+        print('Debug: duration_months from API: ${currentSub['duration_months']} (type: ${currentSub['duration_months'].runtimeType})');
+        print('Debug: duration_days from API: ${currentSub['duration_days']} (type: ${currentSub['duration_days'].runtimeType})');
+        
         final plan = SubscriptionPlan(
           id: currentSub['id'] ?? 0,
           planName: planName,
           price: price,
           discountedPrice: discountedPrice,
-          durationMonths: isMembership ? 12 : isDayPass ? 0 : 1,
+          durationMonths: int.tryParse(currentSub['duration_months']?.toString() ?? '1') ?? 1,
+          durationDays: currentSub['duration_days'] != null ? int.tryParse(currentSub['duration_days'].toString()) : null,
           isMemberOnly: isMembership || isMemberRate,
           isAvailable: true,
           features: [],
@@ -122,6 +131,9 @@ class _ManageSubscriptionsPageState extends State<ManageSubscriptionsPage> {
                       ? 'Monthly access (member rate) - Discounted rate, 1 month, unlimited access'
                       : 'Monthly access (standard rate) - Standard rate, 1 month, limited access',
         );
+        
+        print('Debug: Created plan with durationMonths: ${plan.durationMonths}, durationDays: ${plan.durationDays}');
+        print('Debug: Plan duration text: ${plan.getDurationText()}');
         availedPlans.add(plan);
         print('Debug: Added current subscription: ${plan.planName} - ₱${plan.price}');
       }
@@ -166,7 +178,11 @@ class _ManageSubscriptionsPageState extends State<ManageSubscriptionsPage> {
           final planName = sub.planName;
           final isMembership = planName.toLowerCase().contains('gym membership fee') || 
                               planName.toLowerCase().contains('membership');
-          final isMemberRate = planName.toLowerCase().contains('member rate');
+          final isMemberRate = planName.toLowerCase().contains('member rate') || 
+                            planName.toLowerCase().contains('member monthly') ||
+                            (planName.toLowerCase().contains('member') && 
+                             !planName.toLowerCase().contains('non-member') && 
+                             !planName.toLowerCase().contains('non member'));
           final isDayPass = planName.toLowerCase().contains('day pass');
           
           // Skip if this is the same as current subscription
@@ -2235,19 +2251,19 @@ class DynamicSubscriptionCard extends StatelessWidget {
                     Container(
                       padding: EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: Colors.red.withOpacity(0.1),
+                        color: Colors.orange.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.red.withOpacity(0.3)),
+                        border: Border.all(color: Colors.orange.withOpacity(0.3)),
                       ),
                       child: Row(
                         children: [
-                          Icon(Icons.lock, color: Colors.red, size: 20),
+                          Icon(Icons.lock, color: Colors.orange, size: 20),
                           SizedBox(width: 12),
                           Expanded(
                             child: Text(
                               plan.lockMessage ?? 'This plan is currently unavailable',
                               style: GoogleFonts.poppins(
-                                color: Colors.red,
+                                color: Colors.orange,
                                 fontSize: 14,
                                 fontWeight: FontWeight.w500,
                               ),

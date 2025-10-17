@@ -122,8 +122,23 @@ function getAllProgress()
         throw new Exception('User ID required');
     }
 
-    // Get data from the actual workout tables - your real workout data
-    $sql = "SELECT 
+    // First, get all programs assigned to this user (both user-created and coach-assigned)
+    $programsSql = "SELECT DISTINCT
+                        mph.id as program_id,
+                        JSON_UNQUOTE(JSON_EXTRACT(mpw.workout_details, '$.name')) as program_name,
+                        mph.created_by as program_creator_id,
+                        mph.created_at as program_created_at
+                    FROM member_programhdr mph
+                    LEFT JOIN member_program_workout mpw ON mph.id = mpw.member_program_hdr_id
+                    WHERE mph.user_id = ?
+                    ORDER BY mph.created_at DESC";
+    
+    $stmt = $pdo->prepare($programsSql);
+    $stmt->execute([$userId]);
+    $programs = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    // Get workout data from the actual workout tables
+    $workoutSql = "SELECT 
                 mel.id,
                 mel.member_id as user_id,
                 e.name as exercise_name,
@@ -134,19 +149,21 @@ function getAllProgress()
                 (mesl.reps * mesl.weight) as volume,
                 (mesl.weight * (1 + (mesl.reps / 30))) as one_rep_max,
                 mesl.notes,
-                'Workout' as program_name,
+                COALESCE(JSON_UNQUOTE(JSON_EXTRACT(mpw2.workout_details, '$.name')), 'Workout') as program_name,
                 COALESCE(mph.id, 0) as program_id,
-                CONVERT_TZ(mesl.created_at, '+00:00', '+08:00') as date
+                CONVERT_TZ(mesl.created_at, '+00:00', '+08:00') as date,
+                mph.created_by as program_creator_id
             FROM member_exercise_log mel
             JOIN member_workout_exercise mwe ON mel.member_workout_exercise_id = mwe.id
             JOIN exercise e ON mwe.exercise_id = e.id
             LEFT JOIN member_program_workout mpw ON mwe.member_program_workout_id = mpw.id
             LEFT JOIN member_programhdr mph ON mpw.member_program_hdr_id = mph.id
+            LEFT JOIN member_program_workout mpw2 ON mph.id = mpw2.member_program_hdr_id
             JOIN member_exercise_set_log mesl ON mel.id = mesl.exercise_log_id
             WHERE mel.member_id = ? 
             ORDER BY e.name, mesl.created_at DESC";
 
-    $stmt = $pdo->prepare($sql);
+    $stmt = $pdo->prepare($workoutSql);
     $stmt->execute([$userId]);
     $lifts = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -162,7 +179,8 @@ function getAllProgress()
 
     echo json_encode([
         'success' => true,
-        'data' => $grouped
+        'data' => $grouped,
+        'programs' => $programs  // Include program information
     ]);
 }
 
@@ -182,7 +200,7 @@ function getExerciseProgress()
     // Debug logging
     error_log("getExerciseProgress: User ID = $userId, Exercise Name = '$exerciseName'");
 
-    // Get data from the actual workout tables - your real workout data
+    // Get data from the actual workout tables - includes both user-created and coach-assigned programs
     $sql = "SELECT 
                 mesl.id,
                 mel.member_id as user_id,
@@ -194,10 +212,11 @@ function getExerciseProgress()
                 (mesl.reps * mesl.weight) as volume,
                 (mesl.weight * (1 + (mesl.reps / 30))) as one_rep_max,
                 mesl.notes,
-                'Workout' as program_name,
+                COALESCE(JSON_UNQUOTE(JSON_EXTRACT(mpw.workout_details, '$.name')), 'Workout') as program_name,
                 COALESCE(mph.id, 0) as program_id,
                 CONVERT_TZ(mesl.created_at, '+00:00', '+08:00') as date,
-                mesl.set_number  -- Include set number for proper ordering
+                mesl.set_number,  -- Include set number for proper ordering
+                mph.created_by as program_creator_id
             FROM member_exercise_log mel
             JOIN member_workout_exercise mwe ON mel.member_workout_exercise_id = mwe.id
             JOIN exercise e ON mwe.exercise_id = e.id
@@ -246,7 +265,7 @@ function getRecentLifts()
         throw new Exception('User ID required');
     }
 
-    // Get data from the actual workout tables - your real workout data
+    // Get data from the actual workout tables - includes both user-created and coach-assigned programs
     $sql = "SELECT 
                 mel.id,
                 mel.member_id as user_id,
@@ -258,9 +277,10 @@ function getRecentLifts()
                 (mesl.reps * mesl.weight) as volume,
                 (mesl.weight * (1 + (mesl.reps / 30))) as one_rep_max,
                 mesl.notes,
-                'Workout' as program_name,
+                COALESCE(JSON_UNQUOTE(JSON_EXTRACT(mpw.workout_details, '$.name')), 'Workout') as program_name,
                 COALESCE(mph.id, 0) as program_id,
-                CONVERT_TZ(mesl.created_at, '+00:00', '+08:00') as date
+                CONVERT_TZ(mesl.created_at, '+00:00', '+08:00') as date,
+                mph.created_by as program_creator_id
             FROM member_exercise_log mel
             JOIN member_workout_exercise mwe ON mel.member_workout_exercise_id = mwe.id
             JOIN exercise e ON mwe.exercise_id = e.id
@@ -291,7 +311,7 @@ function getProgressByProgram()
         throw new Exception('User ID and program ID required');
     }
 
-    // Get data from the actual workout tables - your real workout data
+    // Get data from the actual workout tables - includes both user-created and coach-assigned programs
     $sql = "SELECT 
                 mel.id,
                 mel.member_id as user_id,
@@ -303,21 +323,31 @@ function getProgressByProgram()
                 (mesl.reps * mesl.weight) as volume,
                 (mesl.weight * (1 + (mesl.reps / 30))) as one_rep_max,
                 mesl.notes,
-                'Workout' as program_name,
+                COALESCE(JSON_UNQUOTE(JSON_EXTRACT(mpw.workout_details, '$.name')), 'Workout') as program_name,
                 COALESCE(mph.id, 0) as program_id,
-                CONVERT_TZ(mesl.created_at, '+00:00', '+08:00') as date
+                CONVERT_TZ(mesl.created_at, '+00:00', '+08:00') as date,
+                mph.created_by as program_creator_id
             FROM member_exercise_log mel
             JOIN member_workout_exercise mwe ON mel.member_workout_exercise_id = mwe.id
             JOIN exercise e ON mwe.exercise_id = e.id
             LEFT JOIN member_program_workout mpw ON mwe.member_program_workout_id = mpw.id
             LEFT JOIN member_programhdr mph ON mpw.member_program_hdr_id = mph.id
             JOIN member_exercise_set_log mesl ON mel.id = mesl.exercise_log_id
-            WHERE mel.member_id = ? AND COALESCE(mph.id, 0) = ?
+            WHERE mel.member_id = ? AND mph.id = ? AND mph.id IS NOT NULL
             ORDER BY e.name, mesl.created_at DESC";
 
     $stmt = $pdo->prepare($sql);
     $stmt->execute([$userId, $programId]);
     $lifts = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    // Debug logging
+    error_log("DEBUG: get_progress_by_program - User ID: $userId, Program ID: $programId");
+    error_log("DEBUG: SQL Query: $sql");
+    error_log("DEBUG: Found " . count($lifts) . " records");
+    
+    foreach ($lifts as $lift) {
+        error_log("DEBUG: Exercise: " . $lift['exercise_name'] . " - Program ID: " . $lift['program_id'] . " - Program Name: " . $lift['program_name']);
+    }
 
     echo json_encode([
         'success' => true,

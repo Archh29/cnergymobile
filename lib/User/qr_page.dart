@@ -398,15 +398,6 @@ class _QRPageState extends State<QRPage> with TickerProviderStateMixin {
                                     color: Colors.grey[600],
                                   ),
                                 ),
-                                SizedBox(height: 4),
-                                Text(
-                                  'ID: $userId',
-                                  style: GoogleFonts.poppins(
-                                    fontSize: 12,
-                                    color: Colors.grey[500],
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
                               ],
                             ),
                           ),

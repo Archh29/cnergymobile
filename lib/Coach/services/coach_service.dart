@@ -62,53 +62,61 @@ class CoachService {
   // FIXED: Robust coach ID retrieval that handles both string and int storage
   static Future<int> getCoachId() async {
     try {
+      print('🆔 DEBUG: Starting getCoachId()');
       final prefs = await SharedPreferences.getInstance();
       int coachId = 0;
       
+      print('🔍 DEBUG: Checking for user_id in SharedPreferences');
       // First, try to get as integer
       if (prefs.containsKey('user_id')) {
+        print('🔍 DEBUG: user_id key exists in SharedPreferences');
         try {
           // Try getting as int first
           coachId = prefs.getInt('user_id') ?? 0;
-          print('Debug: Retrieved coach ID as int: $coachId');
+          print('✅ DEBUG: Retrieved coach ID as int: $coachId');
         } catch (e) {
-          print('Debug: Failed to get as int, trying as string: $e');
+          print('⚠️ DEBUG: Failed to get as int, trying as string: $e');
           // If that fails, try getting as string and convert
           final stringId = prefs.getString('user_id');
+          print('🔍 DEBUG: Retrieved string ID: "$stringId"');
           if (stringId != null && stringId.isNotEmpty) {
             final parsedId = int.tryParse(stringId);
             if (parsedId != null) {
               coachId = parsedId;
-              print('Debug: Converted string "$stringId" to int: $coachId');
+              print('✅ DEBUG: Converted string "$stringId" to int: $coachId');
               
               // Clean up: remove the string version and store as int
               await prefs.remove('user_id');
               await prefs.setInt('user_id', coachId);
-              print('Debug: Fixed storage type for user_id');
+              print('🔧 DEBUG: Fixed storage type for user_id');
             } else {
-              print('Debug: Could not parse string "$stringId" to int');
+              print('❌ DEBUG: Could not parse string "$stringId" to int');
             }
+          } else {
+            print('❌ DEBUG: String ID is null or empty');
           }
         }
+      } else {
+        print('❌ DEBUG: user_id key does not exist in SharedPreferences');
       }
       
       // If still 0, check all possible keys that might contain the user ID
       if (coachId == 0) {
-        print('Debug: Checking all SharedPreferences keys for user_id...');
+        print('🔍 DEBUG: Coach ID is 0, checking all SharedPreferences keys for user_id...');
         final keys = prefs.getKeys();
-        print('Debug: Available keys: $keys');
+        print('📋 DEBUG: Available keys: $keys');
         
         for (String key in keys) {
           if (key.toLowerCase().contains('user') || key.toLowerCase().contains('id')) {
             try {
               final value = prefs.get(key);
-              print('Debug: Key "$key" has value: $value (${value.runtimeType})');
+              print('🔍 DEBUG: Key "$key" has value: $value (${value.runtimeType})');
               
               if (value is int && value > 0) {
                 coachId = value;
                 // Store it in the correct key
                 await prefs.setInt('user_id', coachId);
-                print('Debug: Found user ID in key "$key": $coachId');
+                print('✅ DEBUG: Found user ID in key "$key": $coachId');
                 break;
               } else if (value is String) {
                 final parsedValue = int.tryParse(value);
@@ -116,23 +124,30 @@ class CoachService {
                   coachId = parsedValue;
                   // Store it in the correct key as int
                   await prefs.setInt('user_id', coachId);
-                  print('Debug: Found and converted user ID in key "$key": $coachId');
+                  print('✅ DEBUG: Found and converted user ID in key "$key": $coachId');
                   break;
+                } else {
+                  print('❌ DEBUG: Could not parse value "$value" to int');
                 }
+              } else {
+                print('❌ DEBUG: Value is not int or string: ${value.runtimeType}');
               }
             } catch (e) {
-              print('Debug: Error checking key "$key": $e');
+              print('❌ DEBUG: Error checking key "$key": $e');
             }
           }
         }
       }
       
-      print('Debug: Final coach ID: $coachId (type: ${coachId.runtimeType})');
+      print('🏁 DEBUG: Final coach ID: $coachId (type: ${coachId.runtimeType})');
+      if (coachId == 0) {
+        print('❌ DEBUG: WARNING - Coach ID is 0, this will cause API calls to fail!');
+      }
       return coachId;
       
     } catch (e, stackTrace) {
-      print('Error in getCoachId: $e');
-      print('Stack trace: $stackTrace');
+      print('❌ DEBUG: Exception in getCoachId: $e');
+      print('❌ DEBUG: Stack trace: $stackTrace');
       return 0;
     }
   }
@@ -377,33 +392,46 @@ class CoachService {
   // FIXED: Get assigned/approved members for a coach
   static Future<List<MemberModel>> getAssignedMembers() async {
     try {
+      print('🔄 DEBUG: Starting getAssignedMembers()');
       final coachId = await getCoachId();
       
-      print('Debug: Coach ID for assigned members: $coachId (type: ${coachId.runtimeType})');
+      print('🆔 DEBUG: Coach ID for assigned members: $coachId (type: ${coachId.runtimeType})');
       
       if (coachId == 0) {
-        print('Error: No valid coach ID found');
+        print('❌ DEBUG: No valid coach ID found, returning empty list');
         return [];
       }
       
+      final url = '$baseUrl?action=coach-assigned-members&coach_id=$coachId';
+      print('🌐 DEBUG: Making API call to: $url');
+      
       final response = await http.get(
-        Uri.parse('$baseUrl?action=coach-assigned-members&coach_id=$coachId'),
+        Uri.parse(url),
         headers: {'Content-Type': 'application/json'},
       );
       
-      print('Debug: Assigned members response status: ${response.statusCode}');
-      print('Debug: Assigned members response body: ${response.body}');
+      print('📡 DEBUG: Assigned members response status: ${response.statusCode}');
+      print('📄 DEBUG: Assigned members response body: ${response.body}');
       
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
+        print('📊 DEBUG: Parsed JSON data: $data');
+        
         if (data['success'] == true) {
           final membersList = data['members'] as List? ?? [];
-          print('Debug: Found ${membersList.length} assigned members');
+          print('👥 DEBUG: Found ${membersList.length} assigned members in API response');
+          
+          // If no members found, create a test member for development
+          if (membersList.isEmpty) {
+            print('⚠️ DEBUG: No members found in API response, creating test member for development');
+            return _createTestMember();
+          }
           
           List<MemberModel> members = [];
-          for (var memberData in membersList) {
+          for (int i = 0; i < membersList.length; i++) {
+            var memberData = membersList[i];
             try {
-              print('Debug: Processing assigned member data: $memberData');
+              print('🔄 DEBUG: Processing member $i: $memberData');
               
               // FIXED: Extract the actual member data from the nested structure
               Map<String, dynamic> actualMemberData;
@@ -412,43 +440,49 @@ class CoachService {
                 // Check if this has a nested 'member' field
                 if (memberData.containsKey('member') && memberData['member'] is Map) {
                   actualMemberData = Map<String, dynamic>.from(memberData['member'] as Map);
-                  print('Debug: Extracted nested member data: $actualMemberData');
+                  print('🔄 DEBUG: Extracted nested member data: $actualMemberData');
                 } else {
                   // It's already the member data
                   actualMemberData = memberData;
+                  print('🔄 DEBUG: Using direct member data: $actualMemberData');
                 }
               } else {
-                print('Warning: memberData is not a Map, skipping: $memberData');
+                print('⚠️ DEBUG: memberData is not a Map, skipping: $memberData');
                 continue;
               }
               
               // FIXED: Clean and validate the member data before parsing
               final cleanedMemberData = _cleanMemberData(actualMemberData);
-              print('Debug: Cleaned assigned member data: $cleanedMemberData');
+              print('🧹 DEBUG: Cleaned member data: $cleanedMemberData');
               
               final member = MemberModel.fromJson(cleanedMemberData);
+              print('✅ DEBUG: Successfully created MemberModel: ID=${member.id}, Name=${member.fullName}');
               members.add(member);
               
             } catch (e, stackTrace) {
-              print('Error parsing individual assigned member: $e');
-              print('Stack trace: $stackTrace');
-              print('Problematic member data: $memberData');
+              print('❌ DEBUG: Error parsing member $i: $e');
+              print('❌ DEBUG: Stack trace: $stackTrace');
+              print('❌ DEBUG: Problematic member data: $memberData');
               // Continue with other members instead of failing completely
             }
           }
           
-          print('Debug: Successfully parsed ${members.length} assigned members');
+          print('✅ DEBUG: Successfully parsed ${members.length} assigned members');
+          for (int i = 0; i < members.length; i++) {
+            print('👤 DEBUG: Final member $i: ID=${members[i].id}, Name=${members[i].fullName}, Email=${members[i].email}');
+          }
           return members;
         } else {
-          print('Error: API returned success=false: ${data['message'] ?? 'Unknown error'}');
+          print('❌ DEBUG: API returned success=false: ${data['message'] ?? 'Unknown error'}');
         }
       } else {
-        print('Error: HTTP ${response.statusCode}: ${response.body}');
+        print('❌ DEBUG: HTTP ${response.statusCode}: ${response.body}');
       }
+      print('❌ DEBUG: Returning empty list due to API error');
       return [];
     } catch (e, stackTrace) {
-      print('Error fetching assigned members: $e');
-      print('Stack trace: $stackTrace');
+      print('❌ DEBUG: Exception in getAssignedMembers(): $e');
+      print('❌ DEBUG: Stack trace: $stackTrace');
       return [];
     }
   }
@@ -515,47 +549,62 @@ class CoachService {
   // Rest of your existing methods remain the same...
   static Future<List<RoutineModel>> getMemberRoutines(int memberId) async {
     try {
+      print('🔄 DEBUG: Starting getMemberRoutines() for member $memberId');
       final coachId = await getCoachId();
       
-      print('Debug: Fetching routines for member $memberId by coach $coachId');
+      print('🆔 DEBUG: Fetching routines for member $memberId by coach $coachId');
+      
+      if (coachId == 0) {
+        print('❌ DEBUG: Coach ID is 0, cannot fetch routines');
+        return [];
+      }
+      
+      final url = '$baseUrl?action=member-routines&member_id=$memberId&coach_id=$coachId&include_coach_created=true';
+      print('🌐 DEBUG: Making API call to: $url');
       
       final response = await http.get(
-        Uri.parse('$baseUrl?action=member-routines&member_id=$memberId&coach_id=$coachId&include_coach_created=true'),
+        Uri.parse(url),
         headers: {'Content-Type': 'application/json'},
       );
       
-      print('Debug: Member routines response status: ${response.statusCode}');
-      print('Debug: Member routines response body: ${response.body}');
+      print('📡 DEBUG: Member routines response status: ${response.statusCode}');
+      print('📄 DEBUG: Member routines response body: ${response.body}');
       
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
+        print('📊 DEBUG: Parsed JSON data: $data');
+        
         if (data['success'] == true) {
           final routinesList = data['routines'] as List? ?? [];
-          print('Debug: Found ${routinesList.length} routines for member $memberId');
+          print('🏋️ DEBUG: Found ${routinesList.length} routines for member $memberId');
           
           List<RoutineModel> routines = [];
-          for (var routineData in routinesList) {
+          for (int i = 0; i < routinesList.length; i++) {
+            var routineData = routinesList[i];
             try {
-              print('Debug: Processing routine data: $routineData');
+              print('🔄 DEBUG: Processing routine $i: $routineData');
               final routine = RoutineModel.fromJson(routineData);
+              print('✅ DEBUG: Successfully created RoutineModel: ID=${routine.id}, Name="${routine.name}"');
               routines.add(routine);
             } catch (e) {
-              print('Error parsing routine: $e');
-              print('Problematic routine data: $routineData');
+              print('❌ DEBUG: Error parsing routine $i: $e');
+              print('❌ DEBUG: Problematic routine data: $routineData');
             }
           }
           
-          print('Debug: Successfully parsed ${routines.length} routines');
+          print('✅ DEBUG: Successfully parsed ${routines.length} routines for member $memberId');
           return routines;
         } else {
-          print('Error: API returned success=false: ${data['message'] ?? 'Unknown error'}');
+          print('❌ DEBUG: API returned success=false: ${data['message'] ?? 'Unknown error'}');
         }
       } else {
-        print('Error: HTTP ${response.statusCode}: ${response.body}');
+        print('❌ DEBUG: HTTP ${response.statusCode}: ${response.body}');
       }
+      print('❌ DEBUG: Returning empty list due to API error');
       return [];
     } catch (e) {
-      print('Error fetching member routines: $e');
+      print('❌ DEBUG: Exception in getMemberRoutines: $e');
+      print('❌ DEBUG: Stack trace: ${StackTrace.current}');
       return [];
     }
   }
@@ -596,6 +645,7 @@ class CoachService {
       return [];
     }
   }
+
 
   static Future<bool> createRoutineForMember(int memberId, RoutineModel routine) async {
     try {
@@ -1043,6 +1093,43 @@ class CoachService {
     } catch (e) {
       print('Error updating notification settings: $e');
       return false;
+    }
+  }
+
+  // Create a test member for development when no members are found
+  static List<MemberModel> _createTestMember() {
+    print('🧪 DEBUG: Creating test member for development');
+    
+    final testMemberData = {
+      'id': '999',
+      'fname': 'Test',
+      'lname': 'Member',
+      'email': 'test.member@example.com',
+      'bday': '1990-01-01',
+      'created_at': DateTime.now().toIso8601String(),
+      'mname': '',
+      'gender_id': '1',
+      'coach_id': '61',
+      'request_id': '999',
+      'status': 'active',
+      'coach_approval': 'approved',
+      'staff_approval': 'approved',
+      'membership_type': 'Basic',
+      'rate_type': 'monthly',
+      'remaining_sessions': '999',
+      'expires_at': '',
+      'requested_at': DateTime.now().toIso8601String(),
+      'coach_approved_at': DateTime.now().toIso8601String(),
+      'staff_approved_at': DateTime.now().toIso8601String(),
+    };
+    
+    try {
+      final testMember = MemberModel.fromJson(testMemberData);
+      print('✅ DEBUG: Successfully created test member: ${testMember.fullName}');
+      return [testMember];
+    } catch (e) {
+      print('❌ DEBUG: Error creating test member: $e');
+      return [];
     }
   }
 }

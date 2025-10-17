@@ -63,7 +63,7 @@ class SubscriptionService {
           print('Debug: Successfully decoded current subscription JSON response');
           if (data['success'] == true) {
             // If there's an active coach, get more detailed coach data
-            if (data['active_coach'] != null) {
+            if (data['active_coach'] != null && data['active_coach'] is Map) {
               final coachId = data['active_coach']['coach_id'];
               if (coachId != null) {
                 final detailedCoachData = await _getDetailedCoachData(userId, coachId);

@@ -30,16 +30,11 @@ class _CreateRoutinePageState extends State<CreateRoutinePage> {
     
   String selectedDifficulty = "Beginner";
   Color selectedColor = Color(0xFF96CEB4);
-  String selectedDay = "Monday";
   List<ExerciseModel> exercises = [];
   bool isLoading = false;
 
   final List<String> availableDifficulties = [
     "Beginner", "Intermediate", "Advanced"
-  ];
-  
-  final List<String> availableDays = [
-    "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"
   ];
     
   final List<Color> availableColors = [
@@ -57,9 +52,6 @@ class _CreateRoutinePageState extends State<CreateRoutinePage> {
       nameController.text = widget.existingRoutine.name ?? '';
       notesController.text = widget.existingRoutine.notes ?? '';
       selectedDifficulty = widget.existingRoutine.difficulty ?? 'Beginner';
-      selectedDay = widget.existingRoutine.scheduledDays?.isNotEmpty == true 
-          ? widget.existingRoutine.scheduledDays!.first 
-          : 'Monday';
       
       // Handle color conversion - it might be stored as int or string
       if (widget.existingRoutine.color != null) {
@@ -361,16 +353,6 @@ class _CreateRoutinePageState extends State<CreateRoutinePage> {
             ),
           ),
           SizedBox(height: 16),
-          
-          // Day Selection
-          _buildDropdownField(
-            'Training Day',
-            selectedDay,
-            availableDays,
-            (value) => setState(() => selectedDay = value!),
-            icon: Icons.calendar_today,
-          ),
-          SizedBox(height: 16),
                     
           // Color Selection
           Text(
@@ -629,7 +611,7 @@ class _CreateRoutinePageState extends State<CreateRoutinePage> {
         completionRate: 0,
         totalSessions: 0,
         notes: notesController.text.trim(),
-        scheduledDays: [selectedDay],
+        scheduledDays: [], // No longer using scheduled days - will be handled by schedule page
         version: 1.0,
         detailedExercises: exercises,
       );

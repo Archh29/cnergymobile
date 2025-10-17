@@ -7,12 +7,14 @@ import 'User/profile_page.dart';
 import 'User/messages_page.dart';
 import 'User/routine_page.dart';
 import 'User/home_page.dart';
+import 'User/schedule_page.dart';
 import './User/services/auth_service.dart';
 import './User/services/notification_service.dart';
 import './User/services/messages_service.dart';
 import './User/models/notification_model.dart';
 import './User/manage_subscriptions_page.dart';
 import './User/pages/subscription_history_page.dart';
+import './account_verification_page.dart';
 
 class UserDashboard extends StatefulWidget {
   @override
@@ -37,10 +39,11 @@ class _UserDashboardState extends State<UserDashboard> with TickerProviderStateM
   List<Widget> get _pages => [
      HomePage(onNavigateToQR: () {
        setState(() {
-         _selectedIndex = 3; // QR tab index
+         _selectedIndex = 4; // QR tab index (updated due to new Schedule tab)
        });
      }),
      RoutinePage(),
+     SchedulePage(),
      ComprehensiveDashboard(),
      QRPage(),
      ProfilePage(),
@@ -58,6 +61,12 @@ class _UserDashboardState extends State<UserDashboard> with TickerProviderStateM
       activeIcon: Icons.fitness_center,
       label: 'Programs',
       color: const Color(0xFFFF6B35),
+    ),
+    NavigationItem(
+      icon: Icons.calendar_today_outlined,
+      activeIcon: Icons.calendar_today,
+      label: 'Schedule',
+      color: const Color(0xFF9B59B6),
     ),
     NavigationItem(
       icon: Icons.analytics_outlined,
@@ -105,6 +114,17 @@ class _UserDashboardState extends State<UserDashboard> with TickerProviderStateM
       print('User logged in: ${AuthService.getUserFullName()}');
       print('User ID: ${AuthService.getCurrentUserId()}');
       print('Is Member: ${AuthService.isUserMember()}');
+      
+      // SECURITY FIX: Check if user needs account verification
+      if (AuthService.needsAccountVerification()) {
+        print('🔐 User needs account verification, redirecting to AccountVerificationScreen');
+        if (mounted) {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(builder: (context) => const AccountVerificationScreen()),
+          );
+        }
+        return;
+      }
     }
   }
 
@@ -352,47 +372,93 @@ class _UserDashboardState extends State<UserDashboard> with TickerProviderStateM
       context: context,
       builder: (context) => Dialog(
         backgroundColor: Colors.transparent,
+        insetPadding: EdgeInsets.all(16),
         child: Container(
-          margin: EdgeInsets.symmetric(horizontal: isSmallScreen ? 8 : 16),
-          height: MediaQuery.of(context).size.height * 0.8,
+          width: double.infinity,
+          height: MediaQuery.of(context).size.height * 0.85,
           decoration: BoxDecoration(
             color: const Color(0xFF1A1A1A),
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(24),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.3),
-                blurRadius: 20,
-                offset: const Offset(0, 10),
+                color: Colors.black.withOpacity(0.4),
+                blurRadius: 30,
+                offset: const Offset(0, 15),
               ),
             ],
           ),
           child: Column(
             children: [
-              // Header
+              // Modern Header
               Container(
-                padding: EdgeInsets.all(isSmallScreen ? 16 : 20),
+                padding: EdgeInsets.fromLTRB(20, 20, 16, 16),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFFF6B35).withOpacity(0.1),
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(20),
-                    topRight: Radius.circular(20),
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      const Color(0xFFFF6B35).withOpacity(0.15),
+                      const Color(0xFF4ECDC4).withOpacity(0.1),
+                    ],
+                  ),
+                  borderRadius: BorderRadius.only(
+                    topLeft: Radius.circular(24),
+                    topRight: Radius.circular(24),
                   ),
                 ),
                 child: Row(
                   children: [
-                    Container(
-                      padding: EdgeInsets.all(isSmallScreen ? 8 : 12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFF6B35).withOpacity(0.2),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(
-                        Icons.notifications,
-                        color: const Color(0xFFFF6B35),
-                        size: isSmallScreen ? 20 : 24,
-                      ),
+                    // Notification Icon with Badge
+                    Stack(
+                      children: [
+                        Container(
+                          padding: EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [Color(0xFFFF6B35), Color(0xFFFF8A65)],
+                            ),
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Color(0xFFFF6B35).withOpacity(0.3),
+                                blurRadius: 8,
+                                offset: Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: Icon(
+                            Icons.notifications_rounded,
+                            color: Colors.white,
+                            size: 24,
+                          ),
+                        ),
+                        if (_unreadCount > 0)
+                          Positioned(
+                            right: 0,
+                            top: 0,
+                            child: Container(
+                              padding: EdgeInsets.all(4),
+                              decoration: BoxDecoration(
+                                color: Colors.red,
+                                shape: BoxShape.circle,
+                                border: Border.all(color: Color(0xFF1A1A1A), width: 2),
+                              ),
+                              constraints: BoxConstraints(minWidth: 20, minHeight: 20),
+                              child: Text(
+                                '$_unreadCount',
+                                style: GoogleFonts.poppins(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
-                    SizedBox(width: isSmallScreen ? 12 : 16),
+                    SizedBox(width: 16),
+                    // Title and Subtitle
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -400,28 +466,40 @@ class _UserDashboardState extends State<UserDashboard> with TickerProviderStateM
                           Text(
                             'Notifications',
                             style: GoogleFonts.poppins(
-                              fontSize: isSmallScreen ? 18 : 20,
-                              fontWeight: FontWeight.bold,
+                              fontSize: 22,
+                              fontWeight: FontWeight.w700,
                               color: Colors.white,
+                              letterSpacing: -0.5,
                             ),
                           ),
-                          if (_unreadCount > 0)
-                            Text(
-                              '$_unreadCount unread',
-                              style: GoogleFonts.poppins(
-                                fontSize: isSmallScreen ? 12 : 14,
-                                color: const Color(0xFFFF6B35),
-                              ),
+                          SizedBox(height: 2),
+                          Text(
+                            _notifications.isEmpty 
+                                ? 'No notifications yet'
+                                : '$_unreadCount unread • ${_notifications.length} total',
+                            style: GoogleFonts.poppins(
+                              fontSize: 13,
+                              color: Colors.grey[400],
+                              fontWeight: FontWeight.w500,
                             ),
+                          ),
                         ],
                       ),
                     ),
+                    // Action Menu
                     if (_notifications.isNotEmpty)
                       PopupMenuButton<String>(
-                        icon: Icon(
-                          Icons.more_vert,
-                          color: Colors.white,
-                          size: isSmallScreen ? 20 : 24,
+                        icon: Container(
+                          padding: EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.grey[800]!.withOpacity(0.5),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            Icons.more_vert_rounded,
+                            color: Colors.white,
+                            size: 20,
+                          ),
                         ),
                         onSelected: (value) async {
                           if (value == 'mark_all_read') {
@@ -435,9 +513,9 @@ class _UserDashboardState extends State<UserDashboard> with TickerProviderStateM
                             value: 'mark_all_read',
                             child: Row(
                               children: [
-                                Icon(Icons.done_all, color: Colors.white, size: 16),
-                                SizedBox(width: 8),
-                                Text('Mark all as read', style: GoogleFonts.poppins(color: Colors.white)),
+                                Icon(Icons.done_all_rounded, color: Color(0xFF4ECDC4), size: 18),
+                                SizedBox(width: 12),
+                                Text('Mark all as read', style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.w500)),
                               ],
                             ),
                           ),
@@ -445,20 +523,29 @@ class _UserDashboardState extends State<UserDashboard> with TickerProviderStateM
                             value: 'clear_all',
                             child: Row(
                               children: [
-                                Icon(Icons.clear_all, color: Colors.red, size: 16),
-                                SizedBox(width: 8),
-                                Text('Clear all', style: GoogleFonts.poppins(color: Colors.red)),
+                                Icon(Icons.clear_all_rounded, color: Colors.red, size: 18),
+                                SizedBox(width: 12),
+                                Text('Clear all', style: GoogleFonts.poppins(color: Colors.red, fontWeight: FontWeight.w500)),
                               ],
                             ),
                           ),
                         ],
                       ),
-                    IconButton(
-                      onPressed: () => Navigator.pop(context),
-                      icon: Icon(
-                        Icons.close,
-                        color: Colors.white,
-                        size: isSmallScreen ? 20 : 24,
+                    // Close Button
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.grey[800]!.withOpacity(0.5),
+                        shape: BoxShape.circle,
+                      ),
+                      child: IconButton(
+                        onPressed: () => Navigator.pop(context),
+                        icon: Icon(
+                          Icons.close_rounded,
+                          color: Colors.white,
+                          size: 22,
+                        ),
+                        padding: EdgeInsets.all(8),
+                        constraints: BoxConstraints(minWidth: 40, minHeight: 40),
                       ),
                     ),
                   ],
@@ -482,35 +569,85 @@ class _UserDashboardState extends State<UserDashboard> with TickerProviderStateM
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
+          // Modern Empty State Icon
           Container(
-            padding: EdgeInsets.all(isSmallScreen ? 20 : 24),
+            padding: EdgeInsets.all(32),
             decoration: BoxDecoration(
-              color: const Color(0xFFFF6B35).withOpacity(0.1),
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Color(0xFFFF6B35).withOpacity(0.1),
+                  Color(0xFF4ECDC4).withOpacity(0.1),
+                ],
+              ),
               shape: BoxShape.circle,
+              border: Border.all(
+                color: Color(0xFFFF6B35).withOpacity(0.2),
+                width: 2,
+              ),
             ),
             child: Icon(
-              Icons.notifications_none,
-              color: const Color(0xFFFF6B35),
-              size: isSmallScreen ? 40 : 48,
+              Icons.notifications_off_rounded,
+              color: Color(0xFFFF6B35),
+              size: 56,
             ),
           ),
-          SizedBox(height: isSmallScreen ? 16 : 20),
+          SizedBox(height: 24),
+          // Title
           Text(
-            'No notifications yet',
+            'All caught up!',
             style: GoogleFonts.poppins(
-              fontSize: isSmallScreen ? 16 : 18,
-              fontWeight: FontWeight.w600,
+              fontSize: 24,
+              fontWeight: FontWeight.w700,
               color: Colors.white,
+              letterSpacing: -0.5,
             ),
           ),
-          SizedBox(height: isSmallScreen ? 8 : 12),
+          SizedBox(height: 8),
+          // Subtitle
           Text(
-            'You\'ll see important updates here',
+            'You have no new notifications.\nWe\'ll notify you when something important happens.',
             style: GoogleFonts.poppins(
-              fontSize: isSmallScreen ? 12 : 14,
+              fontSize: 15,
               color: Colors.grey[400],
+              height: 1.5,
+              fontWeight: FontWeight.w500,
             ),
             textAlign: TextAlign.center,
+          ),
+          SizedBox(height: 32),
+          // Decorative Elements
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: Color(0xFFFF6B35).withOpacity(0.3),
+                  shape: BoxShape.circle,
+                ),
+              ),
+              SizedBox(width: 8),
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: Color(0xFF4ECDC4).withOpacity(0.3),
+                  shape: BoxShape.circle,
+                ),
+              ),
+              SizedBox(width: 8),
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: Color(0xFFFF6B35).withOpacity(0.3),
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -522,7 +659,7 @@ class _UserDashboardState extends State<UserDashboard> with TickerProviderStateM
       onRefresh: _refreshNotifications,
       color: const Color(0xFFFF6B35),
       child: ListView.builder(
-        padding: EdgeInsets.all(isSmallScreen ? 8 : 12),
+        padding: EdgeInsets.fromLTRB(16, 8, 16, 16),
         itemCount: _notifications.length + (_hasMoreNotifications ? 1 : 0),
         itemBuilder: (context, index) {
           if (index == _notifications.length) {
@@ -538,198 +675,181 @@ class _UserDashboardState extends State<UserDashboard> with TickerProviderStateM
 
   Widget _buildNotificationItem(NotificationModel notification, bool isSmallScreen) {
     return Container(
-      margin: EdgeInsets.only(bottom: isSmallScreen ? 8 : 12),
+      margin: EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: notification.isUnread 
-            ? const Color(0xFFFF6B35).withOpacity(0.1)
-            : const Color(0xFF2A2A2A),
-        borderRadius: BorderRadius.circular(12),
+            ? Color(0xFF2A2A2A)
+            : Color(0xFF1F1F1F),
+        borderRadius: BorderRadius.circular(16),
         border: notification.isUnread 
-            ? Border.all(color: const Color(0xFFFF6B35).withOpacity(0.3))
-            : null,
+            ? Border.all(color: Color(0xFFFF6B35).withOpacity(0.3), width: 1)
+            : Border.all(color: Colors.grey[800]!.withOpacity(0.3), width: 1),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 8,
+            offset: Offset(0, 2),
+          ),
+        ],
       ),
-      child: ExpansionTile(
-        tilePadding: EdgeInsets.all(isSmallScreen ? 12 : 16),
-        childrenPadding: EdgeInsets.symmetric(
-          horizontal: isSmallScreen ? 12 : 16,
-          vertical: 8,
-        ),
-        leading: Container(
-          padding: EdgeInsets.all(isSmallScreen ? 8 : 10),
-          decoration: BoxDecoration(
-            color: _getNotificationColor(notification.typeName).withOpacity(0.2),
-            shape: BoxShape.circle,
-          ),
-          child: Icon(
-            _getNotificationIcon(notification.typeName),
-            color: _getNotificationColor(notification.typeName),
-            size: isSmallScreen ? 16 : 20,
-          ),
-        ),
-        title: Text(
-          notification.message,
-          style: GoogleFonts.poppins(
-            fontSize: isSmallScreen ? 13 : 14,
-            fontWeight: notification.isUnread ? FontWeight.w600 : FontWeight.w500,
-            color: Colors.white,
-          ),
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-        ),
-        subtitle: Text(
-          notification.getFormattedTime(),
-          style: GoogleFonts.poppins(
-            fontSize: isSmallScreen ? 11 : 12,
-            color: Colors.grey[400],
-          ),
-        ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (notification.isUnread)
-              Container(
-                width: 8,
-                height: 8,
-                decoration: const BoxDecoration(
-                  color: Color(0xFFFF6B35),
-                  shape: BoxShape.circle,
-                ),
-              ),
-            SizedBox(width: 8),
-            PopupMenuButton<String>(
-              icon: Icon(
-                Icons.more_vert,
-                color: Colors.grey[400],
-                size: 16,
-              ),
-              onSelected: (value) async {
-                if (value == 'mark_read' && notification.isUnread) {
-                  await _markNotificationAsRead(notification.id);
-                } else if (value == 'delete') {
-                  await _deleteNotification(notification.id);
-                }
-              },
-              itemBuilder: (context) => [
-                if (notification.isUnread)
-                  PopupMenuItem(
-                    value: 'mark_read',
-                    child: Row(
-                      children: [
-                        Icon(Icons.done, color: Colors.white, size: 16),
-                        SizedBox(width: 8),
-                        Text('Mark as read', style: GoogleFonts.poppins(color: Colors.white)),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () async {
+            if (notification.isUnread) {
+              await _markNotificationAsRead(notification.id);
+            }
+          },
+          child: Padding(
+            padding: EdgeInsets.all(16),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Icon with modern styling
+                Container(
+                  padding: EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        _getNotificationColor(notification.typeName).withOpacity(0.2),
+                        _getNotificationColor(notification.typeName).withOpacity(0.1),
                       ],
                     ),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: _getNotificationColor(notification.typeName).withOpacity(0.3),
+                      width: 1,
+                    ),
                   ),
-                PopupMenuItem(
-                  value: 'delete',
-                  child: Row(
+                  child: Icon(
+                    _getNotificationIcon(notification.typeName),
+                    color: _getNotificationColor(notification.typeName),
+                    size: 20,
+                  ),
+                ),
+                SizedBox(width: 16),
+                // Content
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(Icons.delete, color: Colors.red, size: 16),
-                      SizedBox(width: 8),
-                      Text('Delete', style: GoogleFonts.poppins(color: Colors.red)),
+                      // Message
+                      Text(
+                        notification.message,
+                        style: GoogleFonts.poppins(
+                          fontSize: 15,
+                          fontWeight: notification.isUnread ? FontWeight.w600 : FontWeight.w500,
+                          color: Colors.white,
+                          height: 1.4,
+                        ),
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      SizedBox(height: 8),
+                      // Time and Type
+                      Row(
+                        children: [
+                          Container(
+                            padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: _getNotificationColor(notification.typeName).withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              notification.typeName.toUpperCase(),
+                              style: GoogleFonts.poppins(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                color: _getNotificationColor(notification.typeName),
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                          ),
+                          SizedBox(width: 8),
+                          Text(
+                            notification.getFormattedTime(),
+                            style: GoogleFonts.poppins(
+                              fontSize: 12,
+                              color: Colors.grey[400],
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
                     ],
                   ),
                 ),
-              ],
-            ),
-          ],
-        ),
-        onExpansionChanged: (expanded) async {
-          if (expanded && notification.isUnread) {
-            // Small delay to allow expansion animation to complete
-            await Future.delayed(Duration(milliseconds: 300));
-            await _markNotificationAsRead(notification.id);
-          }
-        },
-        children: [
-          Container(
-            width: double.infinity,
-            padding: EdgeInsets.all(isSmallScreen ? 12 : 16),
-            decoration: BoxDecoration(
-              color: Colors.grey[850],
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+                // Actions
+                Column(
                   children: [
-                    Icon(
-                      _getNotificationIcon(notification.typeName),
-                      color: _getNotificationColor(notification.typeName),
-                      size: 16,
-                    ),
-                    SizedBox(width: 8),
-                    Text(
-                      'Type: ${notification.typeName.toUpperCase()}',
-                      style: GoogleFonts.poppins(
-                        fontSize: isSmallScreen ? 10 : 12,
-                        fontWeight: FontWeight.w600,
-                        color: _getNotificationColor(notification.typeName),
+                    if (notification.isUnread)
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: Color(0xFFFF6B35),
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Color(0xFFFF6B35).withOpacity(0.3),
+                              blurRadius: 4,
+                              offset: Offset(0, 2),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-                SizedBox(height: 8),
-                Text(
-                  'Full Message:',
-                  style: GoogleFonts.poppins(
-                    fontSize: isSmallScreen ? 11 : 12,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.grey[300],
-                  ),
-                ),
-                SizedBox(height: 4),
-                Text(
-                  notification.message,
-                  style: GoogleFonts.poppins(
-                    fontSize: isSmallScreen ? 12 : 14,
-                    color: Colors.white,
-                    height: 1.4,
-                  ),
-                ),
-                SizedBox(height: 8),
-                Row(
-                  children: [
-                    Icon(
-                      Icons.access_time,
-                      color: Colors.grey[400],
-                      size: 14,
-                    ),
-                    SizedBox(width: 4),
-                    Text(
-                      'Received: ${notification.getFormattedTime()}',
-                      style: GoogleFonts.poppins(
-                        fontSize: isSmallScreen ? 10 : 11,
-                        color: Colors.grey[400],
+                    SizedBox(height: 8),
+                    PopupMenuButton<String>(
+                      icon: Container(
+                        padding: EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[800]!.withOpacity(0.5),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Icon(
+                          Icons.more_vert_rounded,
+                          color: Colors.grey[400],
+                          size: 16,
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-                SizedBox(height: 4),
-                Row(
-                  children: [
-                    Icon(
-                      notification.isUnread ? Icons.mark_email_unread : Icons.mark_email_read,
-                      color: notification.isUnread ? const Color(0xFFFF6B35) : Colors.grey[400],
-                      size: 14,
-                    ),
-                    SizedBox(width: 4),
-                    Text(
-                      notification.isUnread ? 'Unread' : 'Read',
-                      style: GoogleFonts.poppins(
-                        fontSize: isSmallScreen ? 10 : 11,
-                        color: notification.isUnread ? const Color(0xFFFF6B35) : Colors.grey[400],
-                        fontWeight: FontWeight.w500,
-                      ),
+                      onSelected: (value) async {
+                        if (value == 'mark_read' && notification.isUnread) {
+                          await _markNotificationAsRead(notification.id);
+                        } else if (value == 'delete') {
+                          await _deleteNotification(notification.id);
+                        }
+                      },
+                      itemBuilder: (context) => [
+                        if (notification.isUnread)
+                          PopupMenuItem(
+                            value: 'mark_read',
+                            child: Row(
+                              children: [
+                                Icon(Icons.done_rounded, color: Color(0xFF4ECDC4), size: 18),
+                                SizedBox(width: 12),
+                                Text('Mark as read', style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.w500)),
+                              ],
+                            ),
+                          ),
+                        PopupMenuItem(
+                          value: 'delete',
+                          child: Row(
+                            children: [
+                              Icon(Icons.delete_rounded, color: Colors.red, size: 18),
+                              SizedBox(width: 12),
+                              Text('Delete', style: GoogleFonts.poppins(color: Colors.red, fontWeight: FontWeight.w500)),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
               ],
             ),
           ),
-        ],
+        ),
       ),
     );
   }

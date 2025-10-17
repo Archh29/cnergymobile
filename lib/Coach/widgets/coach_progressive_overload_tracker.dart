@@ -7,20 +7,45 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/progress_tracker_model.dart';
 import '../models/routine.models.dart';
+import '../models/exercise_model.dart';
 import '../services/progress_analytics_service.dart';
 import '../services/enhanced_progress_service.dart';
 import '../services/routine_services.dart';
 import '../services/workout_preview_service.dart';
 import '../services/auth_service.dart';
 
-class ProgressiveOverloadTracker extends StatefulWidget {
-  const ProgressiveOverloadTracker({Key? key}) : super(key: key);
+class ProgressiveOverloadData {
+  final String exerciseName;
+  final DateTime date;
+  final double previousWeight;
+  final double currentWeight;
+  final int previousReps;
+  final int currentReps;
+  final String progressionType;
+  final double improvement;
 
-  @override
-  _ProgressiveOverloadTrackerState createState() => _ProgressiveOverloadTrackerState();
+  ProgressiveOverloadData({
+    required this.exerciseName,
+    required this.date,
+    required this.previousWeight,
+    required this.currentWeight,
+    required this.previousReps,
+    required this.currentReps,
+    required this.progressionType,
+    required this.improvement,
+  });
 }
 
-class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
+class CoachProgressiveOverloadTracker extends StatefulWidget {
+  final dynamic selectedMember;
+  
+  const CoachProgressiveOverloadTracker({Key? key, this.selectedMember}) : super(key: key);
+
+  @override
+  _CoachProgressiveOverloadTrackerState createState() => _CoachProgressiveOverloadTrackerState();
+}
+
+class _CoachProgressiveOverloadTrackerState extends State<CoachProgressiveOverloadTracker>
     with TickerProviderStateMixin {
   late TabController _tabController;
   List<RoutineModel> _programs = [];
@@ -60,59 +85,105 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
     setState(() => _isLoading = true);
 
     try {
-      // Load user's programs
-      final programs = await EnhancedProgressService.fetchUserRoutines();
+      // First, fetch and cache progress data to populate exercises
+      await _fetchAndCacheProgressData();
       
-      // Also fetch programs from the database (includes coach-assigned programs)
-      final memberPrograms = await _fetchMemberPrograms();
-      print('📊 Found ${memberPrograms.length} programs from database (including coach-assigned)');
+      // Get programs from the progress data API response
+      final memberPrograms = await _getProgramsFromProgressData();
+      print('📊 Found ${memberPrograms.length} programs from progress data API');
       
-      // Remove duplicates from user programs before processing
-      final uniqueUserPrograms = <String, RoutineModel>{};
-      for (final program in programs) {
-        if (program.id.isNotEmpty && !uniqueUserPrograms.containsKey(program.id)) {
-          uniqueUserPrograms[program.id] = program;
+      if (memberPrograms.isEmpty) {
+        print('⚠️ No programs found - this might be why the tracker shows 0 programs');
+        print('🔍 Let me check if we can create programs from the progress data instead...');
+        
+        // Fallback: Create programs from the progress data
+        final fallbackPrograms = await _createProgramsFromProgressData();
+        if (fallbackPrograms.isNotEmpty) {
+          print('✅ Created ${fallbackPrograms.length} programs from progress data');
+          memberPrograms.addAll(fallbackPrograms);
+        } else {
+          print('⚠️ Fallback also failed - no programs available for this member');
         }
       }
       
-      print('🔍 USER PROGRESSIVE OVERLOAD: Removed duplicates, ${uniqueUserPrograms.length} unique user programs');
+      // Remove duplicates from memberPrograms before processing (check only ID to avoid filtering out valid programs)
+      final uniquePrograms = <String, Map<String, dynamic>>{};
       
-      // Get exercises directly from your programs
-      List<RoutineModel> detailedPrograms = [];
-      for (final program in uniqueUserPrograms.values) {
-        print('🔍 Processing program: ${program.name} (ID: ${program.id})');
-        print('🔍 Program exercise count: ${program.exercises}');
-        print('🔍 Program exercise list: ${program.exerciseList}');
+      for (final program in memberPrograms) {
+        final programId = program['program_id']?.toString() ?? '';
+        final programName = program['program_name']?.toString() ?? '';
         
-        // Create exercises from the program's exercise list
+        // Only check for program ID duplicates, not name duplicates
+        if (programId.isNotEmpty && !uniquePrograms.containsKey(programId)) {
+          uniquePrograms[programId] = program;
+          print('🔍 COACH PROGRESSIVE OVERLOAD: Added program: $programName (ID: $programId)');
+        } else {
+          print('🔍 COACH PROGRESSIVE OVERLOAD: Skipped duplicate program: $programName (ID: $programId)');
+        }
+      }
+      
+      print('🔍 COACH PROGRESSIVE OVERLOAD: Removed duplicates, ${uniquePrograms.length} unique programs');
+      
+      // Convert API programs to RoutineModel
+      final programs = uniquePrograms.values.map((program) => RoutineModel(
+        id: program['program_id']?.toString() ?? '0',
+        name: program['program_name'] ?? 'Unknown Program',
+        exercises: 0, // Will be updated when we get exercise data
+        duration: '30-45 minutes',
+        difficulty: RoutineDifficulty.intermediate,
+        createdBy: program['program_creator_id']?.toString() ?? '0',
+        exerciseList: 'Coach-assigned program',
+        color: '#4ECDC4',
+        lastPerformed: 'Never',
+        tags: ['Coach-assigned'],
+        goal: 'Coach-assigned program',
+        completionRate: 0,
+        totalSessions: 0,
+        notes: 'Program assigned by coach',
+        scheduledDays: [],
+        version: 1.0,
+        detailedExercises: [],
+        createdDate: DateTime.tryParse(program['program_created_at']?.toString() ?? '') ?? DateTime.now(),
+      )).toList();
+      
+      // Get exercises from progress data for each program
+      List<RoutineModel> detailedPrograms = [];
+      for (final program in programs) {
+        print('🔍 Processing program: ${program.name} (ID: ${program.id})');
+        
+        // Get exercises from the already-fetched progress data for this specific program
+        final programExercises = _getExercisesFromProgressData(program.id);
+        print('🔍 Found ${programExercises.length} exercises for program ${program.name}');
+        
+        // Create exercises from the progress data
         List<ExerciseModel> exerciseList = [];
         
-        if (program.exerciseList.isNotEmpty && program.exerciseList != 'No exercises added') {
-          // Split the exercise list and create ExerciseModel objects
-          final exerciseNames = program.exerciseList.split(',').map((e) => e.trim()).toList();
-          
-          for (int i = 0; i < exerciseNames.length; i++) {
-            final exerciseName = exerciseNames[i];
-            if (exerciseName.isNotEmpty) {
-              exerciseList.add(ExerciseModel(
-                id: i + 1,
-                name: exerciseName,
-                targetSets: 3, // Default
-                targetReps: '8-12', // Default
-                targetWeight: '40-60', // Default
-                category: 'Strength',
-                difficulty: 'Intermediate',
-                color: '#4ECDC4',
-                restTime: 60,
-                targetMuscle: _getMuscleGroup(exerciseName),
-              ));
-            }
+        for (int i = 0; i < programExercises.length; i++) {
+          final exerciseName = programExercises[i];
+          if (exerciseName.isNotEmpty) {
+            exerciseList.add(ExerciseModel(
+              id: i + 1,
+              name: exerciseName,
+              targetSets: 3, // Default
+              targetReps: '8-12', // Default
+              targetWeight: '40-60', // Default
+              category: 'Strength',
+              difficulty: 'Intermediate',
+              color: '#4ECDC4',
+              restTime: 60,
+              targetMuscle: _getMuscleGroup(exerciseName),
+            ));
           }
         }
         
-        // If no exercises found, create some based on program name
+        // Create exercise list string for the program
+        final exerciseListString = programExercises.join(', ');
+        print('🔍 Program ${program.name} exercises: $exerciseListString');
+        
+        // If no exercises found, skip this program - use only real data
         if (exerciseList.isEmpty) {
-          exerciseList = _createFallbackExercises(program.name);
+          print('⚠️ No real exercises found for program ${program.name} - skipping');
+          continue; // Skip this program if no real exercises found
         }
         
         final detailedProgram = RoutineModel(
@@ -122,7 +193,7 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
           duration: program.duration,
           difficulty: program.difficulty,
           createdBy: program.createdBy,
-          exerciseList: program.exerciseList,
+          exerciseList: exerciseListString, // Use real exercise list
           color: program.color,
           lastPerformed: program.lastPerformed,
           tags: program.tags,
@@ -133,6 +204,7 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
           scheduledDays: program.scheduledDays,
           version: program.version,
           detailedExercises: exerciseList,
+          createdDate: DateTime.now(),
         );
         
         print('🔍 Created detailed program with ${exerciseList.length} exercises');
@@ -144,67 +216,6 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
         print('🔍 Exercise names: ${exerciseList.map((e) => e.name).toList()}');
       }
       
-      // Remove duplicates from memberPrograms before processing
-      // Keep only the first occurrence of each program name to avoid combining exercises
-      final uniqueMemberPrograms = <String, Map<String, dynamic>>{};
-      final seenProgramNames = <String>{};
-      
-      for (final programData in memberPrograms) {
-        final programId = programData['program_id']?.toString() ?? '';
-        final programName = programData['program_name']?.toString() ?? '';
-        
-        // Only add if we haven't seen this program ID or name before
-        if (programId.isNotEmpty && 
-            !uniqueMemberPrograms.containsKey(programId) && 
-            !seenProgramNames.contains(programName)) {
-          uniqueMemberPrograms[programId] = programData;
-          seenProgramNames.add(programName);
-          print('🔍 USER PROGRESSIVE OVERLOAD: Added program: $programName (ID: $programId)');
-        } else {
-          print('🔍 USER PROGRESSIVE OVERLOAD: Skipped duplicate program: $programName (ID: $programId)');
-        }
-      }
-      
-      print('🔍 USER PROGRESSIVE OVERLOAD: Removed duplicates, ${uniqueMemberPrograms.length} unique member programs');
-      
-      // Also process coach-assigned programs from database
-      for (final programData in uniqueMemberPrograms.values) {
-        final programId = programData['program_id']?.toString() ?? '';
-        final programName = programData['program_name'] ?? 'Unknown Program';
-        final creatorId = programData['program_creator_id'];
-        
-        // Check if this program is already processed from user service
-        final alreadyProcessed = detailedPrograms.any((p) => p.id == programId);
-        
-        if (!alreadyProcessed) {
-          print('🔍 Processing coach-assigned program: $programName (ID: $programId, Creator: $creatorId)');
-          
-          // Create a basic program structure for coach-assigned programs
-          final coachProgram = RoutineModel(
-            id: programId,
-            name: programName,
-            exercises: 0, // Will be updated when we get exercise data
-            duration: '30-45 minutes',
-            difficulty: 'Intermediate',
-            createdBy: creatorId.toString(),
-            exerciseList: 'Coach-assigned program',
-            color: '#4ECDC4',
-            lastPerformed: 'Never',
-            tags: ['Coach-assigned'],
-            goal: 'Coach-assigned program',
-            completionRate: 0,
-            totalSessions: 0,
-            notes: 'Program assigned by coach',
-            scheduledDays: [],
-            version: 1.0,
-            detailedExercises: [], // Will be populated if we have exercise data
-          );
-          
-          detailedPrograms.add(coachProgram);
-          print('✅ Added coach-assigned program: $programName');
-        }
-      }
-      
       // Load progress data for each program
       Map<String, List<ProgressTrackerModel>> programProgress = {};
       Map<String, List<ProgressiveOverloadData>> overloadData = {};
@@ -212,10 +223,10 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
       for (final program in detailedPrograms) {
         final programId = int.tryParse(program.id);
         if (programId != null) {
-          // Try to get progress from progress tracker API first using direct API call
+          // Try to get progress from progress tracker API first using member's user ID
           List<ProgressTrackerModel> progress = [];
           try {
-            final userId = await AuthService.getCurrentUserId();
+            final userId = widget.selectedMember?.id;
             if (userId != null) {
               final response = await http.get(
                 Uri.parse('https://api.cnergy.site/progress_tracker.php?action=get_progress_by_program&user_id=$userId&program_id=$programId'),
@@ -227,33 +238,33 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
                 if (data['success'] == true && data['data'] != null) {
                   final progressData = data['data'] as List<dynamic>;
                   progress = progressData.map((record) => ProgressTrackerModel.fromJson(record)).toList();
-                  print('✅ USER PROGRESS: Got progress from API for program $programId: ${progress.length} records');
+                  print('✅ COACH PROGRESS: Got progress from API for program $programId: ${progress.length} records');
                 }
               }
             }
             
             // If API returns 0 records, use fallback
             if (progress.isEmpty) {
-              print('🔄 API returned 0 records, using fallback data');
+              print('🔄 COACH PROGRESS: API returned 0 records, using fallback data');
               progress = await _getProgressFromWorkoutSessions(programId);
-              print('🔄 Fallback: Got progress from workout sessions: ${progress.length} records');
+              print('🔄 COACH PROGRESS: Fallback: Got progress from workout sessions: ${progress.length} records');
               
               // If still empty, try local workout history
               if (progress.isEmpty) {
-                print('🔄 No workout session data, trying local workout history...');
+                print('🔄 COACH PROGRESS: No workout session data, trying local workout history...');
                 progress = await _getLocalWorkoutHistory(programId);
-                print('🔄 Local history: Got ${progress.length} records');
+                print('🔄 COACH PROGRESS: Local history: Got ${progress.length} records');
               }
             }
           } catch (e) {
-            print('❌ Progress API failed for program $programId: $e');
+            print('❌ COACH PROGRESS: Progress API failed for program $programId: $e');
             // Fallback: Get data from workout sessions
             progress = await _getProgressFromWorkoutSessions(programId);
-            print('🔄 Fallback: Got progress from workout sessions: ${progress.length} records');
+            print('🔄 COACH PROGRESS: Fallback: Got progress from workout sessions: ${progress.length} records');
             
             // If still empty, return empty - NO FAKE DATA
             if (progress.isEmpty) {
-              print('🔄 No real workout data found for program $programId');
+              print('🔄 COACH PROGRESS: No real workout data found for program $programId');
               progress = [];
             }
           }
@@ -346,7 +357,7 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Data refreshed! Your latest workout should now appear.',
+            'Data refreshed! Member latest workout should now appear.',
             style: GoogleFonts.poppins(color: Colors.white),
           ),
           backgroundColor: Color(0xFF4ECDC4),
@@ -454,7 +465,7 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
       print('🔍 Getting local workout history for program $programId');
       
       // Get workout history from local storage
-      final workoutHistory = await RoutineService.getWorkoutHistory();
+      final workoutHistory = await RoutineServices.getCoachRoutines();
       if (workoutHistory.isEmpty) {
         print('❌ No local workout history found');
         return [];
@@ -462,8 +473,8 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
       
       // Filter for the specific program by routine name
       final programWorkouts = workoutHistory.where((workout) => 
-        workout.routineName.toLowerCase().contains('push') || 
-        workout.routineName.toLowerCase().contains('day')
+        workout.name.toLowerCase().contains('push') ||
+        workout.name.toLowerCase().contains('day')
       ).toList();
       
       if (programWorkouts.isEmpty) {
@@ -483,13 +494,13 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
           weight: 40.0, // Default weight
           reps: 5, // Default reps
           sets: 3, // Default sets
-          date: workout.date,
-          programName: workout.routineName,
+          date: workout.createdDate,
+          programName: workout.name,
           programId: programId,
           volume: 0, // Not used for progression
         ));
         
-        print('📊 Local history: ${workout.routineName} on ${workout.date}');
+        print('📊 Local history: ${workout.name} on ${workout.createdDate}');
       }
       
       // Sort by date (newest first)
@@ -530,7 +541,7 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
       print('🔍 Getting recent workout data from local storage for program $programId');
       
       // Get workout history from local storage
-      final sessions = await RoutineService.getWorkoutHistory();
+      final sessions = await RoutineServices.getCoachRoutines();
       print('📊 Found ${sessions.length} workout sessions in local storage');
       
       // Get the actual exercises from the program
@@ -544,14 +555,14 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
       for (final session in sessions) {
         // Check if this session belongs to the current program
         bool isCorrectProgram = false;
-        if (session.routineName.toLowerCase().contains('push') && programId == 78) {
+        if (session.name.toLowerCase().contains('push') && programId == 78) {
           isCorrectProgram = true;
-        } else if (session.routineName.toLowerCase().contains('pull') && programId == 79) {
+        } else if (session.name.toLowerCase().contains('pull') && programId == 79) {
           isCorrectProgram = true;
         }
         
         if (isCorrectProgram) {
-          final daysDiff = now.difference(session.date).inDays;
+          final daysDiff = now.difference(session.createdDate).inDays;
           if (daysDiff <= 7) { // Only get last 7 days
             // Create progress records for each exercise in the program
             for (final exercise in programExercises) {
@@ -563,8 +574,8 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
                 weight: 0.0, // We don't have individual exercise weights from session
                 reps: 0,
                 sets: 0,
-                date: session.date,
-                programName: session.routineName,
+                date: session.createdDate,
+                programName: session.name,
                 programId: programId,
               ));
             }
@@ -583,26 +594,41 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
   // Get progress data for a specific exercise
   Future<List<ProgressTrackerModel>> _getExerciseProgressData(String exerciseName) async {
     try {
-      print('🔍 Getting progress data for exercise: $exerciseName');
+      print('🔍 COACH EXERCISE PROGRESS: Getting progress data for exercise: $exerciseName');
+      print('🔍 COACH EXERCISE PROGRESS: Selected member: ${widget.selectedMember?.fullName} (ID: ${widget.selectedMember?.id})');
       
-      // First try to get data from progress analytics service (where your actual workout data is saved)
+      final userId = widget.selectedMember?.id;
+      if (userId == null) {
+        print('❌ COACH EXERCISE PROGRESS: No member user ID found');
+        return [];
+      }
+      
+      // Use the progress tracker API directly with the member's user ID
       try {
-        final progressData = await ProgressAnalyticsService.getExerciseProgress(
-          exerciseName: exerciseName,
-          limit: 10,
+        final response = await http.get(
+          Uri.parse('https://api.cnergy.site/progress_tracker.php?action=get_exercise_progress&user_id=$userId&exercise_name=$exerciseName'),
+          headers: {'Content-Type': 'application/json'},
         );
         
-        if (progressData.isNotEmpty) {
-          print('✅ Found ${progressData.length} progress records for $exerciseName');
-          for (final record in progressData) {
-            print('  - ${record.weight}kg x ${record.reps} x ${record.sets} on ${record.date}');
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body);
+          if (data['success'] == true && data['data'] != null) {
+            final progressData = data['data'] as List<dynamic>;
+            final progressRecords = progressData.map((record) => ProgressTrackerModel.fromJson(record)).toList();
+            
+            if (progressRecords.isNotEmpty) {
+              print('✅ COACH EXERCISE PROGRESS: Found ${progressRecords.length} progress records for $exerciseName');
+              for (final record in progressRecords) {
+                print('  - ${record.weight}kg x ${record.reps} x ${record.sets} on ${record.date}');
+              }
+              // Sort by date (newest first)
+              progressRecords.sort((a, b) => b.date.compareTo(a.date));
+              return progressRecords;
+            }
           }
-          // Sort by date (newest first)
-          progressData.sort((a, b) => b.date.compareTo(a.date));
-          return progressData;
         }
       } catch (e) {
-        print('⚠️ Progress analytics API failed: $e');
+        print('⚠️ COACH EXERCISE PROGRESS: API call failed: $e');
       }
       
       // Fallback: Try to get data from local workout history
@@ -628,7 +654,7 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
     try {
       print('🔍 Getting local workout data for exercise: $exerciseName');
       
-      // Get your actual workout data from SharedPreferences (where it's really stored)
+      // Get member actual workout data from SharedPreferences (where it's really stored)
       final prefs = await SharedPreferences.getInstance();
       
       // Debug: Print all available keys
@@ -683,7 +709,7 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
         print('✅ Found weights for exercise $exerciseId: ${exerciseWeights.length} sets');
         
         if (exerciseWeights.isNotEmpty) {
-          // Create a record for EACH of your actual sets
+          // Create a record for EACH of member actual sets
           for (int i = 0; i < exerciseWeights.length; i++) {
             final setData = exerciseWeights[i] as Map<String, dynamic>;
             final timestamp = setData['timestamp'] as String;
@@ -787,17 +813,17 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
     }
   }
 
-  // Helper method to get estimated weight for exercise (based on your actual workouts)
+  // Helper method to get estimated weight for exercise (based on member actual workouts)
   double _getEstimatedWeightForExercise(String exerciseName) {
     final name = exerciseName.toLowerCase();
     if (name.contains('lat pulldown')) {
-      return 50.0; // Your actual weight
+      return 50.0; // Member actual weight
     } else if (name.contains('seated cable row')) {
-      return 45.0; // Your actual weight
+      return 45.0; // Member actual weight
     } else if (name.contains('deadlift')) {
-      return 60.0; // Your actual weight
+      return 60.0; // Member actual weight
     } else if (name.contains('bench press')) {
-      return 55.0; // Your actual weight
+      return 55.0; // Member actual weight
     } else {
       return 40.0; // Default weight
     }
@@ -807,13 +833,13 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
   int _getEstimatedRepsForExercise(String exerciseName) {
     final name = exerciseName.toLowerCase();
     if (name.contains('lat pulldown')) {
-      return 6; // Your actual reps
+      return 6; // Member actual reps
     } else if (name.contains('seated cable row')) {
-      return 8; // Your actual reps
+      return 8; // Member actual reps
     } else if (name.contains('deadlift')) {
-      return 5; // Your actual reps
+      return 5; // Member actual reps
     } else if (name.contains('bench press')) {
-      return 5; // Your actual reps
+      return 5; // Member actual reps
     } else {
       return 6; // Default reps
     }
@@ -838,11 +864,12 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
   // Get exercises from a specific program
   Future<List<Map<String, dynamic>>> _getProgramExercises(int programId) async {
     try {
-      final userId = await AuthService.getCurrentUserId();
+      final userId = widget.selectedMember?.id;
       if (userId == null) {
-        print('❌ No user ID found');
+        print('❌ No member user ID found');
         return [];
       }
+      print('🔍 COACH PROGRESSIVE OVERLOAD: Using member user ID: $userId');
       
       final response = await http.get(
         Uri.parse('https://api.cnergy.site/workout_preview.php?action=getWorkoutPreview&routine_id=$programId&user_id=$userId'),
@@ -870,7 +897,7 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
       print('🔍 Getting actual workout session data for program $programId');
       
       // Get workout history from local storage
-      final workoutHistory = await RoutineService.getWorkoutHistory();
+      final workoutHistory = await RoutineServices.getCoachRoutines();
       if (workoutHistory.isEmpty) {
         print('❌ No workout history found');
         return [];
@@ -878,8 +905,8 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
       
       // Filter for the specific program
       final programWorkouts = workoutHistory.where((workout) => 
-        workout.routineName.toLowerCase().contains('push') || 
-        workout.routineName.toLowerCase().contains('day')
+        workout.name.toLowerCase().contains('push') ||
+        workout.name.toLowerCase().contains('day')
       ).toList();
       
       if (programWorkouts.isEmpty) {
@@ -895,16 +922,16 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
           userId: 61,
           exerciseName: 'Barbell Bench Press',
           muscleGroup: 'Chest',
-          weight: 60.0, // This should be from your actual workout
+          weight: 60.0, // This should be from member actual workout
           reps: 5,
           sets: 3,
-          date: workout.date,
-          programName: workout.routineName,
+          date: workout.createdDate,
+          programName: workout.name,
           programId: programId,
           volume: 0, // Not used for progression
         ));
         
-        print('📊 Workout session: ${workout.routineName} on ${workout.date}');
+        print('📊 Workout session: ${workout.name} on ${workout.createdDate}');
       }
       
       return progressData;
@@ -919,46 +946,38 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
     try {
       print('🔍 PROGRESSIVE OVERLOAD: Fetching real workout data for program $programId using API (consistent approach)');
       
-      // Use direct API call for this specific program only (same as coach version)
-      try {
-        final userId = await AuthService.getCurrentUserId();
-        if (userId != null) {
-          final response = await http.get(
-            Uri.parse('https://api.cnergy.site/progress_tracker.php?action=get_progress_by_program&user_id=$userId&program_id=$programId'),
-            headers: {'Content-Type': 'application/json'},
-          );
-          
-          if (response.statusCode == 200) {
-            final data = json.decode(response.body);
-            if (data['success'] == true && data['data'] != null) {
-              final progressData = data['data'] as List<dynamic>;
-              final allData = progressData.map((record) => ProgressTrackerModel.fromJson(record)).toList();
-              print('✅ PROGRESSIVE OVERLOAD: Found ${allData.length} workout records for program $programId from API');
-              return allData;
-            }
-          }
-        }
-      } catch (e) {
-        print('❌ PROGRESSIVE OVERLOAD: API call failed: $e');
+      // ALWAYS use the same method as the summary - get all progress data from API
+      final allProgressData = await ProgressAnalyticsService.getAllProgress();
+      print('📊 PROGRESSIVE OVERLOAD: Retrieved ${allProgressData.length} exercise groups from API');
+      
+      // Convert to list format for consistency
+      List<ProgressTrackerModel> allData = [];
+      for (final entry in allProgressData.entries) {
+        allData.addAll(entry.value);
+      }
+      
+      if (allData.isNotEmpty) {
+        print('✅ PROGRESSIVE OVERLOAD: Found ${allData.length} total workout records from API');
+        return allData;
       }
       
       // Fallback to workout preview API
-      final workoutData = await WorkoutPreviewService.getWorkoutPreview(programId.toString());
-      print('📊 Got workout preview data: ${workoutData.exercises.length} exercises');
+      final workoutData = await WorkoutPreviewService.getWorkoutPreview(programId);
+      print('📊 Got workout preview data: ${workoutData?.exercises.length ?? 0} exercises');
       
       List<ProgressTrackerModel> progressData = [];
       final now = DateTime.now();
       
       // Convert workout preview data to progress tracker format
-      for (final exercise in workoutData.exercises) {
+      for (final exercise in workoutData?.exercises ?? []) {
         if (exercise.isCompleted && exercise.loggedSets.isNotEmpty) {
           // Calculate average weight and total reps
           double totalWeight = 0;
-          int totalReps = 0;
+          double totalReps = 0;
           
           for (final set in exercise.loggedSets) {
             totalWeight += set.weight;
-            totalReps += set.reps;
+            totalReps += set.reps.toDouble();
           }
           
           final avgWeight = totalWeight / exercise.loggedSets.length;
@@ -969,10 +988,10 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
             exerciseName: exercise.name,
             muscleGroup: exercise.targetMuscle.isNotEmpty ? exercise.targetMuscle : 'Unknown',
             weight: avgWeight,
-            reps: totalReps,
+            reps: totalReps.toInt(),
             sets: exercise.completedSets,
             date: now.subtract(Duration(hours: 1)), // Recent workout
-            programName: workoutData.routineName,
+            programName: workoutData?.routineName ?? 'Unknown',
             programId: programId,
             volume: 0, // Not used for progression
           ));
@@ -997,124 +1016,57 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
     try {
       print('🔍 Fetching exercise logs for program $programId');
       
-      // Get current user ID
-      final userId = await AuthService.getCurrentUserId();
+      // Get member user ID from selected member
+      final userId = widget.selectedMember?.id;
       if (userId == null) {
-        print('❌ No user ID found');
+        print('❌ No member user ID found');
         return [];
       }
+      print('🔍 COACH PROGRESSIVE OVERLOAD: Using member user ID: $userId');
       
-      // First get all exercises from the program
-      final programResponse = await http.get(
-        Uri.parse('https://api.cnergy.site/workout_preview.php?action=getWorkoutPreview&routine_id=$programId&user_id=$userId'),
+      // Use the same API as the user version to get progress data
+      final response = await http.get(
+        Uri.parse('https://api.cnergy.site/progress_tracker.php?action=get_all_progress&user_id=$userId'),
         headers: {"Content-Type": "application/json"},
       );
       
       List<ProgressTrackerModel> allProgressData = [];
       
-      if (programResponse.statusCode == 200) {
-        final programData = json.decode(programResponse.body);
-        if (programData['success'] == true && programData['data'] != null) {
-          final exercises = programData['data']['exercises'] as List;
-          print('📊 Found ${exercises.length} exercises in program $programId');
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        print('🔍 COACH PROGRESSIVE OVERLOAD: Progress API response status: ${response.statusCode}');
+        print('🔍 COACH PROGRESSIVE OVERLOAD: Progress API response body: ${response.body}');
+        
+        if (data['success'] == true && data['data'] != null) {
+          final progressData = data['data'] as Map<String, dynamic>;
+          print('🔍 COACH PROGRESSIVE OVERLOAD: Found progress data for ${progressData.keys.length} exercises');
           
-          // Get analytics for each exercise from the API - ONLY for this specific program
-          for (final exercise in exercises) {
-            final exerciseId = exercise['exercise_id'] ?? exercise['id'];
-            final exerciseName = exercise['name'] ?? 'Unknown Exercise';
-            final muscleGroup = exercise['target_muscle'] ?? 'Unknown';
+          // Process each exercise's progress data
+          for (final exerciseName in progressData.keys) {
+            final exerciseRecords = progressData[exerciseName] as List<dynamic>;
+            print('🔍 Processing exercise: $exerciseName with ${exerciseRecords.length} records');
             
-            print('🔍 Getting analytics for exercise $exerciseId: $exerciseName');
-            
-            // Try to get workout data for this exercise - ONLY for this specific program
-            try {
-              final response = await http.get(
-                Uri.parse('https://api.cnergy.site/workout_preview.php?action=getExerciseAnalytics&exercise_id=$exerciseId&user_id=$userId&routine_id=$programId&days=30'),
-                headers: {"Content-Type": "application/json"},
-              );
+            for (final record in exerciseRecords) {
+              final recordProgramId = record['program_id'] ?? record['routine_id'];
               
-              if (response.statusCode == 200) {
-                final data = json.decode(response.body);
-                if (data['success'] == true && data['analytics'] != null) {
-                  final List<dynamic> analytics = data['analytics'];
-                  
-                  // Group by date to create workout sessions - ONLY for this program
-                  Map<String, List<dynamic>> groupedByDate = {};
-                  for (final record in analytics) {
-                    // Only include records that belong to this specific program
-                    final recordProgramId = record['routine_id'] ?? record['program_id'];
-                    if (recordProgramId == programId || recordProgramId == programId.toString()) {
-                      final date = record['log_date'] ?? DateTime.now().toIso8601String().split('T')[0];
-                      groupedByDate.putIfAbsent(date, () => []).add(record);
-                    }
-                  }
-                  
-                  // Create ONE simple record per workout day for this exercise
-                  for (final entry in groupedByDate.entries) {
-                    final date = DateTime.parse(entry.key);
-                    final records = entry.value;
-                    
-                    // Find the best set (highest weight) from this workout
-                    double bestWeight = 0;
-                    int bestReps = 0;
-                    int totalSets = 0;
-                    
-                    // Group records by set number to get actual sets
-                    Map<int, List<dynamic>> setsByNumber = {};
-                    for (final record in records) {
-                      final setNumber = int.tryParse((record['set_number'] ?? 1).toString()) ?? 1;
-                      setsByNumber.putIfAbsent(setNumber, () => []).add(record);
-                    }
-                    
-                    // Calculate actual number of sets
-                    totalSets = setsByNumber.length;
-                    
-                    // Find the best progressive overload set from this workout
-                    // This represents your biggest achievement compared to previous workouts
-                    for (final record in records) {
-                      final weight = (record['weight'] ?? 0.0).toDouble();
-                      final reps = int.tryParse((record['reps'] ?? 0).toString()) ?? 0;
-                      
-                      // For progressive overload, prioritize the set that shows most progress
-                      // This could be heaviest weight OR most reps, depending on your progression
-                      if (weight > bestWeight) {
-                        bestWeight = weight;
-                        bestReps = reps;
-                      } else if (weight == bestWeight && reps > bestReps) {
-                        bestReps = reps;
-                      }
-                    }
-                    
-                    // Add workout data if we have it
-                    if (bestWeight > 0 && bestReps > 0) {
-                      print('🔍 Processing workout data for $exerciseName on $date:');
-                      print('  - Records count: ${records.length}');
-                      print('  - Sets by number: ${setsByNumber.keys.toList()}');
-                      print('  - Total sets: $totalSets');
-                      print('  - Progressive overload achievement: ${bestWeight.toInt()}kg x $bestReps reps');
-                      
-                      allProgressData.add(ProgressTrackerModel(
-                        id: allProgressData.length + 1,
-                        userId: 61,
-                        exerciseName: exerciseName,
-                        muscleGroup: muscleGroup,
-                        weight: bestWeight,
-                        reps: bestReps,
-                        sets: totalSets,
-                        date: date,
-                        programName: programData['data']['routine_name'] ?? 'Program $programId',
-                        programId: programId,
-                        volume: 0, // Not used for progression
-                      ));
-                      
-                      print('📊 PROGRESSIVE OVERLOAD: ${exerciseName}: ${bestWeight.toInt()}kg x $bestReps reps ($totalSets sets) on $date');
-                      print('📊 This represents your best progressive overload achievement from this workout');
-                    }
-                  }
-                }
+              // Only include records that belong to this specific program
+              if (recordProgramId == programId || recordProgramId == programId.toString()) {
+                allProgressData.add(ProgressTrackerModel(
+                  id: int.tryParse(record['id']?.toString() ?? '0') ?? 0,
+                  userId: int.tryParse(record['user_id']?.toString() ?? '0') ?? 0,
+                  exerciseName: record['exercise_name'] ?? exerciseName,
+                  muscleGroup: record['muscle_group'] ?? 'Unknown',
+                  weight: double.tryParse(record['weight']?.toString() ?? '0') ?? 0.0,
+                  reps: int.tryParse(record['reps']?.toString() ?? '0') ?? 0,
+                  sets: int.tryParse(record['sets']?.toString() ?? '0') ?? 0,
+                  date: DateTime.tryParse(record['date']?.toString() ?? '') ?? DateTime.now(),
+                  programName: record['program_name'] ?? 'Program $programId',
+                  programId: programId,
+                  volume: 0, // Not used for progression
+                ));
+                
+                print('📊 PROGRESSIVE OVERLOAD: ${record['exercise_name']}: ${record['weight']}kg x ${record['reps']} reps (${record['sets']} sets) on ${record['date']}');
               }
-            } catch (e) {
-              print('❌ Error getting data for $exerciseName: $e');
             }
           }
         }
@@ -1141,7 +1093,7 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
     final now = DateTime.now();
     final timeline = <ProgressTrackerModel>[];
     
-    // Use your real workout data as the base - this should be your actual 50kg, 55kg, 60kg workout
+    // Use member real workout data as the base - this should be member actual 50kg, 55kg, 60kg workout
     timeline.addAll(realData);
     
     print('🔍 Real workout data in timeline:');
@@ -1151,7 +1103,7 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
     
     // Create historical progression data (only for missing dates)
     final historicalData = [
-      // Historical progression: 40kg → 45kg → 50kg → 45kg → 55kg (your latest)
+      // Historical progression: 40kg → 45kg → 50kg → 45kg → 55kg (member latest)
       ProgressTrackerModel(
         id: 2,
         userId: 61,
@@ -1257,7 +1209,7 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
     }
   }
 
-  // PUSH DAY data (based on your actual workout with progression)
+  // PUSH DAY data (based on member actual workout with progression)
   List<ProgressTrackerModel> _createPushDayData(DateTime now, int programId) {
     return [
       // This week (most recent)
@@ -1266,8 +1218,8 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
         userId: 61,
         exerciseName: 'Barbell Bench Press',
         muscleGroup: 'Chest',
-        weight: 40.0, // Your actual weight
-        reps: 7, // Your actual reps
+        weight: 40.0, // Member actual weight
+        reps: 7, // Member actual reps
         sets: 3,
         date: now.subtract(Duration(days: 1)), // Yesterday
         programName: 'PUSH DAY',
@@ -1540,10 +1492,14 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
   }
 
   // Helper method to fetch member programs (both user-created and coach-assigned)
-  Future<List<Map<String, dynamic>>> _fetchMemberPrograms() async {
+  Future<List<Map<String, dynamic>>> _getProgramsFromProgressData() async {
     try {
-      final userId = await AuthService.getCurrentUserId();
-      if (userId == null) return [];
+      final userId = widget.selectedMember?.id;
+      if (userId == null) {
+        print('❌ No member user ID found');
+        return [];
+      }
+      print('🔍 COACH PROGRESSIVE OVERLOAD: Using member user ID: $userId');
       
       final response = await http.get(
         Uri.parse('https://api.cnergy.site/progress_tracker.php?action=get_all_progress&user_id=$userId'),
@@ -1552,15 +1508,265 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
       
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
+        print('🔍 COACH PROGRESSIVE OVERLOAD: Progress API response: ${response.body}');
         if (data['success'] == true && data['programs'] != null) {
-          return List<Map<String, dynamic>>.from(data['programs']);
+          final programs = List<Map<String, dynamic>>.from(data['programs']);
+          print('🔍 COACH PROGRESSIVE OVERLOAD: Found ${programs.length} programs in progress data API');
+          for (final program in programs) {
+            print('  - Program: ${program['program_name']} (ID: ${program['program_id']})');
+          }
+          return programs;
+        } else {
+          print('🔍 COACH PROGRESSIVE OVERLOAD: No programs found in API response');
+          print('  - success: ${data['success']}');
+          print('  - programs: ${data['programs']}');
+          print('  - data: ${data['data']}');
         }
       }
       
-      print('Failed to fetch member programs: ${response.body}');
+      print('Failed to fetch programs from progress data: ${response.body}');
       return [];
     } catch (e) {
-      print('Error fetching member programs: $e');
+      print('Error fetching programs from progress data: $e');
+      return [];
+    }
+  }
+
+  // Get exercises for a specific program from already-fetched progress data
+  List<String> _getExercisesFromProgressData(String programId) {
+    try {
+      // Use the progress data that was already fetched in the main method
+      // This should be stored in a class variable or passed as parameter
+      // For now, let's create a method that fetches the data once and reuses it
+      return _cachedExercises[programId] ?? [];
+    } catch (e) {
+      print('Error getting exercises for program $programId: $e');
+      return [];
+    }
+  }
+
+  // Cache for exercises by program ID
+  Map<String, List<String>> _cachedExercises = {};
+  
+  // Fetch all progress data once and cache exercises for each program
+  Future<void> _fetchAndCacheProgressData() async {
+    try {
+      final userId = widget.selectedMember?.id;
+      if (userId == null) {
+        print('❌ No member user ID found');
+        return;
+      }
+      print('🔍 COACH PROGRESSIVE OVERLOAD: Using member user ID: $userId');
+      
+      final response = await http.get(
+        Uri.parse('https://api.cnergy.site/progress_tracker.php?action=get_all_progress&user_id=$userId'),
+        headers: {'Content-Type': 'application/json'},
+      );
+      
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        print('🔍 COACH PROGRESSIVE OVERLOAD: API Response: ${data.toString()}');
+        if (data['success'] == true && data['data'] != null) {
+          final progressData = data['data'];
+          print('🔍 COACH PROGRESSIVE OVERLOAD: Caching progress data for exercise extraction');
+          print('🔍 COACH PROGRESSIVE OVERLOAD: Progress data type: ${progressData.runtimeType}');
+          print('🔍 COACH PROGRESSIVE OVERLOAD: Progress data keys: ${progressData is Map ? progressData.keys.toList() : 'Not a Map'}');
+          
+          // Clear existing cache
+          _cachedExercises.clear();
+          
+          // Handle both Map and List types for progress data
+          if (progressData is Map<String, dynamic>) {
+            print('🔍 COACH PROGRESSIVE OVERLOAD: Processing Map data with ${progressData.keys.length} exercises');
+            // Extract exercises for each program
+            for (final exerciseName in progressData.keys) {
+              final exerciseRecords = progressData[exerciseName] as List<dynamic>;
+              print('🔍 COACH PROGRESSIVE OVERLOAD: Exercise $exerciseName has ${exerciseRecords.length} records');
+              for (final record in exerciseRecords) {
+                final programId = record['program_id']?.toString();
+                print('🔍 COACH PROGRESSIVE OVERLOAD: Record program_id: $programId');
+                if (programId != null && programId != '0' && programId != 'null') {
+                  _cachedExercises.putIfAbsent(programId, () => []).add(exerciseName);
+                  print('🔍 COACH PROGRESSIVE OVERLOAD: Added $exerciseName to program $programId');
+                } else {
+                  print('🔍 COACH PROGRESSIVE OVERLOAD: Skipping record with invalid program_id: $programId');
+                }
+              }
+            }
+          } else if (progressData is List<dynamic>) {
+            // Handle case where data is a list
+            for (final record in progressData) {
+              final programId = record['program_id']?.toString();
+              final exerciseName = record['exercise_name']?.toString();
+              if (programId != null && exerciseName != null) {
+                _cachedExercises.putIfAbsent(programId, () => []).add(exerciseName);
+              }
+            }
+          }
+          
+          // Remove duplicates from each program's exercises
+          for (final programId in _cachedExercises.keys) {
+            _cachedExercises[programId] = _cachedExercises[programId]!.toSet().toList();
+          }
+          
+          print('🔍 COACH PROGRESSIVE OVERLOAD: Cached exercises for ${_cachedExercises.length} programs');
+          for (final programId in _cachedExercises.keys) {
+            print('  - Program $programId: ${_cachedExercises[programId]!.join(', ')}');
+          }
+        }
+      }
+    } catch (e) {
+      print('Error fetching and caching progress data: $e');
+    }
+  }
+
+  // Get exercises for a specific program from progress data
+  Future<List<String>> _getExercisesForProgram(String programId) async {
+    try {
+      final userId = widget.selectedMember?.id;
+      if (userId == null) {
+        print('❌ No member user ID found');
+        return [];
+      }
+      print('🔍 COACH PROGRESSIVE OVERLOAD: Using member user ID: $userId');
+      
+      final response = await http.get(
+        Uri.parse('https://api.cnergy.site/progress_tracker.php?action=get_all_progress&user_id=$userId'),
+        headers: {'Content-Type': 'application/json'},
+      );
+      
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data['success'] == true && data['data'] != null) {
+          final progressData = data['data'];
+          Set<String> uniqueExercises = {};
+          
+          // Handle both Map and List types for progress data
+          if (progressData is Map<String, dynamic>) {
+            // Extract exercises for this specific program
+            for (final exerciseName in progressData.keys) {
+              final exerciseRecords = progressData[exerciseName] as List<dynamic>;
+              for (final record in exerciseRecords) {
+                final recordProgramId = record['program_id']?.toString();
+                if (recordProgramId == programId) {
+                  uniqueExercises.add(exerciseName);
+                }
+              }
+            }
+          } else if (progressData is List<dynamic>) {
+            // Handle case where data is a list
+            for (final record in progressData) {
+              final recordProgramId = record['program_id']?.toString();
+              if (recordProgramId == programId) {
+                final exerciseName = record['exercise_name']?.toString();
+                if (exerciseName != null) {
+                  uniqueExercises.add(exerciseName);
+                }
+              }
+            }
+          }
+          
+          final exercises = uniqueExercises.toList();
+          print('🔍 COACH PROGRESSIVE OVERLOAD: Found ${exercises.length} exercises for program $programId');
+          for (final exercise in exercises) {
+            print('  - Exercise: $exercise');
+          }
+          return exercises;
+        }
+      }
+      
+      return [];
+    } catch (e) {
+      print('Error getting exercises for program $programId: $e');
+      return [];
+    }
+  }
+
+  // Fallback method to create programs from progress data
+  Future<List<Map<String, dynamic>>> _createProgramsFromProgressData() async {
+    try {
+      final userId = widget.selectedMember?.id;
+      if (userId == null) {
+        print('❌ No member user ID found');
+        return [];
+      }
+      print('🔍 COACH PROGRESSIVE OVERLOAD: Using member user ID: $userId');
+      
+      final response = await http.get(
+        Uri.parse('https://api.cnergy.site/progress_tracker.php?action=get_all_progress&user_id=$userId'),
+        headers: {'Content-Type': 'application/json'},
+      );
+      
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data['success'] == true && data['data'] != null) {
+          final progressData = data['data'];
+          print('🔍 COACH PROGRESSIVE OVERLOAD: Progress data type: ${progressData.runtimeType}');
+          print('🔍 COACH PROGRESSIVE OVERLOAD: Progress data content: $progressData');
+          
+          // Check if data is empty
+          if (progressData is List && progressData.isEmpty) {
+            print('⚠️ Progress data is empty list - this might be why no programs are found');
+            return [];
+          }
+          
+          if (progressData is Map && progressData.isEmpty) {
+            print('⚠️ Progress data is empty map - this might be why no programs are found');
+            return [];
+          }
+          
+          Set<Map<String, dynamic>> uniquePrograms = {};
+          
+          // Handle both Map and List types for progress data
+          if (progressData is Map<String, dynamic>) {
+            // Extract unique programs from progress data
+            for (final exerciseName in progressData.keys) {
+              final exerciseRecords = progressData[exerciseName] as List<dynamic>;
+              for (final record in exerciseRecords) {
+                final programId = record['program_id']?.toString();
+                final programName = record['program_name']?.toString();
+                final programCreatorId = record['program_creator_id']?.toString();
+                
+                if (programId != null && programName != null) {
+                  uniquePrograms.add({
+                    'program_id': programId,
+                    'program_name': programName,
+                    'program_creator_id': programCreatorId,
+                    'program_created_at': record['date'] ?? DateTime.now().toIso8601String(),
+                  });
+                }
+              }
+            }
+          } else if (progressData is List<dynamic>) {
+            // Handle case where data is a list
+            for (final record in progressData) {
+              final programId = record['program_id']?.toString();
+              final programName = record['program_name']?.toString();
+              final programCreatorId = record['program_creator_id']?.toString();
+              
+              if (programId != null && programName != null) {
+                uniquePrograms.add({
+                  'program_id': programId,
+                  'program_name': programName,
+                  'program_creator_id': programCreatorId,
+                  'program_created_at': record['date'] ?? DateTime.now().toIso8601String(),
+                });
+              }
+            }
+          }
+          
+          final programs = uniquePrograms.toList();
+          print('🔍 COACH PROGRESSIVE OVERLOAD: Created ${programs.length} programs from progress data');
+          for (final program in programs) {
+            print('  - Program: ${program['program_name']} (ID: ${program['program_id']})');
+          }
+          return programs;
+        }
+      }
+      
+      return [];
+    } catch (e) {
+      print('Error creating programs from progress data: $e');
       return [];
     }
   }
@@ -1880,7 +2086,7 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
                             ),
                             SizedBox(height: 8),
                             Text(
-                              'Track your progress in your fitness journey across programs',
+                              'Track member progress in their fitness journey across programs',
                               style: GoogleFonts.poppins(
                                 fontSize: 16,
                                 color: Colors.grey[300],
@@ -2240,7 +2446,7 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
                     ),
                     SizedBox(height: 4),
                     Text(
-                      'Complete a workout to see your progress',
+                      'Complete a workout to see member progress',
                       style: GoogleFonts.poppins(
                         fontSize: 14,
                         color: Colors.grey[500],
@@ -2753,30 +2959,37 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
   void _showExerciseLogs(String exerciseName) async {
     final programId = _selectedProgramId ?? '';
     
-    print('🔍 Showing exercise logs for: $exerciseName');
-    print('🔍 Program ID: $programId');
+    print('🔍 COACH EXERCISE LOGS: Showing exercise logs for: $exerciseName');
+    print('🔍 COACH EXERCISE LOGS: Program ID: $programId');
+    print('🔍 COACH EXERCISE LOGS: Selected member: ${widget.selectedMember?.fullName} (ID: ${widget.selectedMember?.id})');
     
-     // Get exercise data using direct API call for this specific program
-     List<ProgressTrackerModel> exerciseLogs = [];
-     try {
-       final userId = await AuthService.getCurrentUserId();
-       if (userId != null) {
-         final response = await http.get(
-           Uri.parse('https://api.cnergy.site/progress_tracker.php?action=get_exercise_progress&user_id=$userId&exercise_name=$exerciseName'),
-           headers: {'Content-Type': 'application/json'},
-         );
-         
-         if (response.statusCode == 200) {
-           final data = json.decode(response.body);
-           if (data['success'] == true && data['data'] != null) {
-             final progressData = data['data'] as List<dynamic>;
-             exerciseLogs = progressData.map((record) => ProgressTrackerModel.fromJson(record)).toList();
-           }
-         }
-       }
-     } catch (e) {
-       print('❌ Exercise logs API call failed: $e');
-     }
+    // Get the real workout data from API using the selected member's ID
+    final userId = widget.selectedMember?.id;
+    if (userId == null) {
+      print('❌ COACH EXERCISE LOGS: No member user ID found');
+      return;
+    }
+    
+    List<ProgressTrackerModel> exerciseLogs = [];
+    
+    try {
+      // Use the progress tracker API directly with the member's user ID
+      final response = await http.get(
+        Uri.parse('https://api.cnergy.site/progress_tracker.php?action=get_exercise_progress&user_id=$userId&exercise_name=$exerciseName'),
+        headers: {'Content-Type': 'application/json'},
+      );
+      
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data['success'] == true && data['data'] != null) {
+          final progressData = data['data'] as List<dynamic>;
+          exerciseLogs = progressData.map((record) => ProgressTrackerModel.fromJson(record)).toList();
+          print('✅ COACH EXERCISE LOGS: Found ${exerciseLogs.length} records from API');
+        }
+      }
+    } catch (e) {
+      print('❌ COACH EXERCISE LOGS: API call failed: $e');
+    }
      
      print('🔍 EXERCISE LOGS: Found ${exerciseLogs.length} workout records for $exerciseName from API');
      for (final record in exerciseLogs) {
@@ -2786,8 +2999,8 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
      
      // If no logs found, show a message
      if (exerciseLogs.isEmpty) {
-       print('⚠️ EXERCISE LOGS: No workout logs found for $exerciseName');
-       print('🔍 EXERCISE LOGS: This might be because the user has no workout data for this exercise');
+       print('⚠️ COACH EXERCISE LOGS: No workout logs found for $exerciseName');
+       print('🔍 COACH EXERCISE LOGS: This might be because the member has no workout data for this exercise');
      }
     
     // Sort by date (newest first - latest above, oldest below)
@@ -2861,7 +3074,7 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
                             ),
                           ),
                           Text(
-                            'Complete a workout to see your progress!',
+                            'Complete a workout to see member progress!',
                             style: GoogleFonts.poppins(
                               fontSize: 14,
                               color: Colors.grey[500],
@@ -3028,20 +3241,20 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
     );
   }
 
-  // Get your actual completed workout data with individual sets
-  Future<List<ProgressTrackerModel>> _getYourActualWorkoutData() async {
+  // Get member actual completed workout data with individual sets
+  Future<List<ProgressTrackerModel>> _getMemberActualWorkoutData() async {
     try {
-      print('🔍 Getting YOUR actual workout data...');
+      print('🔍 Getting member actual workout data...');
       
-      // Create your actual workout data based on what you completed
+      // Create member actual workout data based on what they completed
       final now = DateTime.now();
       final yourWorkout = ProgressTrackerModel(
         id: 999, // High ID to ensure it's treated as the latest
         userId: 61,
         exerciseName: 'Barbell Bench Press',
         muscleGroup: 'Chest',
-        weight: 55.0, // Progressive overload achievement: your latest workout
-        reps: 5, // Reps from your latest workout
+        weight: 55.0, // Progressive overload achievement: member latest workout
+        reps: 5, // Reps from member latest workout
         sets: 3, // You did 3 sets
         date: now.subtract(Duration(days: 1)), // Yesterday
         programName: 'PUSH DAY',
@@ -3049,23 +3262,23 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
         volume: 0, // Not used for progression // Total volume
       );
       
-      print('📊 YOUR ACTUAL WORKOUT: 50kg x 6, 55kg x 5, 60kg x 5 (3 sets)');
-      print('📊 Progressive overload achievement: 55kg x 5 reps (your latest workout)');
+      print('📊 MEMBER ACTUAL WORKOUT: 50kg x 6, 55kg x 5, 60kg x 5 (3 sets)');
+      print('📊 Progressive overload achievement: 55kg x 5 reps (member latest workout)');
       
       return [yourWorkout];
     } catch (e) {
-      print('❌ Error getting your actual workout data: $e');
+      print('❌ Error getting member actual workout data: $e');
       return [];
     }
   }
 
   // Get individual sets for a specific workout
   List<Map<String, dynamic>> _getIndividualSetsForWorkout(ProgressTrackerModel workout) {
-    // For now, return your actual workout data
+    // For now, return member actual workout data
     // In the future, this could fetch from API based on workout date
     if (workout.exerciseName == 'Barbell Bench Press' && 
         workout.date.day == DateTime.now().subtract(Duration(days: 1)).day) {
-      // Your actual workout from yesterday - showing your progression
+      // Member actual workout from yesterday - showing their progression
       return [
         {'set': 1, 'weight': 50.0, 'reps': 6},
         {'set': 2, 'weight': 55.0, 'reps': 5},
@@ -3409,7 +3622,7 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
                 ),
                 SizedBox(height: 8),
                 Text(
-                  'Complete a workout from this program to start tracking your progressive overload. Your exercise progress will appear here after your first workout.',
+                  'Complete a workout from this program to start tracking member progressive overload. Member exercise progress will appear here after their first workout.',
                   style: GoogleFonts.poppins(
                     fontSize: 14,
                     color: Colors.grey[400],
@@ -3648,170 +3861,9 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
 
   // Create fallback exercises when API fails
   List<ExerciseModel> _createFallbackExercises(String programName) {
-    // Create sample exercises based on program name
-    List<ExerciseModel> exercises = [];
-    
-    if (programName.toLowerCase().contains('push')) {
-      exercises = [
-        ExerciseModel(
-          id: 1,
-          name: 'Barbell Bench Press',
-          targetSets: 3,
-          targetReps: '8-10',
-          targetWeight: '40-50',
-          category: 'Strength',
-          difficulty: 'Intermediate',
-          color: '#4ECDC4',
-          restTime: 60,
-          targetMuscle: 'Chest',
-        ),
-        ExerciseModel(
-          id: 2,
-          name: 'Dumbbell Shoulder Press',
-          targetSets: 3,
-          targetReps: '10-12',
-          targetWeight: '15-25',
-          category: 'Strength',
-          difficulty: 'Intermediate',
-          color: '#4ECDC4',
-          restTime: 60,
-          targetMuscle: 'Shoulders',
-        ),
-        ExerciseModel(
-          id: 3,
-          name: 'Tricep Dips',
-          targetSets: 3,
-          targetReps: '8-12',
-          targetWeight: 'Body Weight',
-          category: 'Strength',
-          difficulty: 'Intermediate',
-          color: '#4ECDC4',
-          restTime: 60,
-          targetMuscle: 'Triceps',
-        ),
-      ];
-    } else if (programName.toLowerCase().contains('pull')) {
-      exercises = [
-        ExerciseModel(
-          id: 4,
-          name: 'Lat Pulldown',
-          targetSets: 3,
-          targetReps: '8-10',
-          targetWeight: '40-60',
-          category: 'Strength',
-          difficulty: 'Intermediate',
-          color: '#4ECDC4',
-          restTime: 60,
-          targetMuscle: 'Back',
-        ),
-        ExerciseModel(
-          id: 5,
-          name: 'Seated Cable Row',
-          targetSets: 3,
-          targetReps: '10-12',
-          targetWeight: '30-50',
-          category: 'Strength',
-          difficulty: 'Intermediate',
-          color: '#4ECDC4',
-          restTime: 60,
-          targetMuscle: 'Back',
-        ),
-        ExerciseModel(
-          id: 6,
-          name: 'Bicep Curls',
-          targetSets: 3,
-          targetReps: '12-15',
-          targetWeight: '10-20',
-          category: 'Strength',
-          difficulty: 'Intermediate',
-          color: '#4ECDC4',
-          restTime: 60,
-          targetMuscle: 'Biceps',
-        ),
-      ];
-    } else if (programName.toLowerCase().contains('leg')) {
-      exercises = [
-        ExerciseModel(
-          id: 7,
-          name: 'Squats',
-          targetSets: 3,
-          targetReps: '8-12',
-          targetWeight: '40-80',
-          category: 'Strength',
-          difficulty: 'Intermediate',
-          color: '#4ECDC4',
-          restTime: 60,
-          targetMuscle: 'Legs',
-        ),
-        ExerciseModel(
-          id: 8,
-          name: 'Deadlift',
-          targetSets: 3,
-          targetReps: '5-8',
-          targetWeight: '60-100',
-          category: 'Strength',
-          difficulty: 'Advanced',
-          color: '#4ECDC4',
-          restTime: 90,
-          targetMuscle: 'Legs',
-        ),
-        ExerciseModel(
-          id: 9,
-          name: 'Lunges',
-          targetSets: 3,
-          targetReps: '10-12',
-          targetWeight: 'Body Weight',
-          category: 'Strength',
-          difficulty: 'Intermediate',
-          color: '#4ECDC4',
-          restTime: 60,
-          targetMuscle: 'Legs',
-        ),
-      ];
-    } else {
-      // Generic exercises for any program
-      exercises = [
-        ExerciseModel(
-          id: 10,
-          name: 'Push-ups',
-          targetSets: 3,
-          targetReps: '10-15',
-          targetWeight: 'Body Weight',
-          category: 'Strength',
-          difficulty: 'Beginner',
-          color: '#4ECDC4',
-          restTime: 60,
-          targetMuscle: 'Chest',
-        ),
-        ExerciseModel(
-          id: 11,
-          name: 'Plank',
-          targetSets: 3,
-          targetReps: '30-60 seconds',
-          targetWeight: 'Body Weight',
-          category: 'Core',
-          difficulty: 'Beginner',
-          color: '#4ECDC4',
-          restTime: 60,
-          targetMuscle: 'Core',
-        ),
-        ExerciseModel(
-          id: 12,
-          name: 'Mountain Climbers',
-          targetSets: 3,
-          targetReps: '20-30',
-          targetWeight: 'Body Weight',
-          category: 'Cardio',
-          difficulty: 'Intermediate',
-          color: '#4ECDC4',
-          restTime: 60,
-          targetMuscle: 'Full Body',
-        ),
-      ];
-    }
-    
-    print('🔧 Created ${exercises.length} fallback exercises for program: $programName');
-    return exercises;
+    // Return empty list - use only real data from progress API
+    print('⚠️ Skipping hardcoded exercises for $programName - using only real data');
+    return [];
   }
 
   // Add test data for debugging
@@ -4039,6 +4091,14 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
   Widget _buildCombinedChart() {
     final progressToAnalyze = _getFilteredProgress();
     
+    print('🔍 COACH CHART: Building combined chart');
+    print('🔍 COACH CHART: Selected program ID: $_selectedProgramId');
+    print('🔍 COACH CHART: Selected exercise: $_selectedExerciseName');
+    print('🔍 COACH CHART: Selected time period: $_selectedTimePeriod');
+    print('🔍 COACH CHART: Total programs: ${_programs.length}');
+    print('🔍 COACH CHART: Program progress keys: ${_programProgress.keys.toList()}');
+    print('🔍 COACH CHART: Filtered progress count: ${progressToAnalyze.length}');
+    
     if (progressToAnalyze.isEmpty) {
       return Container(
         padding: EdgeInsets.all(20),
@@ -4051,12 +4111,27 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
           ),
         ),
         child: Center(
-          child: Text(
-            'No data available for selected filters',
-            style: GoogleFonts.poppins(
-              fontSize: 16,
-              color: Colors.grey[400],
-            ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.bar_chart, color: Colors.grey[600], size: 48),
+              SizedBox(height: 16),
+              Text(
+                'No data available for selected filters',
+                style: GoogleFonts.poppins(
+                  fontSize: 16,
+                  color: Colors.grey[400],
+                ),
+              ),
+              SizedBox(height: 8),
+              Text(
+                'Try selecting a different program or exercise',
+                style: GoogleFonts.poppins(
+                  fontSize: 12,
+                  color: Colors.grey[500],
+                ),
+              ),
+            ],
           ),
         ),
       );
@@ -4898,7 +4973,7 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
                               ),
                             ),
                             Text(
-                              'Your personal training coach',
+                              'Member personal training coach',
                               style: GoogleFonts.poppins(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w500,
@@ -5150,9 +5225,9 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
     
     // Primary progress assessment
     if (weightChangePercent > 5) {
-      mainMessage = "You're improving quickly with your $exerciseName — keep up the excellent pace!";
+      mainMessage = "Member is improving quickly with their $exerciseName — keep up the excellent pace!";
     } else if (weightChangePercent >= 0 && weightChangePercent <= 5) {
-      mainMessage = "Steady progress on your $exerciseName — consistent training is paying off beautifully.";
+      mainMessage = "Steady progress on member $exerciseName — consistent training is paying off beautifully.";
     } else if (weightChangePercent < 0) {
       mainMessage = "Slight decrease in $exerciseName performance — consider reviewing recovery, nutrition, or form.";
     }
@@ -5167,7 +5242,7 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
     } else if (volumeChangePercent < 0 && weightChangePercent < 0) {
       secondaryMessage = "Possible deload period or fatigue — ensure adequate rest and recovery between sessions.";
     } else {
-      secondaryMessage = "Your training consistency with $sessionCount sessions shows dedication to long-term progress.";
+      secondaryMessage = "Member training consistency with $sessionCount sessions shows dedication to long-term progress.";
     }
     
     return "$mainMessage $secondaryMessage";
@@ -6137,12 +6212,18 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
   List<ProgressTrackerModel> _getFilteredProgress() {
     List<ProgressTrackerModel> progress = [];
     
+    print('🔍 COACH FILTERED PROGRESS: Getting filtered progress');
+    print('🔍 COACH FILTERED PROGRESS: Selected program ID: $_selectedProgramId');
+    print('🔍 COACH FILTERED PROGRESS: Program progress keys: ${_programProgress.keys.toList()}');
+    
     if (_selectedProgramId == null) {
       // All programs
       progress = _programProgress.values.expand((p) => p).toList();
+      print('🔍 COACH FILTERED PROGRESS: Using all programs, total records: ${progress.length}');
     } else {
       // Specific program
       progress = _programProgress[_selectedProgramId] ?? [];
+      print('🔍 COACH FILTERED PROGRESS: Using specific program $_selectedProgramId, records: ${progress.length}');
     }
     
     // Filter by exercise if selected
@@ -7082,26 +7163,4 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
       ),
     );
   }
-}
-
-class ProgressiveOverloadData {
-  final String exerciseName;
-  final DateTime date;
-  final double previousWeight;
-  final double currentWeight;
-  final int previousReps;
-  final int currentReps;
-  final String progressionType;
-  final double improvement;
-
-  ProgressiveOverloadData({
-    required this.exerciseName,
-    required this.date,
-    required this.previousWeight,
-    required this.currentWeight,
-    required this.previousReps,
-    required this.currentReps,
-    required this.progressionType,
-    required this.improvement,
-  });
 }

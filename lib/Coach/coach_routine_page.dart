@@ -3,11 +3,13 @@ import 'package:google_fonts/google_fonts.dart';
 import './models/member_model.dart';
 import './models/routine.models.dart';
 import './models/program_template_model.dart';
+import '../User/models/routine.models.dart' as UserModels;
 import './services/coach_service.dart';
 import './services/routine_service.dart';
 import './services/program_template_service.dart' as programservice;
 import 'coach_client_selection_page.dart';
 import 'coach_create_routine_page.dart';
+import 'coach_workout_preview_page.dart';
 
 class CoachRoutinePage extends StatefulWidget {
   final MemberModel? selectedMember;
@@ -75,35 +77,65 @@ class _CoachRoutinePageState extends State<CoachRoutinePage> with SingleTickerPr
 
   Future<void> _loadCoachData() async {
     try {
-      if (!mounted) return;
+      print('🔄 DEBUG: Starting _loadCoachData()');
+      if (!mounted) {
+        print('❌ DEBUG: Widget not mounted, aborting _loadCoachData');
+        return;
+      }
       setState(() => isLoading = true);
+      print('🔄 DEBUG: Set loading state to true');
       
       // Load assigned members
+      print('🔄 DEBUG: Calling CoachService.getAssignedMembers()');
       final members = await CoachService.getAssignedMembers();
+      print('📊 DEBUG: Retrieved ${members.length} assigned members');
+      for (int i = 0; i < members.length; i++) {
+        print('👤 DEBUG: Member $i: ID=${members[i].id}, Name=${members[i].fullName}, Email=${members[i].email}');
+      }
       
+      print('🔄 DEBUG: Calling ProgramTemplateService.getCoachProgramTemplates()');
       final templates = await programservice.ProgramTemplateService.getCoachProgramTemplates();
+      print('📊 DEBUG: Retrieved ${templates.length} program templates');
       
       // Load routines for each member
+      print('🔄 DEBUG: Starting to load routines for each member');
       Map<int, List<RoutineModel>> routines = {};
       for (var member in members) {
         try {
+          print('🔄 DEBUG: Loading routines for member ${member.id} (${member.fullName})');
           final memberRoutines = await CoachService.getMemberRoutines(member.id);
+          print('📊 DEBUG: Retrieved ${memberRoutines.length} routines for member ${member.id}');
+          for (int j = 0; j < memberRoutines.length; j++) {
+            print('🏋️ DEBUG: Routine $j: ID=${memberRoutines[j].id}, Name="${memberRoutines[j].name}", Exercises=${memberRoutines[j].exercises}');
+          }
           routines[member.id] = memberRoutines;
         } catch (e) {
-          print('Error loading routines for member ${member.id}: $e');
+          print('❌ DEBUG: Error loading routines for member ${member.id}: $e');
           routines[member.id] = [];
         }
       }
       
-      if (!mounted) return;
+      if (!mounted) {
+        print('❌ DEBUG: Widget not mounted after loading data, aborting setState');
+        return;
+      }
+      
+      print('🔄 DEBUG: Setting state with loaded data');
       setState(() {
         assignedMembers = members;
         memberRoutines = routines;
         programTemplates = templates;
         isLoading = false;
       });
+      print('✅ DEBUG: Successfully completed _loadCoachData()');
+      print('📊 DEBUG: Final state - Members: ${assignedMembers.length}, Routines: ${memberRoutines.length}');
     } catch (e) {
-      if (!mounted) return;
+      print('❌ DEBUG: Exception in _loadCoachData(): $e');
+      print('❌ DEBUG: Stack trace: ${StackTrace.current}');
+      if (!mounted) {
+        print('❌ DEBUG: Widget not mounted during error handling');
+        return;
+      }
       setState(() => isLoading = false);
       _showError('Failed to load coach data: ${e.toString()}');
     }
@@ -122,6 +154,71 @@ class _CoachRoutinePageState extends State<CoachRoutinePage> with SingleTickerPr
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Color(0xFF0F0F0F),
+      appBar: AppBar(
+        backgroundColor: Color(0xFF0F0F0F),
+        elevation: 0,
+        title: Text(
+          'Routines & Templates',
+          style: GoogleFonts.poppins(
+            color: Colors.white,
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        actions: [
+          IconButton(
+            onPressed: () async {
+              print('🔄 DEBUG: Refresh button pressed');
+              print('📊 DEBUG: Current state before refresh - Members: ${assignedMembers.length}, Routines: ${memberRoutines.length}');
+              
+              // Show loading feedback
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    'Refreshing data...',
+                    style: GoogleFonts.poppins(color: Colors.white),
+                  ),
+                  backgroundColor: Color(0xFF4ECDC4),
+                  duration: Duration(seconds: 1),
+                ),
+              );
+              
+              print('🔄 DEBUG: Starting data refresh process');
+              // Refresh data
+              await _loadCoachData();
+              print('🔄 DEBUG: Completed _loadCoachData()');
+              
+              if (_tabController.index == 1) {
+                print('🔄 DEBUG: Refreshing templates (tab index is 1)');
+                await _loadCoachTemplates();
+                print('🔄 DEBUG: Completed _loadCoachTemplates()');
+              } else {
+                print('🔄 DEBUG: Skipping templates refresh (tab index is ${_tabController.index})');
+              }
+              
+              print('📊 DEBUG: Final state after refresh - Members: ${assignedMembers.length}, Routines: ${memberRoutines.length}');
+              
+              // Show success feedback
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    'Data refreshed successfully!',
+                    style: GoogleFonts.poppins(color: Colors.white),
+                  ),
+                  backgroundColor: Colors.green,
+                  duration: Duration(seconds: 2),
+                ),
+              );
+              print('✅ DEBUG: Refresh process completed successfully');
+            },
+            icon: Icon(
+              Icons.refresh,
+              color: Color(0xFF4ECDC4),
+            ),
+            tooltip: 'Refresh Data',
+          ),
+        ],
+      ),
       body: Column(
         children: [
           Container(
@@ -227,14 +324,20 @@ class _CoachRoutinePageState extends State<CoachRoutinePage> with SingleTickerPr
       return _buildEmptyClientsState();
     }
 
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: assignedMembers.length,
-      itemBuilder: (context, index) {
-        final member = assignedMembers[index];
-        final routines = memberRoutines[member.id] ?? [];
-        return _buildClientCard(member, routines);
+    return RefreshIndicator(
+      onRefresh: () async {
+        await _loadCoachData();
       },
+      color: Color(0xFF4ECDC4),
+      child: ListView.builder(
+        padding: const EdgeInsets.all(16),
+        itemCount: assignedMembers.length,
+        itemBuilder: (context, index) {
+          final member = assignedMembers[index];
+          final routines = memberRoutines[member.id] ?? [];
+          return _buildClientCard(member, routines);
+        },
+      ),
     );
   }
 
@@ -438,105 +541,118 @@ class _CoachRoutinePageState extends State<CoachRoutinePage> with SingleTickerPr
   Widget _buildRoutineItem(RoutineModel routine, MemberModel member) {
     final routineColor = _parseRoutineColor(routine.color);
     
-    return Container(
-      padding: EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        border: Border(
-          top: BorderSide(color: Colors.grey[800]!, width: 0.5),
-        ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: routineColor.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: routineColor.withOpacity(0.3),
-                width: 1,
-              ),
-            ),
-            child: Icon(
-              Icons.fitness_center,
-              color: routineColor,
-              size: 20,
+    
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => _showRoutineOptions(routine, member),
+        child: Container(
+          padding: EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            border: Border(
+              top: BorderSide(color: Colors.grey[800]!, width: 0.5),
             ),
           ),
-          SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  routine.name,
-                  style: GoogleFonts.poppins(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: routineColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: routineColor.withOpacity(0.3),
+                    width: 1,
                   ),
                 ),
-                Text(
-                  '${routine.exercises} exercises • ${routine.duration}',
-                  style: GoogleFonts.poppins(
-                    color: Colors.grey[400],
-                    fontSize: 12,
-                  ),
+                child: Icon(
+                  Icons.fitness_center,
+                  color: routineColor,
+                  size: 20,
                 ),
-                if (routine.tags.isNotEmpty) ...[
+              ),
+              SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      routine.name.isNotEmpty ? routine.name : 'Unnamed Routine',
+                      style: GoogleFonts.poppins(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Text(
+                      '${routine.exercises} exercises • ${routine.duration}',
+                      style: GoogleFonts.poppins(
+                        color: Colors.grey[400],
+                        fontSize: 12,
+                      ),
+                    ),
+                    if (routine.tags.isNotEmpty) ...[
+                      SizedBox(height: 4),
+                      Wrap(
+                        spacing: 4,
+                        children: routine.tags.take(2).map((tag) => Container(
+                          padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: routineColor.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            tag,
+                            style: GoogleFonts.poppins(
+                              color: routineColor,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        )).toList(),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    routine.formattedCreatedDate,
+                    style: GoogleFonts.poppins(
+                      color: Colors.grey[500],
+                      fontSize: 11,
+                    ),
+                  ),
                   SizedBox(height: 4),
-                  Wrap(
-                    spacing: 4,
-                    children: routine.tags.take(2).map((tag) => Container(
-                      padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: routineColor.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(4),
+                  Container(
+                    padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: _getBalancedDifficultyColor(routine.difficulty).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      routine.difficultyText,
+                      style: GoogleFonts.poppins(
+                        color: _getBalancedDifficultyColor(routine.difficulty),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
                       ),
-                      child: Text(
-                        tag,
-                        style: GoogleFonts.poppins(
-                          color: routineColor,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    )).toList(),
+                    ),
                   ),
                 ],
-              ],
-            ),
-          ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                routine.formattedCreatedDate,
-                style: GoogleFonts.poppins(
-                  color: Colors.grey[500],
-                  fontSize: 11,
-                ),
               ),
-              SizedBox(height: 4),
-              Container(
-                padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: _getBalancedDifficultyColor(routine.difficulty).withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  routine.difficultyText,
-                  style: GoogleFonts.poppins(
-                    color: _getBalancedDifficultyColor(routine.difficulty),
-                    fontSize: 10,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
+              SizedBox(width: 8),
+              Icon(
+                Icons.more_vert,
+                color: Colors.grey[600],
+                size: 20,
               ),
             ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -554,19 +670,25 @@ class _CoachRoutinePageState extends State<CoachRoutinePage> with SingleTickerPr
       return _buildEmptyTemplatesState();
     }
 
-    return Column(
-      children: [
-        Expanded(
-          child: ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: coachTemplates.length,
-            itemBuilder: (context, index) {
-              final template = coachTemplates[index];
-              return _buildTemplateCard(template);
-            },
+    return RefreshIndicator(
+      onRefresh: () async {
+        await _loadCoachTemplates();
+      },
+      color: Color(0xFF4ECDC4),
+      child: Column(
+        children: [
+          Expanded(
+            child: ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: coachTemplates.length,
+              itemBuilder: (context, index) {
+                final template = coachTemplates[index];
+                return _buildTemplateCard(template);
+              },
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -1174,6 +1296,253 @@ class _CoachRoutinePageState extends State<CoachRoutinePage> with SingleTickerPr
     });
   }
 
+  void _showRoutineOptions(RoutineModel routine, MemberModel member) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Color(0xFF1A1A1A),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Container(
+        padding: EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey[600],
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            SizedBox(height: 20),
+            Text(
+              routine.name,
+              style: GoogleFonts.poppins(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            SizedBox(height: 8),
+            Text(
+              '${routine.exercises} exercises • ${routine.duration}',
+              style: GoogleFonts.poppins(
+                color: Colors.grey[400],
+                fontSize: 14,
+              ),
+            ),
+            SizedBox(height: 4),
+            Text(
+              'for ${member.fullName}',
+              style: GoogleFonts.poppins(
+                color: Colors.grey[500],
+                fontSize: 12,
+              ),
+            ),
+            SizedBox(height: 24),
+            ListTile(
+              leading: Icon(Icons.play_arrow, color: Color(0xFF4ECDC4)),
+              title: Text(
+                'Start Coach Session',
+                style: GoogleFonts.poppins(color: Colors.white),
+              ),
+              onTap: () {
+                Navigator.pop(context);
+                _startCoachSession(routine, member);
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.edit, color: Color(0xFF4ECDC4)),
+              title: Text(
+                'Edit Program',
+                style: GoogleFonts.poppins(color: Colors.white),
+              ),
+              onTap: () {
+                Navigator.pop(context);
+                _editRoutine(routine, member);
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.delete, color: Colors.red),
+              title: Text(
+                'Delete Routine',
+                style: GoogleFonts.poppins(color: Colors.white),
+              ),
+              onTap: () {
+                Navigator.pop(context);
+                _deleteRoutine(routine, member);
+              },
+            ),
+            SizedBox(height: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _startCoachSession(RoutineModel routine, MemberModel member) {
+    print('🔍 Starting coach session for routine: "${routine.id}", member: ${member.id}');
+    print('🔍 Routine details: name="${routine.name}", exercises=${routine.exercises}');
+    
+    // Convert Coach's RoutineModel to User's RoutineModel
+    final userRoutine = UserModels.RoutineModel(
+      id: routine.id,
+      name: routine.name,
+      exercises: routine.exercises,
+      duration: routine.duration,
+      difficulty: routine.difficulty.name,
+      createdBy: routine.createdBy,
+      exerciseList: routine.exerciseList,
+      color: routine.color,
+      lastPerformed: routine.lastPerformed,
+      tags: routine.tags,
+      goal: routine.goal,
+      completionRate: routine.completionRate,
+      totalSessions: routine.totalSessions,
+      notes: routine.notes,
+      scheduledDays: routine.scheduledDays,
+      version: routine.version,
+      detailedExercises: routine.detailedExercises?.map((exercise) => UserModels.ExerciseModel(
+        id: exercise.id,
+        name: exercise.name,
+        targetSets: exercise.targetSets,
+        targetReps: exercise.targetReps,
+        targetWeight: exercise.targetWeight,
+        completedSets: exercise.completedSets,
+        sets: exercise.sets.map((set) => UserModels.ExerciseSet(
+          reps: set.reps,
+          weight: set.weight,
+          rpe: set.rpe,
+          duration: set.duration,
+          timestamp: set.timestamp,
+        )).toList(),
+        completed: exercise.completed,
+        category: exercise.category,
+        difficulty: exercise.difficulty,
+        color: exercise.color,
+        restTime: exercise.restTime,
+        notes: exercise.notes,
+        targetMuscle: exercise.targetMuscle,
+        description: exercise.description,
+        imageUrl: exercise.imageUrl,
+      )).toList(),
+    );
+    
+    print('🔍 Final userRoutine before navigation:');
+    print('  - ID: "${userRoutine.id}"');
+    print('  - Name: "${userRoutine.name}"');
+    print('  - Exercises: ${userRoutine.exercises}');
+    
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => CoachWorkoutPreviewPage(
+          routine: userRoutine,
+          selectedMember: member,
+        ),
+      ),
+    );
+  }
+
+  void _editRoutine(RoutineModel routine, MemberModel member) async {
+    // For now, use the existing routine data directly
+    // TODO: Implement detailed routine fetching when API is fixed
+    print('🔍 DEBUG: Editing routine ${routine.id} for member ${member.id}');
+    
+    // Navigate to the routine creation page in edit mode
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => CoachCreateRoutinePage(
+          selectedClient: member,
+          selectedColor: Color(0xFF4ECDC4),
+          editingRoutine: routine, // Use the existing routine data
+        ),
+      ),
+    ).then((result) {
+      if (result == true) {
+        _loadCoachData(); // Refresh the data
+      }
+    });
+  }
+
+  void _deleteRoutine(RoutineModel routine, MemberModel member) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Color(0xFF1A1A1A),
+        title: Text(
+          'Delete Routine',
+          style: GoogleFonts.poppins(
+            color: Colors.white,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        content: Text(
+          'Are you sure you want to delete "${routine.name}" for ${member.fullName}? This action cannot be undone.',
+          style: GoogleFonts.poppins(color: Colors.grey[300]),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.poppins(color: Colors.grey[400]),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              await _performRoutineDeletion(routine, member);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: Text(
+              'Delete',
+              style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _performRoutineDeletion(RoutineModel routine, MemberModel member) async {
+    try {
+      // Call the routine service to delete the routine
+      final success = await RoutineService.deleteRoutine(routine.id);
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Routine "${routine.name}" deleted successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        // Refresh the coach data to update the UI
+        _loadCoachData();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to delete routine'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      print('Error deleting routine: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   void _showTemplateOptions(Map<String, dynamic> template) {
     showModalBottomSheet(
       context: context,
@@ -1462,4 +1831,5 @@ class _CoachRoutinePageState extends State<CoachRoutinePage> with SingleTickerPr
         return Color(0xFF2ECC71);
     }
   }
+
 }

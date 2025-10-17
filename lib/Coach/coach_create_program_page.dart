@@ -21,7 +21,6 @@ class _CoachCreateProgramPageState extends State<CoachCreateProgramPage> {
   String selectedGoal = "General Fitness";
   String selectedDifficulty = "Beginner";
   String selectedCategory = "Strength Training";
-  String selectedDay = "Monday";
   List<String> selectedTags = [];
   Color selectedColor = Color(0xFF4ECDC4);
   List<Map<String, dynamic>> exercises = [];
@@ -37,10 +36,6 @@ class _CoachCreateProgramPageState extends State<CoachCreateProgramPage> {
 
   final List<String> availableCategories = [
     "Strength Training", "Cardio", "HIIT", "Flexibility", "Sports Specific", "Rehabilitation"
-  ];
-  
-  final List<String> availableDays = [
-    "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"
   ];
   
   final List<String> availableTags = [
@@ -170,12 +165,7 @@ class _CoachCreateProgramPageState extends State<CoachCreateProgramPage> {
           ),
           SizedBox(height: 16),
           
-          _buildDropdownField(
-            'Training Day',
-            selectedDay,
-            availableDays,
-            (value) => setState(() => selectedDay = value!),
-          ),
+          // Training day selection removed - now handled by schedule page
         ],
       ),
     );
@@ -743,7 +733,7 @@ class _CoachCreateProgramPageState extends State<CoachCreateProgramPage> {
         'goal': selectedGoal,
         'difficulty': selectedDifficulty,
         'category': selectedCategory,
-        'scheduled_days': [selectedDay],
+        'scheduled_days': [], // No longer using scheduled days - will be handled by schedule page
         'color': selectedColor.value.toString(),
         'tags': selectedTags.join(','),
         'exercises': exercises,
