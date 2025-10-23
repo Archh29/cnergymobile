@@ -29,6 +29,12 @@ class _SignUpPageState extends State<SignUpPage> with SingleTickerProviderStateM
   bool _obscureConfirmPassword = true;
   DateTime? _selectedDate;
 
+  // Password strength indicators
+  bool _hasMinLength = false;
+  bool _hasCapitalLetter = false;
+  bool _hasNumber = false;
+  bool _hasSymbol = false;
+
   // Animation controller
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
@@ -61,6 +67,19 @@ class _SignUpPageState extends State<SignUpPage> with SingleTickerProviderStateM
     ));
 
     _animationController.forward();
+
+    // Add listener to password field for real-time validation
+    _passwordController.addListener(_checkPasswordStrength);
+  }
+
+  void _checkPasswordStrength() {
+    final password = _passwordController.text;
+    setState(() {
+      _hasMinLength = password.length >= 6;
+      _hasCapitalLetter = password.contains(RegExp(r'[A-Z]'));
+      _hasNumber = password.contains(RegExp(r'[0-9]'));
+      _hasSymbol = password.contains(RegExp(r'[!@#$%^&*(),.?":{}|<>]'));
+    });
   }
 
   Future<void> _loadGenders() async {
@@ -618,6 +637,10 @@ class _SignUpPageState extends State<SignUpPage> with SingleTickerProviderStateM
                         return null;
                       },
                     ),
+                    const SizedBox(height: 12),
+                    
+                    // Password Strength Indicator
+                    _buildPasswordStrengthIndicator(),
                     const SizedBox(height: 16),
                     
                     // Confirm Password
@@ -723,6 +746,96 @@ class _SignUpPageState extends State<SignUpPage> with SingleTickerProviderStateM
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildPasswordStrengthIndicator() {
+    // Only show if user has started typing
+    if (_passwordController.text.isEmpty) {
+      return SizedBox.shrink();
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1A1A),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: Colors.grey[800]!,
+          width: 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Password Requirements:',
+            style: GoogleFonts.poppins(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: Colors.grey[300],
+            ),
+          ),
+          const SizedBox(height: 12),
+          _buildRequirementItem(
+            'At least 6 characters',
+            _hasMinLength,
+          ),
+          const SizedBox(height: 8),
+          _buildRequirementItem(
+            'One capital letter (A-Z)',
+            _hasCapitalLetter,
+          ),
+          const SizedBox(height: 8),
+          _buildRequirementItem(
+            'One number (0-9)',
+            _hasNumber,
+          ),
+          const SizedBox(height: 8),
+          _buildRequirementItem(
+            'One symbol (!@#\$%^&*)',
+            _hasSymbol,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRequirementItem(String requirement, bool isMet) {
+    return Row(
+      children: [
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          width: 20,
+          height: 20,
+          decoration: BoxDecoration(
+            color: isMet ? Colors.green : Colors.transparent,
+            border: Border.all(
+              color: isMet ? Colors.green : Colors.grey[600]!,
+              width: 2,
+            ),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: isMet
+              ? const Icon(
+                  Icons.check,
+                  size: 14,
+                  color: Colors.white,
+                )
+              : null,
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            requirement,
+            style: GoogleFonts.poppins(
+              fontSize: 13,
+              color: isMet ? Colors.green : Colors.grey[400],
+              fontWeight: isMet ? FontWeight.w500 : FontWeight.w400,
+            ),
+          ),
+        ),
+      ],
     );
   }
 

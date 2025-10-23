@@ -12,6 +12,7 @@ import '../services/enhanced_progress_service.dart';
 import '../services/routine_services.dart';
 import '../services/workout_preview_service.dart';
 import '../services/auth_service.dart';
+import 'muscle_visualization_widget.dart';
 
 class ProgressiveOverloadTracker extends StatefulWidget {
   const ProgressiveOverloadTracker({Key? key}) : super(key: key);
@@ -3966,12 +3967,8 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
           _buildExerciseFilter(),
           SizedBox(height: 20),
           
-          // Combined Chart
+          // Muscle Visualization (replacing Combined Chart)
           _buildCombinedChart(),
-          SizedBox(height: 20),
-          
-          // Metric Switcher (moved below chart)
-          _buildMetricSwitcher(),
           SizedBox(height: 24),
           
           // Personal Records Section
@@ -4035,7 +4032,7 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
   }
 
 
-  // Combined Chart
+  // Muscle Visualization (replacing Combined Chart)
   Widget _buildCombinedChart() {
     final progressToAnalyze = _getFilteredProgress();
     
@@ -4062,269 +4059,36 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
       );
     }
 
-    // Process data based on selected metric
-    Map<DateTime, double> dailyData = {};
-    String chartTitle = '';
-    String unit = 'kg';
-    
-    switch (_selectedMetric) {
-      case 'Heaviest Weight':
-        // Group by date and get max weight for each day
-        for (final record in progressToAnalyze) {
-          final date = DateTime(record.date.year, record.date.month, record.date.day);
-          dailyData[date] = dailyData[date] != null 
-              ? (dailyData[date]! > record.weight ? dailyData[date]! : record.weight)
-              : record.weight;
-        }
-        chartTitle = 'Heaviest Weight';
-        unit = 'kg';
-        break;
-        
-      case 'Session Volume':
-        // Group by date and calculate total volume for each day
-        for (final record in progressToAnalyze) {
-          final date = DateTime(record.date.year, record.date.month, record.date.day);
-          final volume = record.weight * record.reps;
-          dailyData[date] = (dailyData[date] ?? 0) + volume;
-        }
-        chartTitle = 'Session Volume';
-        unit = 'kg';
-        break;
-        
-      case 'Best Volume Set':
-        // Group by date and get best volume (highest weight * reps) for each day
-        for (final record in progressToAnalyze) {
-          final date = DateTime(record.date.year, record.date.month, record.date.day);
-          final volume = record.weight * record.reps;
-          dailyData[date] = dailyData[date] != null 
-              ? (dailyData[date]! > volume ? dailyData[date]! : volume)
-              : volume;
-        }
-        chartTitle = 'Best Volume Set';
-        unit = 'kg';
-        break;
-    }
+    // Get unique exercise names from progress
+    final exerciseNames = progressToAnalyze
+        .map((p) => p.exerciseName)
+        .toSet()
+        .toList();
 
-    final sortedDates = dailyData.keys.toList()..sort();
-    final chartData = sortedDates.map((date) => dailyData[date]!).toList();
+    // Use FutureBuilder to get userId
+    return FutureBuilder<int?>(
+      future: _getUserId(),
+      builder: (context, snapshot) {
+        final userId = snapshot.data;
 
-    return Container(
-      padding: EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Color(0xFF1A1A1A),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: Color(0xFF4ECDC4).withOpacity(0.3),
-          width: 1,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                _selectedMetric == 'Heaviest Weight' ? Icons.fitness_center :
-                _selectedMetric == 'Session Volume' ? Icons.bar_chart : Icons.trending_up,
-                color: Color(0xFF4ECDC4),
-                size: 20,
-              ),
-              SizedBox(width: 8),
-              Expanded(
-                child: _buildChartTitleWithDate(chartTitle),
-              ),
-              // Time period dropdown inside the graph box
-              Container(
-                padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Color(0xFF2A2A2A),
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(
-                    color: Color(0xFF4ECDC4).withOpacity(0.3),
-                    width: 1,
-                  ),
-                ),
-                child: DropdownButton<String>(
-                  value: _selectedTimePeriod,
-                  dropdownColor: Color(0xFF2A2A2A),
-                  style: GoogleFonts.poppins(
-                    fontSize: 11,
-                    color: Colors.white,
-                  ),
-                  underline: Container(),
-                  icon: Icon(
-                    Icons.keyboard_arrow_down,
-                    color: Color(0xFF4ECDC4),
-                    size: 16,
-                  ),
-                  items: [
-                    DropdownMenuItem<String>(
-                      value: '30 Days',
-                      child: Text(
-                        '30 Days',
-                        style: GoogleFonts.poppins(
-                          fontSize: 11,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                    DropdownMenuItem<String>(
-                      value: 'Last 3 Months',
-                      child: Text(
-                        'Last 3 Months',
-                        style: GoogleFonts.poppins(
-                          fontSize: 11,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                    DropdownMenuItem<String>(
-                      value: 'Year',
-                      child: Text(
-                        'Year',
-                        style: GoogleFonts.poppins(
-                          fontSize: 11,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                    DropdownMenuItem<String>(
-                      value: 'All Time',
-                      child: Text(
-                        'All Time',
-                        style: GoogleFonts.poppins(
-                          fontSize: 11,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                  ],
-                  onChanged: (String? value) {
-                    setState(() {
-                      _selectedTimePeriod = value!;
-                    });
-                  },
-                ),
-              ),
-            ],
-          ),
-          SizedBox(height: 20),
-          Container(
-            height: 200,
-            child: LineChart(
-                LineChartData(
-                  gridData: FlGridData(
-                    show: true,
-                    drawVerticalLine: true,
-                    horizontalInterval: _selectedMetric == 'Session Volume' ? 100 : 5,
-                    verticalInterval: 1,
-                  getDrawingHorizontalLine: (value) {
-                    return FlLine(
-                      color: Colors.grey[800]!,
-                      strokeWidth: 1,
-                      dashArray: [5, 5],
-                    );
-                  },
-                  getDrawingVerticalLine: (value) {
-                    return FlLine(
-                      color: Colors.grey[800]!,
-                      strokeWidth: 1,
-                      dashArray: [5, 5],
-                    );
-                  },
-                ),
-                titlesData: FlTitlesData(
-                  leftTitles: AxisTitles(
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      reservedSize: _selectedMetric == 'Session Volume' ? 50 : 45,
-                      getTitlesWidget: (value, meta) {
-                        // Only show min and max values
-                        final minValue = chartData.reduce((a, b) => a < b ? a : b);
-                        final maxValue = chartData.reduce((a, b) => a > b ? a : b);
-                        
-                        if (value == minValue || value == maxValue) {
-                          return Padding(
-                            padding: EdgeInsets.only(right: 8),
-                            child: Text(
-                              '${value.toInt()}$unit',
-                              style: GoogleFonts.poppins(
-                                fontSize: _selectedMetric == 'Session Volume' ? 10 : 11,
-                                fontWeight: FontWeight.w600,
-                                color: value == maxValue ? Color(0xFF4ECDC4) : Colors.grey[300],
-                              ),
-                              textAlign: TextAlign.right,
-                            ),
-                          );
-                        }
-                        return Text(''); // Hide other labels
-                      },
-                    ),
-                  ),
-                  bottomTitles: AxisTitles(
-                    sideTitles: SideTitles(
-                      showTitles: false,
-                      reservedSize: 0,
-                    ),
-                  ),
-                  topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                  rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                ),
-                borderData: FlBorderData(
-                  show: true,
-                  border: Border.all(
-                    color: Colors.grey[700]!,
-                    width: 1,
-                  ),
-                ),
-                lineBarsData: [
-                  LineChartBarData(
-                    spots: chartData.asMap().entries.map((entry) {
-                      return FlSpot(entry.key.toDouble(), entry.value);
-                    }).toList(),
-                    isCurved: true,
-                    color: Color(0xFF4ECDC4),
-                    barWidth: 3,
-                    dotData: FlDotData(
-                      show: true,
-                      getDotPainter: (spot, percent, barData, index) {
-                        return FlDotCirclePainter(
-                          radius: 4,
-                          color: Color(0xFF4ECDC4),
-                          strokeWidth: 2,
-                          strokeColor: Colors.white,
-                        );
-                      },
-                    ),
-                    belowBarData: BarAreaData(
-                      show: true,
-                      color: Color(0xFF4ECDC4).withOpacity(0.1),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          SizedBox(height: 16),
-          // Dates below the chart
-          Container(
-            height: 30,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: sortedDates.map((date) {
-                return Text(
-                  '${_getMonthName(date.month)} ${date.day}',
-                  style: GoogleFonts.poppins(
-                    fontSize: 12,
-                    color: Colors.grey[400],
-                  ),
-                );
-              }).toList(),
-            ),
-          ),
-        ],
-      ),
+        return MuscleVisualizationWidget(
+          exerciseName: _selectedExerciseName,
+          programId: _selectedProgramId != null ? int.tryParse(_selectedProgramId!) : null,
+          userId: userId,
+          exerciseNames: _selectedExerciseName == null ? exerciseNames : null,
+        );
+      },
     );
+  }
+
+  Future<int?> _getUserId() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getInt('userId');
+    } catch (e) {
+      print('Error getting user ID: $e');
+      return null;
+    }
   }
 
   // Personal Records Section
@@ -4486,16 +4250,6 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
                     ),
                     SizedBox(height: 12),
                     _buildRecordCard(
-                      'Best 1RM',
-                      '${bestOneRM.toInt()}kg',
-                      bestOneRMDate,
-                      Icons.trending_up,
-                      Color(0xFF6C5CE7),
-                      oneRMChange,
-                      oneRMChangePercent,
-                    ),
-                    SizedBox(height: 12),
-                    _buildRecordCard(
                       'Best Set Volume',
                       '${bestSetVolume.toInt()}kg',
                       bestSetVolumeDate,
@@ -4524,18 +4278,6 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
                     SizedBox(width: 8),
                     Expanded(
                       child: _buildRecordCard(
-                        'Best 1RM',
-                        '${bestOneRM.toInt()}kg',
-                        bestOneRMDate,
-                        Icons.trending_up,
-                        Color(0xFF6C5CE7),
-                        oneRMChange,
-                        oneRMChangePercent,
-                      ),
-                    ),
-                    SizedBox(width: 8),
-                    Expanded(
-                      child: _buildRecordCard(
                         'Best Set Volume',
                         '${bestSetVolume.toInt()}kg',
                         bestSetVolumeDate,
@@ -4552,8 +4294,9 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
           ),
           SizedBox(height: 24),
           
-          // AI Insights Button
-          _buildAIInsightsButton(progressToAnalyze, weightChangePercent, oneRMChangePercent, setVolumeChangePercent),
+          // AI Insights Button - Only show for programs to analyze overall progressive overload strategy
+          if (_selectedProgramId != null)
+            _buildAIInsightsButton(progressToAnalyze, weightChangePercent, oneRMChangePercent, setVolumeChangePercent),
         ],
       ),
     );
@@ -4748,7 +4491,7 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
                       ),
                     ),
                     Text(
-                      'Personalized coaching analysis',
+                      'Program overload & muscle balance',
                       style: GoogleFonts.poppins(
                         fontSize: 12,
                         fontWeight: FontWeight.w400,
@@ -4898,7 +4641,7 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
                               ),
                             ),
                             Text(
-                              'Your personal training coach',
+                              'Progressive overload analysis',
                               style: GoogleFonts.poppins(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w500,
@@ -5144,33 +4887,44 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
   }
 
   String _generateAIInsight(String exerciseName, double weightChangePercent, double volumeChangePercent, int sessionCount, String frequency) {
-    // Determine the main message based on progress patterns
-    String mainMessage = '';
-    String secondaryMessage = '';
+    // Progressive overload analysis for the program
+    String overloadStatus = '';
+    String muscleBalance = '';
+    String recommendations = '';
     
-    // Primary progress assessment
-    if (weightChangePercent > 5) {
-      mainMessage = "You're improving quickly with your $exerciseName — keep up the excellent pace!";
-    } else if (weightChangePercent >= 0 && weightChangePercent <= 5) {
-      mainMessage = "Steady progress on your $exerciseName — consistent training is paying off beautifully.";
-    } else if (weightChangePercent < 0) {
-      mainMessage = "Slight decrease in $exerciseName performance — consider reviewing recovery, nutrition, or form.";
-    }
-    
-    // Secondary assessment based on volume vs weight relationship
-    if (volumeChangePercent > 0 && weightChangePercent > 0) {
-      secondaryMessage = "Perfect progressive overload detected — both strength and endurance are improving simultaneously.";
-    } else if (volumeChangePercent > 0 && weightChangePercent <= 0) {
-      secondaryMessage = "Endurance is increasing while focusing on volume — consider adding more top-set intensity work.";
-    } else if (volumeChangePercent <= 0 && weightChangePercent > 0) {
-      secondaryMessage = "Efficient strength focus — lower volume with higher loads is building pure power.";
-    } else if (volumeChangePercent < 0 && weightChangePercent < 0) {
-      secondaryMessage = "Possible deload period or fatigue — ensure adequate rest and recovery between sessions.";
+    // Assess progressive overload implementation
+    if (weightChangePercent > 5 && volumeChangePercent > 5) {
+      overloadStatus = "🎯 Excellent progressive overload! You're increasing both weight and volume, which is the gold standard for muscle growth and strength. ";
+      recommendations = "Continue this approach and ensure adequate recovery between sessions. ";
+    } else if (weightChangePercent > 5) {
+      overloadStatus = "💪 Strong weight progression! You're successfully applying progressive overload through intensity increases. ";
+      recommendations = "Consider adding volume (more sets or reps) to maximize hypertrophy alongside strength gains. ";
+    } else if (volumeChangePercent > 5) {
+      overloadStatus = "📈 Good volume progression! You're building endurance and work capacity. ";
+      recommendations = "Try gradually increasing weights on key exercises to develop maximum strength alongside endurance. ";
+    } else if (weightChangePercent >= 0 && volumeChangePercent >= 0) {
+      overloadStatus = "✅ Maintaining progressive overload. Steady consistency is building a strong foundation. ";
+      recommendations = "Push for small incremental increases in either weight or reps each week to continue adaptation. ";
     } else {
-      secondaryMessage = "Your training consistency with $sessionCount sessions shows dedication to long-term progress.";
+      overloadStatus = "⚠️ Progressive overload has plateaued or decreased. This may indicate overtraining or insufficient recovery. ";
+      recommendations = "Consider a deload week, review your nutrition and sleep, then restart with manageable progressive increases. ";
     }
     
-    return "$mainMessage $secondaryMessage";
+    // Muscle balance analysis based on visualization
+    muscleBalance = "Check the muscle visualization above to ensure your program targets all major muscle groups evenly. ";
+    
+    if (sessionCount >= 10) {
+      muscleBalance += "Your $sessionCount training sessions provide excellent frequency for balanced muscle development. ";
+    } else if (sessionCount >= 5) {
+      muscleBalance += "With $sessionCount sessions, you're building good training consistency. ";
+    } else {
+      muscleBalance += "Aim for at least 2-3 sessions per week per muscle group for optimal progressive overload. ";
+    }
+    
+    // Progressive overload principle reminder
+    String principle = "Remember: Progressive overload means gradually increasing stress on muscles over time through weight, reps, sets, or frequency. ";
+    
+    return "$overloadStatus$muscleBalance$recommendations$principle";
   }
 
   Widget _buildRecordCard(String title, String value, DateTime? date, IconData icon, Color color, double change, double changePercent) {

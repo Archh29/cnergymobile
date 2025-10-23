@@ -50,8 +50,8 @@ class ProgressAnalyticsService {
         }),
       );
 
-      print('Save lift response status: ${response.statusCode}');
-      print('Save lift response body: ${response.body}');
+      // Save lift response (${response.statusCode})
+      // Save lift response received
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
@@ -77,7 +77,7 @@ class ProgressAnalyticsService {
       }
 
       final url = '$progressEndpoint?action=get_exercise_progress&user_id=$userId&exercise_name=${Uri.encodeComponent(exerciseName)}${muscleGroup != null ? '&muscle_group=${Uri.encodeComponent(muscleGroup)}' : ''}${limit != null ? '&limit=$limit' : ''}';
-      print('🔍 API URL: $url');
+      // API URL: $url
       
       final response = await http.get(
         Uri.parse(url),
@@ -86,8 +86,8 @@ class ProgressAnalyticsService {
         },
       );
 
-      print('Get exercise progress response status: ${response.statusCode}');
-      print('Get exercise progress response body: ${response.body}');
+       // Exercise progress response (${response.statusCode})
+      // Exercise progress response received
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
@@ -113,13 +113,13 @@ class ProgressAnalyticsService {
   static Future<Map<String, List<ProgressTrackerModel>>> getAllProgress() async {
     try {
       final userId = AuthService.getCurrentUserId();
-      print('🔍 getAllProgress: Current user ID = $userId');
+      // Get all progress for user: $userId
       if (userId == null) {
         print('⚠️ No user ID from AuthService, using fallback ID 13');
         // Fallback to user ID 13 for testing
         final fallbackUserId = 13;
         final url = '$progressEndpoint?action=get_all_progress&user_id=$fallbackUserId';
-        print('🔍 getAllProgress: Fallback API URL = $url');
+        // Fallback API URL
         
         final response = await http.get(
           Uri.parse(url),
@@ -128,8 +128,7 @@ class ProgressAnalyticsService {
           },
         );
 
-        print('Get all progress response status: ${response.statusCode}');
-        print('Get all progress response body: ${response.body}');
+        // Response received (${response.statusCode})
 
         if (response.statusCode == 200) {
           final data = json.decode(response.body);
@@ -152,7 +151,7 @@ class ProgressAnalyticsService {
       }
 
       final url = '$progressEndpoint?action=get_all_progress&user_id=$userId';
-      print('🔍 getAllProgress: API URL = $url');
+      // API URL: $url
       
       final response = await http.get(
         Uri.parse(url),
@@ -161,8 +160,7 @@ class ProgressAnalyticsService {
         },
       );
 
-      print('Get all progress response status: ${response.statusCode}');
-      print('Get all progress response body: ${response.body}');
+      // Response received (${response.statusCode})
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);

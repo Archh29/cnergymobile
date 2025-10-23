@@ -22,6 +22,7 @@ import './services/auth_service.dart';
 import './services/subscription_service.dart';
 import './manage_subscriptions_page.dart';
 import './muscle_analytics_page.dart';
+import './weekly_muscle_analytics_page.dart';
 import './widgets/progress_tracker_widget.dart';
 import './widgets/progressive_overload_tracker.dart';
 
@@ -140,7 +141,7 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
         
         // Force refresh measurements to ensure data persistence
         if (latestMeasurements.isEmpty || latestMeasurements['weight'] == 0.0) {
-          print('🔄 No measurements found, attempting to refresh...');
+          // Attempting to refresh measurements
           await Future.delayed(Duration(milliseconds: 500));
           latestMeasurements = await _getLatestMeasurementsFromProgress();
         }
@@ -178,10 +179,8 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
       
       final completedWorkouts = uniqueWorkoutSessions.length;
       
-      print('🔍 Progressive Overload Stats:');
-      print('  - Programs: ${programs.length}');
-      print('  - Unique workout sessions: $completedWorkouts');
-      print('  - Session keys: ${uniqueWorkoutSessions.toList()}');
+      // Progressive Overload Stats loaded
+      // Programs: ${programs.length}, Sessions: $completedWorkouts
       
       return {
         'programs': programs.length,
@@ -213,8 +212,7 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
       
       final completedWorkouts = uniqueWorkoutSessions.length;
       
-      print('🔍 Quick Stats - Actual workout count: $completedWorkouts');
-      print('🔍 Quick Stats - Session keys: ${uniqueWorkoutSessions.toList()}');
+      // Quick Stats loaded: $completedWorkouts workouts
       
       return completedWorkouts;
     } catch (e) {
@@ -281,7 +279,7 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
       final profileData = await ProfileService.getProfile();
       if (profileData != null && profileData['height_cm'] != null) {
         userHeight = double.tryParse(profileData['height_cm'].toString());
-        print('🔄 Refreshed user height: $userHeight');
+        // Refreshed user height
         
         // Force refresh measurements to recalculate BMI with new height
         latestMeasurements = await _getLatestMeasurementsFromProgress();
@@ -296,10 +294,7 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
   Future<List<ProgressModel>> _loadBodyMeasurements() async {
     try {
       final measurements = await BodyMeasurementsService.getBodyMeasurements();
-      print('🔍 Loaded ${measurements.length} body measurements');
-      for (var m in measurements) {
-        print('🔍 Body measurement: ${m.weight}kg on ${m.dateRecorded}');
-      }
+      // Loaded ${measurements.length} body measurements
       return measurements; // Fixed return type
     } catch (e) {
       print('Error loading body measurements: $e');
@@ -427,20 +422,20 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
 
   // Check if user has annual membership (Plan ID 1)
   Future<void> _checkAnnualMembership() async {
-    print('🚀 Progress Page - _checkAnnualMembership() method called!');
+    // Check annual membership
     try {
       final userId = AuthService.getCurrentUserId();
-      print('🔍 Progress Page - Checking annual membership for user ID: $userId');
+      // Checking annual membership for user ID: $userId
       
       if (userId == null) {
-        print('❌ Progress Page - User ID is null, setting _hasAnnualMembership to false');
+        // User ID is null
         _hasAnnualMembership = false;
         if (mounted) setState(() {});
         return;
       }
 
       final subscriptionData = await SubscriptionService.getCurrentSubscription(userId);
-      print('🔍 Progress Page - Subscription data received: $subscriptionData');
+      // Subscription data received
       
       if (subscriptionData != null && subscriptionData['subscription'] != null) {
         final subscription = subscriptionData['subscription'];
@@ -453,14 +448,14 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
           setState(() {});
         }
         
-        print('✅ Progress Page - Annual membership check: $_hasAnnualMembership (Plan ID: $planId)');
+        // Annual membership: $_hasAnnualMembership
       } else {
-        print('❌ Progress Page - No subscription data found, setting _hasAnnualMembership to false');
+        // No subscription data
         _hasAnnualMembership = false;
         if (mounted) setState(() {});
       }
     } catch (e) {
-      print('❌ Progress Page - Error checking annual membership: $e');
+      // Error checking membership: $e
       _hasAnnualMembership = false;
       if (mounted) setState(() {});
     }
@@ -566,6 +561,8 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
                         _buildModernHeader(),
                         SizedBox(height: 24),
                         _buildProgressiveOverloadSection(),
+                        SizedBox(height: 24),
+                        _buildWeeklyMuscleAnalyticsSection(),
                         SizedBox(height: 24),
                         _buildWorkoutHeatmapSection(),
                         SizedBox(height: 24),
@@ -881,6 +878,83 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
         ),
       ),
       );
+  }
+
+  Widget _buildWeeklyMuscleAnalyticsSection() {
+    if (!_hasAnnualMembership) {
+      return _buildLockedState('Weekly Muscle Analytics');
+    }
+    return GestureDetector(
+      onTap: () async {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => WeeklyMuscleAnalyticsPage(),
+          ),
+        );
+      },
+      child: Container(
+        padding: EdgeInsets.all(28),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFF2A2A2A), Color(0xFF1B1B1B)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Color(0xFF3A3A3A), width: 1),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 4,
+              offset: Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Color(0xFF8E44AD).withOpacity(0.3), Color(0xFF8E44AD).withOpacity(0.1)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Color(0xFF8E44AD).withOpacity(0.3), width: 1),
+              ),
+              child: Center(
+                child: Icon(Icons.analytics, color: Colors.white, size: 28),
+              ),
+            ),
+            SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Weekly Muscle Analytics',
+                    style: GoogleFonts.poppins(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    'See trained muscles, frequency and intensity, with auto summary',
+                    style: GoogleFonts.poppins(color: Colors.white70, fontSize: 13),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, color: Colors.white70),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildEnhancedOverloadStatCard(String title, String value, IconData icon, Color color) {
@@ -1438,18 +1512,21 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-             Text(
-               'Weight & BMI Stats',
-               style: GoogleFonts.poppins(
-                 fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                 color: Colors.white,
+             Flexible(
+               child: Text(
+                 'Weight & BMI Stats',
+                 style: GoogleFonts.poppins(
+                   fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                   color: Colors.white,
+                 ),
                ),
              ),
+            SizedBox(width: 8),
             GestureDetector(
               onTap: _showAddWeightDialog,
               child: Container(
-                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     colors: [
@@ -2140,48 +2217,55 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [Color(0xFF6C5CE7), Color(0xFF5A4FCF)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(
-                      Icons.straighten_rounded,
-                      color: Colors.white,
-                      size: 20,
-                    ),
-                  ),
-                  SizedBox(width: 12),
-                  Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                        'Body Measurements',
-                  style: GoogleFonts.poppins(
-                          fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                          color: Colors.white,
-                  ),
-                ),
-                Text(
-                        'Track your body composition',
-                  style: GoogleFonts.poppins(
-                          fontSize: 14,
-                    color: Colors.grey[400],
+              Flexible(
+                child: Row(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [Color(0xFF6C5CE7), Color(0xFF5A4FCF)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
                         ),
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                    ],
-                  ),
-                ],
+                      child: Icon(
+                        Icons.straighten_rounded,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                    ),
+                    SizedBox(width: 12),
+                    Flexible(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Body Measurements',
+                            style: GoogleFonts.poppins(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          Text(
+                            'Track your body composition',
+                            style: GoogleFonts.poppins(
+                              fontSize: 14,
+                              color: Colors.grey[400],
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
+              SizedBox(width: 8),
               GestureDetector(
                 onTap: _showAddBodyMeasurementsDialog,
                 child: Container(
@@ -3645,7 +3729,7 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
       }
       
       if (migratedCount > 0) {
-        print('✅ Successfully migrated $migratedCount body measurements to database');
+        // Migrated $migratedCount measurements
         // Refresh the database measurements after migration
         _loadBodyMeasurements();
       }
