@@ -32,7 +32,7 @@ class UserService {
       
       final headers = await _authHeaders;
       final response = await http.get(
-        Uri.parse('$baseUrl/users/$userId'),
+        Uri.parse('$baseUrl?action=fetch&user_id=$userId'),
         headers: headers,
       );
 
@@ -118,7 +118,7 @@ class UserService {
     try {
       final headers = await _authHeaders;
       final response = await http.put(
-        Uri.parse('$baseUrl/users/$userId'),
+        Uri.parse('$baseUrl?action=update&id=$userId'),
         headers: headers,
         body: json.encode(updates),
       );

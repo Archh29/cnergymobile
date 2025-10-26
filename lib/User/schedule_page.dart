@@ -161,11 +161,11 @@ class _SchedulePageState extends State<SchedulePage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       SizedBox(height: MediaQuery.of(context).padding.top + 10),
-                      _buildHeader(isSmallScreen),
-                      SizedBox(height: isSmallScreen ? 20 : 24),
-                      if (_programs.isNotEmpty) 
-                        _buildWeeklySchedule(isSmallScreen)
-                      else
+                      if (_programs.isNotEmpty) ...[
+                        _buildHeader(isSmallScreen),
+                        SizedBox(height: isSmallScreen ? 20 : 24),
+                        _buildWeeklySchedule(isSmallScreen),
+                      ] else
                         _buildNoProgramsWidget(isSmallScreen),
                     ],
                   ),

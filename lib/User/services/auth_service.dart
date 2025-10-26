@@ -117,6 +117,13 @@ class AuthService {
         if (jsonResponse['success'] == true) {
           final userData = jsonResponse['data'];
           
+          // Check if account is deactivated
+          if (userData['account_status'] == 'deactivated') {
+            print('🚫 Account is deactivated - clearing user data');
+            await clearCurrentUser();
+            throw Exception('Account deactivated');
+          }
+          
           // Update both user ID and data
           _currentUserId = userId;
           _currentUser = userData;

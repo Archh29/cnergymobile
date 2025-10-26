@@ -200,63 +200,74 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF4CAF50),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(
-                  Icons.account_circle,
-                  color: Colors.white,
-                  size: 24,
-                ),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF4CAF50),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(
+                      Icons.account_circle,
+                      color: Colors.white,
+                      size: 24,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Current Status',
+                          style: GoogleFonts.poppins(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        Text(
+                          subscriptionStatus,
+                          style: GoogleFonts.poppins(
+                            color: const Color(0xFF4CAF50),
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Current Status',
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  const SizedBox(width: 44), // Align with the text content above
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: membershipStatus == 'PREMIUM' 
+                          ? const Color(0xFF4CAF50)  // Green for premium
+                          : membershipStatus == 'STANDARD'
+                              ? const Color(0xFF757575)  // Gray for standard
+                              : const Color(0xFF2196F3),  // Blue for access
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      membershipStatus,
                       style: GoogleFonts.poppins(
                         color: Colors.white,
-                        fontSize: 16,
+                        fontSize: 12,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-                     Text(
-                       subscriptionStatus,
-                       style: GoogleFonts.poppins(
-                         color: const Color(0xFF4CAF50),
-                         fontSize: 14,
-                         fontWeight: FontWeight.w500,
-                       ),
-                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-                 Container(
-                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                   decoration: BoxDecoration(
-                     color: membershipStatus == 'PREMIUM' 
-                         ? const Color(0xFF4CAF50)  // Green for premium
-                         : membershipStatus == 'STANDARD'
-                             ? const Color(0xFF757575)  // Gray for standard
-                             : const Color(0xFF2196F3),  // Blue for access
-                     borderRadius: BorderRadius.circular(20),
-                   ),
-                   child: Text(
-                     membershipStatus,
-                     style: GoogleFonts.poppins(
-                       color: Colors.white,
-                       fontSize: 12,
-                       fontWeight: FontWeight.w600,
-                     ),
-                   ),
-                 ),
             ],
           ),
           // Show membership card if user has member benefits
@@ -491,15 +502,18 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
                  size: 20,
                ),
                const SizedBox(width: 8),
-               Text(
-                 subscriptionType,
-                 style: GoogleFonts.poppins(
-                   color: Colors.white,
-                   fontSize: 16,
-                   fontWeight: FontWeight.w600,
+               Expanded(
+                 child: Text(
+                   subscriptionType,
+                   style: GoogleFonts.poppins(
+                     color: Colors.white,
+                     fontSize: 16,
+                     fontWeight: FontWeight.w600,
+                   ),
+                   overflow: TextOverflow.ellipsis,
                  ),
                ),
-               const Spacer(),
+               const SizedBox(width: 8),
                Container(
                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                  decoration: BoxDecoration(
@@ -995,15 +1009,18 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
                 size: 20,
               ),
               const SizedBox(width: 8),
-              Text(
-                'Membership',
-                style: GoogleFonts.poppins(
-                  color: Colors.white,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
+              Expanded(
+                child: Text(
+                  'Membership',
+                  style: GoogleFonts.poppins(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
-              const Spacer(),
+              const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
@@ -1225,17 +1242,30 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
     // Get subscription history from the API response
     final subscriptionHistory = _subscriptionData!['subscription_history'] as List<dynamic>? ?? [];
     
-    // Don't filter out subscriptions - show all active subscriptions
-    // The user can have multiple active subscriptions (membership + monthly access)
-    final filteredHistory = subscriptionHistory;
+    // Filter out individual plans if user has combination package
+    List<dynamic> filteredHistory = List.from(subscriptionHistory);
+    
+    // Check if user has combination package (Membership + 1 Month Access)
+    bool hasCombinationPackage = subscriptionHistory.any((sub) => 
+        sub['plan_name']?.toString().toLowerCase().contains('membership + 1 month access') == true);
+    
+    if (hasCombinationPackage) {
+      // Remove individual plans (Gym Membership Fee and Monthly Access) when combination package exists
+      filteredHistory = subscriptionHistory.where((sub) {
+        final planName = sub['plan_name']?.toString().toLowerCase() ?? '';
+        return !(planName.contains('gym membership fee') || 
+                 planName.contains('monthly access (member rate)'));
+      }).toList();
+      print('Debug: Filtered out individual plans due to combination package');
+    }
     
     // Debug logging
     print('Debug: Total subscription history count: ${subscriptionHistory.length}');
-    print('Debug: Showing all subscriptions (no filtering)');
+    print('Debug: Has combination package: $hasCombinationPackage');
     print('Debug: Filtered history count: ${filteredHistory.length}');
-    for (int i = 0; i < subscriptionHistory.length; i++) {
-      final sub = subscriptionHistory[i];
-      print('Debug: Subscription $i - ID: ${sub['id']}, Plan: ${sub['plan_name']}, Price: ${sub['price']}, Duration: ${sub['duration_months']} months');
+    for (int i = 0; i < filteredHistory.length; i++) {
+      final sub = filteredHistory[i];
+      print('Debug: Filtered Subscription $i - ID: ${sub['id']}, Plan: ${sub['plan_name']}, Price: ${sub['price']}, Duration: ${sub['duration_months']} months');
     }
     
     if (filteredHistory.isEmpty) {
@@ -1356,17 +1386,10 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
 
   Widget _buildSubscriptionHistoryDetails(Map<String, dynamic> subscription, String planDuration, int daysRemaining) {
     final price = subscription['price']?.toString() ?? '0';
-    final startDate = subscription['start_date'];
-    final endDate = subscription['end_date'];
     
     return Column(
       children: [
         _buildDetailRow('Price', '₱$price'),
-        _buildDetailRow('Duration', planDuration),
-        _buildDetailRow('Start Date', SubscriptionService.formatDate(startDate)),
-        _buildDetailRow('End Date', SubscriptionService.formatDate(endDate)),
-        if (daysRemaining > 0)
-          _buildDetailRow('Days Remaining', '$daysRemaining days'),
       ],
     );
   }

@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:http/http.dart' as http;
 import 'dart:async';
 import 'dart:convert';
 import './models/routine.models.dart';
 import './models/workoutpreview_model.dart';
 import './services/workout_preview_service.dart';
 import './services/progress_analytics_service.dart';
+import './services/smart_suggestion_service.dart';
+import './widgets/set_experience_modal.dart';
+import './widgets/smart_suggestion_modal.dart';
 import './exercise_instructions_page.dart';
 import './exercise_selection_modal.dart';
 import '../utils/error_handler.dart';
@@ -30,7 +34,7 @@ class WorkoutSessionPage extends StatefulWidget {
   _WorkoutSessionPageState createState() => _WorkoutSessionPageState();
 }
 
-class _WorkoutSessionPageState extends State<WorkoutSessionPage> {
+class _WorkoutSessionPageState extends State<WorkoutSessionPage> with WidgetsBindingObserver {
   int currentExerciseIndex = 0;
   int currentSetIndex = 0;
   bool isWorkoutStarted = true;
@@ -46,6 +50,10 @@ class _WorkoutSessionPageState extends State<WorkoutSessionPage> {
   int restTimeRemaining = 120;
   int customRestTime = 120;
   bool useCustomTimer = false;
+  
+  // Track rest timer start time to handle background properly
+  DateTime? _restTimerStartTime;
+  int _initialRestTime = 120;
   
   // Rest timer picker state
   Map<String, int> exerciseRestTimes = {}; // Store rest time for each exercise
@@ -78,10 +86,15 @@ class _WorkoutSessionPageState extends State<WorkoutSessionPage> {
   
   // Map to track if a field is showing previous data as a guide
   Map<String, bool> _showingPreviousData = {};
+  
+  // Map to track adjusted weights per exercise and set
+  Map<String, Map<int, double>> _adjustedWeights = {};
+  Map<String, Map<int, Map<String, dynamic>>> _setSuggestions = {}; // Store suggestions for each set
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this); // Add lifecycle observer
     print('🚀 WorkoutSessionPage: initState() called - mounted: $mounted');
     try {
       _initializeWorkout();
@@ -91,6 +104,46 @@ class _WorkoutSessionPageState extends State<WorkoutSessionPage> {
       
     } catch (e) {
       print('❌ WorkoutSessionPage: Initialization error: $e');
+    }
+  }
+  
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    
+    if (state == AppLifecycleState.resumed) {
+      // App came back to foreground
+      if (isTimerRunning && showRestTimer) {
+        print('🔄 App resumed - checking rest timer');
+        _updateRestTimerOnResume();
+      }
+    } else if (state == AppLifecycleState.paused) {
+      // App went to background
+      print('📱 App went to background');
+    }
+  }
+  
+  void _updateRestTimerOnResume() {
+    if (_restTimerStartTime == null || !isTimerRunning) return;
+    
+    // Calculate actual elapsed time
+    final elapsed = DateTime.now().difference(_restTimerStartTime!).inSeconds;
+    final remaining = (_initialRestTime - elapsed).clamp(0, _initialRestTime);
+    
+    print('🔄 Rest timer on resume - elapsed: ${elapsed}s, remaining: ${remaining}s');
+    
+    setState(() {
+      restTimeRemaining = remaining;
+    });
+    
+    // If time is up, stop the timer
+    if (restTimeRemaining <= 0) {
+      restTimer?.cancel();
+      _restTimerStartTime = null;
+      setState(() {
+        isTimerRunning = false;
+        showRestTimer = false;
+      });
     }
   }
 
@@ -243,10 +296,12 @@ class _WorkoutSessionPageState extends State<WorkoutSessionPage> {
     if (setIndex >= currentExercise.sets) return;
 
     if (!mounted) return;
+    
+    // Parse values outside setState to make them accessible
+    int repsInt = int.tryParse(reps) ?? 0;
+    double weightDouble = double.tryParse(weight) ?? 0.0;
+    
     setState(() {
-      int repsInt = int.tryParse(reps) ?? 0;
-      double weightDouble = double.tryParse(weight) ?? 0.0;
-            
       final newSet = WorkoutSetModel(
         reps: repsInt,
         weight: weightDouble,
@@ -268,11 +323,19 @@ class _WorkoutSessionPageState extends State<WorkoutSessionPage> {
       currentExercise.isCompleted = true;
       _showExerciseCompletedModal();
     } else {
+      // Start rest timer first
       if (!mounted) return;
       setState(() {
         showRestTimer = true;
       });
       _startRestTimer();
+      
+        // Generate suggestion for this completed set
+        Future.delayed(Duration(milliseconds: 500), () {
+          if (mounted) {
+            _generateSetSuggestion(currentExercise, setIndex, repsInt, weightDouble);
+          }
+        });
     }
   }
 
@@ -337,6 +400,10 @@ class _WorkoutSessionPageState extends State<WorkoutSessionPage> {
       return;
     }
     
+    // Save initial values for background handling
+    _restTimerStartTime = DateTime.now();
+    _initialRestTime = restTimeRemaining;
+    
     setState(() {
       isTimerRunning = true;
       print('Starting timer: ${restTimeRemaining}s');
@@ -344,29 +411,29 @@ class _WorkoutSessionPageState extends State<WorkoutSessionPage> {
     print('⏰ Starting rest timer');
     restTimer?.cancel(); // Cancel any existing timer
     restTimer = Timer.periodic(Duration(seconds: 1), (timer) {
-      print('⏰ Rest timer tick - mounted: $mounted, restTimeRemaining: $restTimeRemaining');
-      if (!mounted) {
-        print('⏰ Rest timer: Widget not mounted, canceling');
+      if (!mounted || _restTimerStartTime == null) {
+        print('⏰ Rest timer: Widget not mounted or start time missing, canceling');
         timer.cancel();
         return;
       }
-      if (restTimeRemaining > 0) {
+      
+      // Calculate remaining time based on actual elapsed time
+      final elapsed = DateTime.now().difference(_restTimerStartTime!).inSeconds;
+      final remaining = (_initialRestTime - elapsed).clamp(0, _initialRestTime);
+      
+      if (remaining > 0) {
         try {
-          print('⏰ Rest timer: Calling setState to decrement');
           setState(() {
-            restTimeRemaining--;
+            restTimeRemaining = remaining;
           });
-          print('⏰ Rest timer: setState completed');
         } catch (e) {
           print('❌ Error in rest timer setState: $e');
-          print('❌ Stack trace: ${StackTrace.current}');
           timer.cancel();
         }
       } else {
         print('⏰ Rest timer: Time up, canceling');
         timer.cancel();
         if (!mounted) {
-          print('⏰ Rest timer: Widget not mounted after completion');
           return;
         }
         try {
@@ -375,6 +442,8 @@ class _WorkoutSessionPageState extends State<WorkoutSessionPage> {
             isTimerRunning = false;
             showRestTimer = false;
           });
+          // Clear start time when timer completes
+          _restTimerStartTime = null;
           print('⏰ Rest timer: Completion setState done');
           // Timer finished - no popup needed
         } catch (e) {
@@ -389,6 +458,9 @@ class _WorkoutSessionPageState extends State<WorkoutSessionPage> {
     restTimer?.cancel();
     if (!mounted) return;
     
+    // Clear the start time when stopping
+    _restTimerStartTime = null;
+    
     setState(() {
       isTimerRunning = false;
       showRestTimer = false;
@@ -399,6 +471,11 @@ class _WorkoutSessionPageState extends State<WorkoutSessionPage> {
     if (!mounted) return;
     setState(() {
       restTimeRemaining = (restTimeRemaining + seconds).clamp(0, 600);
+      // Update initial time when manually adjusting
+      if (isTimerRunning && _restTimerStartTime != null) {
+        _initialRestTime = restTimeRemaining;
+        _restTimerStartTime = DateTime.now();
+      }
     });
   }
 
@@ -619,6 +696,195 @@ class _WorkoutSessionPageState extends State<WorkoutSessionPage> {
     return '${minutes.toString().padLeft(2, '0')}:${remainingSeconds.toString().padLeft(2, '0')}';
   }
 
+  // Generate suggestion for a completed set (without showing modal)
+  void _generateSetSuggestion(WorkoutExerciseModel exercise, int setIndex, int reps, double weight) {
+    // Generate a random experience for now (in real app, this would come from user input)
+    final experiences = ['easy', 'moderate', 'hard'];
+    final randomExperience = experiences[(DateTime.now().millisecondsSinceEpoch % 3)];
+    
+    final suggestion = SmartSuggestionService.generateSuggestion(
+      experience: randomExperience,
+      reps: reps,
+      weight: weight,
+      exerciseName: exercise.name,
+    );
+    
+    // Store the suggestion for this set
+    final exerciseKey = exercise.name;
+    if (!_setSuggestions.containsKey(exerciseKey)) {
+      _setSuggestions[exerciseKey] = {};
+    }
+    _setSuggestions[exerciseKey]![setIndex] = suggestion;
+    
+    print('💡 Generated suggestion for ${exercise.name} Set ${setIndex + 1}: ${suggestion['message']}');
+  }
+
+  // Show suggestion when light bulb is clicked
+  void _showSuggestionModal(WorkoutExerciseModel exercise, int setIndex) {
+    final exerciseKey = exercise.name;
+    final suggestion = _setSuggestions[exerciseKey]?[setIndex];
+    
+    if (suggestion == null) {
+      print('❌ No suggestion found for ${exercise.name} Set ${setIndex + 1}');
+      return;
+    }
+    
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (context) => SmartSuggestionModal(
+        message: suggestion['message'],
+        icon: suggestion['icon'],
+        color: suggestion['color'],
+        exerciseName: exercise.name,
+        reps: exercise.loggedSets[setIndex].reps,
+        weight: exercise.loggedSets[setIndex].weight,
+        onGotIt: () {
+          Navigator.of(context).pop();
+        },
+      ),
+    );
+  }
+
+  void _showSmartSuggestionModal(String experience, int reps, double weight) {
+    if (workoutExercises.isEmpty || currentExerciseIndex >= workoutExercises.length) return;
+    final currentExercise = workoutExercises[currentExerciseIndex];
+    
+    final suggestion = SmartSuggestionService.generateSuggestion(
+      experience: experience,
+      reps: reps,
+      weight: weight,
+      exerciseName: currentExercise.name,
+    );
+    
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => SmartSuggestionModal(
+        message: suggestion['message'],
+        icon: suggestion['icon'],
+        color: suggestion['color'],
+        exerciseName: currentExercise.name,
+        reps: reps,
+        weight: weight,
+        onGotIt: () {
+          Navigator.of(context).pop();
+          // User acknowledged suggestion, continue with rest timer
+        },
+      ),
+    );
+  }
+
+  void _showWeightAdjustmentModal(String suggestionType) {
+    if (workoutExercises.isEmpty || currentExerciseIndex >= workoutExercises.length) return;
+    final currentExercise = workoutExercises[currentExerciseIndex];
+    
+    String title = '';
+    String message = '';
+    double weightAdjustment = 0.0;
+    
+    switch (suggestionType) {
+      case 'weight_increase':
+        title = 'Increase Weight';
+        message = 'How much would you like to increase the weight?';
+        weightAdjustment = 2.5; // Default increase
+        break;
+      case 'weight_decrease':
+        title = 'Decrease Weight';
+        message = 'How much would you like to decrease the weight?';
+        weightAdjustment = -2.5; // Default decrease
+        break;
+      case 'maintain_weight':
+        title = 'Keep Current Weight';
+        message = 'Keep the current weight for the next set?';
+        weightAdjustment = 0.0;
+        break;
+    }
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(message),
+            if (suggestionType != 'maintain_weight') ...[
+              SizedBox(height: 16),
+              Text(
+                'Current weight: ${currentExercise.weight}kg',
+                style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+              ),
+              SizedBox(height: 8),
+              Text(
+                'Suggested adjustment: ${weightAdjustment > 0 ? '+' : ''}${weightAdjustment}kg',
+                style: GoogleFonts.poppins(
+                  color: weightAdjustment > 0 ? Colors.green : Colors.red,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text('Cancel'),
+          ),
+          if (suggestionType != 'maintain_weight')
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                _adjustWeightForNextSet(weightAdjustment);
+              },
+              child: Text('Apply'),
+            ),
+          if (suggestionType == 'maintain_weight')
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text('Keep Weight'),
+            ),
+        ],
+      ),
+    );
+  }
+
+  void _adjustWeightForNextSet(double adjustment) {
+    if (workoutExercises.isEmpty || currentExerciseIndex >= workoutExercises.length) return;
+    if (!mounted) return;
+    
+    setState(() {
+      final currentExercise = workoutExercises[currentExerciseIndex];
+      final newWeight = (currentExercise.weight + adjustment).clamp(0.0, 999.9);
+      
+      // Since weight is final, we need to update the weight controllers for the next set
+      // The weight will be applied when the user logs the next set
+      final nextSetIndex = currentExercise.completedSets;
+      final weightFieldKey = '${currentExercise.name}_${nextSetIndex}_weight';
+      if (_weightControllers.containsKey(weightFieldKey)) {
+        _weightControllers[weightFieldKey]!.text = newWeight.toString();
+      }
+      
+      // Store the adjusted weight for this exercise
+      // We'll use a map to track adjusted weights per exercise
+      if (!_adjustedWeights.containsKey(currentExercise.name)) {
+        _adjustedWeights[currentExercise.name] = {};
+      }
+      _adjustedWeights[currentExercise.name]![nextSetIndex] = newWeight;
+    });
+    
+    // Show confirmation
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Weight adjusted to ${workoutExercises[currentExerciseIndex].weight + adjustment}kg for next set',
+        ),
+        backgroundColor: Color(0xFF4ECDC4),
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
+
   void _storeWorkoutData() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -694,14 +960,26 @@ class _WorkoutSessionPageState extends State<WorkoutSessionPage> {
       context: context,
       barrierDismissible: false,
       builder: (BuildContext context) {
+        // Get screen dimensions for responsive design
+        final screenWidth = MediaQuery.of(context).size.width;
+        final screenHeight = MediaQuery.of(context).size.height;
+        final isSmallScreen = screenWidth < 360 || screenHeight < 600;
+        
         return Dialog(
           backgroundColor: Colors.transparent,
           child: Container(
-            margin: EdgeInsets.symmetric(horizontal: 20),
-            padding: EdgeInsets.all(24),
+            margin: EdgeInsets.symmetric(
+              horizontal: isSmallScreen ? 16 : 20,
+              vertical: isSmallScreen ? 20 : 40,
+            ),
+            constraints: BoxConstraints(
+              maxWidth: isSmallScreen ? screenWidth * 0.9 : 400,
+              maxHeight: isSmallScreen ? screenHeight * 0.7 : 500,
+            ),
+            padding: EdgeInsets.all(isSmallScreen ? 16 : 24),
             decoration: BoxDecoration(
               color: Color(0xFF1A1A1A),
-              borderRadius: BorderRadius.circular(20),
+              borderRadius: BorderRadius.circular(isSmallScreen ? 16 : 20),
               border: Border.all(
                 color: Color(0xFF333333),
                 width: 1,
@@ -719,8 +997,8 @@ class _WorkoutSessionPageState extends State<WorkoutSessionPage> {
               children: [
                 // Warning Icon
                 Container(
-                  width: 60,
-                  height: 60,
+                  width: isSmallScreen ? 50 : 60,
+                  height: isSmallScreen ? 50 : 60,
                   decoration: BoxDecoration(
                     color: Colors.red.withOpacity(0.1),
                     shape: BoxShape.circle,
@@ -728,34 +1006,34 @@ class _WorkoutSessionPageState extends State<WorkoutSessionPage> {
                   child: Icon(
                     Icons.warning_rounded,
                     color: Colors.red,
-                    size: 30,
+                    size: isSmallScreen ? 25 : 30,
                   ),
                 ),
-                SizedBox(height: 20),
+                SizedBox(height: isSmallScreen ? 16 : 20),
                 
                 // Title
                 Text(
                   'Discard Workout?',
                   style: GoogleFonts.poppins(
                     color: Colors.white,
-                    fontSize: 20,
+                    fontSize: isSmallScreen ? 18 : 20,
                     fontWeight: FontWeight.w700,
                   ),
                   textAlign: TextAlign.center,
                 ),
-                SizedBox(height: 12),
+                SizedBox(height: isSmallScreen ? 8 : 12),
                 
                 // Message
                 Text(
                   'Are you sure you want to discard this workout? All your progress will be lost and cannot be recovered.',
                   style: GoogleFonts.poppins(
                     color: Colors.grey[300],
-                    fontSize: 14,
+                    fontSize: isSmallScreen ? 13 : 14,
                     height: 1.5,
                   ),
                   textAlign: TextAlign.center,
                 ),
-                SizedBox(height: 24),
+                SizedBox(height: isSmallScreen ? 20 : 24),
                 
                 // Action Buttons
                 Row(
@@ -767,10 +1045,13 @@ class _WorkoutSessionPageState extends State<WorkoutSessionPage> {
                           Navigator.of(context).pop();
                         },
                         child: Container(
-                          padding: EdgeInsets.symmetric(vertical: 14),
+                          padding: EdgeInsets.symmetric(
+                            vertical: isSmallScreen ? 12 : 14,
+                            horizontal: isSmallScreen ? 8 : 12,
+                          ),
                           decoration: BoxDecoration(
                             color: Color(0xFF2A2A2A),
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: BorderRadius.circular(isSmallScreen ? 10 : 12),
                             border: Border.all(
                               color: Color(0xFF444444),
                               width: 1,
@@ -780,7 +1061,7 @@ class _WorkoutSessionPageState extends State<WorkoutSessionPage> {
                             'Cancel',
                             style: GoogleFonts.poppins(
                               color: Colors.white,
-                              fontSize: 16,
+                              fontSize: isSmallScreen ? 14 : 16,
                               fontWeight: FontWeight.w600,
                             ),
                             textAlign: TextAlign.center,
@@ -788,7 +1069,7 @@ class _WorkoutSessionPageState extends State<WorkoutSessionPage> {
                         ),
                       ),
                     ),
-                    SizedBox(width: 12),
+                    SizedBox(width: isSmallScreen ? 8 : 12),
                     
                     // Discard Button
                     Expanded(
@@ -804,10 +1085,13 @@ class _WorkoutSessionPageState extends State<WorkoutSessionPage> {
                           );
                         },
                         child: Container(
-                          padding: EdgeInsets.symmetric(vertical: 14),
+                          padding: EdgeInsets.symmetric(
+                            vertical: isSmallScreen ? 12 : 14,
+                            horizontal: isSmallScreen ? 8 : 12,
+                          ),
                           decoration: BoxDecoration(
                             color: Colors.red,
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: BorderRadius.circular(isSmallScreen ? 10 : 12),
                             boxShadow: [
                               BoxShadow(
                                 color: Colors.red.withOpacity(0.3),
@@ -820,7 +1104,7 @@ class _WorkoutSessionPageState extends State<WorkoutSessionPage> {
                             'Discard',
                             style: GoogleFonts.poppins(
                               color: Colors.white,
-                              fontSize: 16,
+                              fontSize: isSmallScreen ? 14 : 16,
                               fontWeight: FontWeight.w600,
                             ),
                             textAlign: TextAlign.center,
@@ -846,6 +1130,9 @@ class _WorkoutSessionPageState extends State<WorkoutSessionPage> {
     durationTimer?.cancel();
     clockTimer?.cancel();
     animationTimer?.cancel();
+    
+    // Remove lifecycle observer
+    WidgetsBinding.instance.removeObserver(this);
     
     print('💀 WorkoutSessionPage: Disposing text controllers');
     // Dispose all text controllers
@@ -1582,27 +1869,50 @@ class _WorkoutSessionPageState extends State<WorkoutSessionPage> {
                   Expanded(
                     child: _buildEditableRepsField(exercise, index, isCompleted: isCompleted),
                   ),
-                  Container(
-                    width: 30,
-                    child: GestureDetector(
-                      onTap: () => _toggleSetCompletion(exercise, index),
-                      child: AnimatedContainer(
-                        duration: Duration(milliseconds: 200),
-                        curve: Curves.easeOut,
-                        width: 24,
-                        height: 24,
-                        decoration: BoxDecoration(
-                          color: isCompleted ? Colors.green[300] : Colors.grey[600],
-                          borderRadius: BorderRadius.circular(6), // More rounded like the image
-                        ),
-                        transform: Matrix4.identity(),
-                        child: Icon(
-                          Icons.check,
-                          color: Colors.white.withOpacity(1.0),
-                          size: 16,
+                  Row(
+                    children: [
+                      Container(
+                        width: 30,
+                        child: GestureDetector(
+                          onTap: () => _toggleSetCompletion(exercise, index),
+                          child: AnimatedContainer(
+                            duration: Duration(milliseconds: 200),
+                            curve: Curves.easeOut,
+                            width: 24,
+                            height: 24,
+                            decoration: BoxDecoration(
+                              color: isCompleted ? Colors.green[300] : Colors.grey[600],
+                              borderRadius: BorderRadius.circular(6), // More rounded like the image
+                            ),
+                            transform: Matrix4.identity(),
+                            child: Icon(
+                              Icons.check,
+                              color: Colors.white.withOpacity(1.0),
+                              size: 16,
+                            ),
+                          ),
                         ),
                       ),
-                    ),
+                      // Light bulb icon for suggestions (only show if set is completed and has suggestion)
+                      if (isCompleted && _setSuggestions[exercise.name]?[index] != null)
+                        GestureDetector(
+                          onTap: () => _showSuggestionModal(exercise, index),
+                          child: Container(
+                            width: 24,
+                            height: 24,
+                            margin: EdgeInsets.only(left: 8),
+                            decoration: BoxDecoration(
+                              color: Color(0xFF4ECDC4).withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Icon(
+                              Icons.lightbulb_outline,
+                              color: Color(0xFF4ECDC4),
+                              size: 16,
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                 ],
               ),
@@ -2463,8 +2773,24 @@ class _WorkoutSessionPageState extends State<WorkoutSessionPage> {
                   print('🎯 Inside setState - showRestTimer set to: $showRestTimer, restTimeRemaining: $restTimeRemaining');
                 });
                 _startRestTimer();
+                
+                // Generate suggestion for this completed set
+                Future.delayed(Duration(milliseconds: 500), () {
+                  if (mounted) {
+                    final completedSet = exercise.loggedSets[setIndex];
+                    _generateSetSuggestion(exercise, setIndex, completedSet.reps, completedSet.weight);
+                  }
+                });
               } else {
                 print('🎯 Exercise rest time is 0, not showing timer');
+                
+                // Even if rest timer is disabled, generate suggestion
+                Future.delayed(Duration(milliseconds: 300), () {
+                  if (mounted) {
+                    final completedSet = exercise.loggedSets[setIndex];
+                    _generateSetSuggestion(exercise, setIndex, completedSet.reps, completedSet.weight);
+                  }
+                });
               }
             }
           }
@@ -3596,6 +3922,8 @@ class _WorkoutSessionPageState extends State<WorkoutSessionPage> {
 
 
   void _addExerciseToWorkout(ExerciseModel exercise) {
+    print('🔄 Adding exercise to workout: ${exercise.name} (ID: ${exercise.id})');
+    
     // Create a new WorkoutExerciseModel from the ExerciseModel
     final newWorkoutExercise = WorkoutExerciseModel(
       exerciseId: exercise.id,
@@ -3634,14 +3962,126 @@ class _WorkoutSessionPageState extends State<WorkoutSessionPage> {
       exerciseRestTimes[exerciseKey] = 120; // Default 2 minutes
     });
 
-    // Show success message
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('${exercise.name} added to workout'),
-        backgroundColor: Color(0xFF007AFF),
-        duration: Duration(seconds: 2),
-      ),
-    );
+    print('✅ Exercise added to local workout list. Now saving to database...');
+
+    // Add exercise to the routine in the database
+    _addExerciseToRoutine(exercise.id, 3, 10, 0.0);
+  }
+
+  Future<void> _addExerciseToRoutine(int? exerciseId, int sets, int reps, double weight) async {
+    if (exerciseId == null) return;
+    
+    try {
+      // Get user ID from AuthService (the correct source)
+      final prefs = await SharedPreferences.getInstance();
+      
+      // Get from 'current_user_id' key (not 'user_id')
+      final userId = prefs.getInt('current_user_id');
+      
+      print('🔍 Getting user ID from SharedPreferences...');
+      print('🔍 current_user_id: $userId');
+      
+      if (userId == null) {
+        print('❌ User ID not found in SharedPreferences (key: current_user_id)');
+        print('🔍 Available keys: ${prefs.getKeys()}');
+        return;
+      }
+      
+      print('📤 Sending API request to add exercise to routine:');
+      print('   routine_id: ${widget.routine.id}');
+      print('   user_id: $userId');
+      print('   exercise_id: $exerciseId');
+      print('   sets: $sets, reps: $reps, weight: $weight');
+      
+      final requestBody = {
+        'action': 'add_exercise_to_routine',
+        'routine_id': widget.routine.id,
+        'user_id': userId,
+        'exercise_id': exerciseId,
+        'sets': sets,
+        'reps': reps,
+        'weight': weight,
+      };
+      
+      print('📦 Request body: ${json.encode(requestBody)}');
+      
+      final response = await http.post(
+        Uri.parse('https://api.cnergy.site/routines.php'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode(requestBody),
+      );
+
+      if (response.statusCode == 200) {
+        final responseData = json.decode(response.body);
+        print('📊 API Response: ${responseData}');
+        if (responseData['success'] == true) {
+          final exerciseName = responseData['exercise_name'] ?? 'Unknown';
+          print('✅ EXERCISE SAVED TO ROUTINE PERMANENTLY!');
+          print('   Exercise: $exerciseName');
+          print('   Member Workout Exercise ID: ${responseData['member_workout_exercise_id']}');
+          
+          // Show success message to user
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('✅ $exerciseName added to routine permanently!'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 3),
+            ),
+          );
+          
+          // Update the workout exercise with the database ID
+          if (responseData['member_workout_exercise_id'] != null) {
+            final exerciseToUpdate = workoutExercises.lastWhere(
+              (e) => e.exerciseId == exerciseId,
+              orElse: null,
+            );
+            if (exerciseToUpdate != null) {
+              print('💾 Updated exercise with database ID: ${responseData['member_workout_exercise_id']}');
+            }
+          }
+        } else {
+          print('❌ Failed to add exercise to routine: ${responseData['error'] ?? responseData['message']}');
+          print('📊 Debug Info: ${responseData['debug_info']}');
+          
+          // Show error message to user with debug info
+          String errorMessage = responseData['error'] ?? responseData['message'] ?? 'Unknown error';
+          if (responseData['debug_info'] != null) {
+            errorMessage = '$errorMessage\n(${responseData['debug_info']['message'] ?? ''})';
+          }
+          
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('❌ Failed to save to routine: $errorMessage'),
+              backgroundColor: Colors.red,
+              duration: Duration(seconds: 4),
+            ),
+          );
+        }
+      } else {
+        print('❌ HTTP error: ${response.statusCode}');
+        print('Response body: ${response.body}');
+        
+        // Show error to user
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Error connecting to server'),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      print('❌ Error adding exercise to routine: $e');
+      
+      // Show error to user
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('❌ Error: $e'),
+          backgroundColor: Colors.red,
+          duration: Duration(seconds: 3),
+        ),
+      );
+    }
   }
 
   Widget _buildWorkoutContent() {

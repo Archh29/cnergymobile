@@ -734,9 +734,9 @@ class _UserDashboardState extends State<UserDashboard> with TickerProviderStateM
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Message
+                      // Message (using display message to hide question marks)
                       Text(
-                        notification.message,
+                        notification.getDisplayMessage(),
                         style: GoogleFonts.poppins(
                           fontSize: 15,
                           fontWeight: notification.isUnread ? FontWeight.w600 : FontWeight.w500,

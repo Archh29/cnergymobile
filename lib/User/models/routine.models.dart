@@ -5,6 +5,7 @@ class RoutineModel {
   final String duration;
   final String difficulty;
   final String createdBy;
+  final int createdByTypeId;
   final String exerciseList;
   final String color;
   final String lastPerformed;
@@ -24,6 +25,7 @@ class RoutineModel {
     required this.duration,
     required this.difficulty,
     required this.createdBy,
+    this.createdByTypeId = 0,
     required this.exerciseList,
     required this.color,
     required this.lastPerformed,
@@ -45,6 +47,7 @@ class RoutineModel {
       duration: json['duration'] ?? '',
       difficulty: json['difficulty'] ?? '',
       createdBy: json['createdById']?.toString() ?? json['created_by']?.toString() ?? '',
+      createdByTypeId: json['createdByTypeId'] ?? 0,
       exerciseList: json['exerciseList'] ?? '',
       color: json['color'] ?? '0xFF96CEB4',
       lastPerformed: json['lastPerformed'] ?? 'Never',
@@ -88,6 +91,7 @@ class RoutineModel {
       'duration': duration,
       'difficulty': difficulty,
       'createdBy': createdBy,
+      'createdByTypeId': createdByTypeId,
       'exerciseList': exerciseList,
       'color': color,
       'lastPerformed': lastPerformed,

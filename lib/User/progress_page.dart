@@ -441,8 +441,8 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
         final subscription = subscriptionData['subscription'];
         final planId = subscription['plan_id'];
         
-        // Check if user has Plan ID 1 (Gym Membership Fee - Annual Membership)
-        _hasAnnualMembership = planId == 1;
+        // Check if user has premium access (Plan ID 1 or Plan ID 5)
+        _hasAnnualMembership = planId == 1 || planId == 5;
         
         if (mounted) {
           setState(() {});

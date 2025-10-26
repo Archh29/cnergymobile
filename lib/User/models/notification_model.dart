@@ -71,6 +71,12 @@ class NotificationModel {
     }
   }
 
+  // Helper method to strip leading question marks from message for display
+  String getDisplayMessage() {
+    // Strip leading '?' or '??' from the message without modifying original data
+    return message.replaceFirst(RegExp(r'^\?+\s*'), '');
+  }
+
   // Helper method to format timestamp
   String getFormattedTime() {
     try {

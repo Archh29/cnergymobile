@@ -30,6 +30,7 @@ class _SessionStatusWidgetState extends State<SessionStatusWidget> {
 
   Future<void> _loadSessionStatus() async {
     try {
+      if (!mounted) return;
       setState(() {
         _isLoading = true;
         _errorMessage = null;
@@ -37,6 +38,7 @@ class _SessionStatusWidgetState extends State<SessionStatusWidget> {
 
       final currentUserId = AuthService.getCurrentUserId();
       if (currentUserId == null) {
+        if (!mounted) return;
         setState(() {
           _isLoading = false;
           _errorMessage = 'Please log in to view session status';
@@ -49,6 +51,7 @@ class _SessionStatusWidgetState extends State<SessionStatusWidget> {
         coachId: widget.coachId,
       );
 
+      if (!mounted) return;
       setState(() {
         _sessionStatus = sessionStatus;
         _isLoading = false;
@@ -60,6 +63,7 @@ class _SessionStatusWidgetState extends State<SessionStatusWidget> {
       }
 
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _isLoading = false;
         _errorMessage = 'Error loading session status: $e';

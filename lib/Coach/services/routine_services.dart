@@ -1,7 +1,9 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/routine.models.dart';
 import 'coach_service.dart';
+import 'auth_service.dart';
 
 class RoutineServices {
   static const String baseUrl = 'https://api.cnergy.site';
@@ -123,6 +125,69 @@ class RoutineServices {
     } catch (e) {
       print('Error deleting routine: $e');
       return false;
+    }
+  }
+
+  // Get workout history
+  static Future<List<WorkoutSession>> getWorkoutHistory() async {
+    try {
+      int? currentUserId = await AuthService.getCurrentUserId();
+      if (currentUserId == null) return [];
+      
+      final prefs = await SharedPreferences.getInstance();
+      
+      String userKey = 'workout_sessions_$currentUserId';
+      List<String> sessions = prefs.getStringList(userKey) ?? [];
+      
+      return sessions.map((sessionStr) {
+        final sessionData = json.decode(sessionStr);
+        return WorkoutSession.fromJson(sessionData);
+      }).toList();
+    } catch (e) {
+      print('Error loading workout history: $e');
+      return [];
+    }
+  }
+
+  // Calculate routine statistics
+  static Map<String, dynamic> calculateRoutineStats(List<WorkoutSession> sessions, String routineName) {
+    final routineSessions = sessions.where((s) => s.routineName == routineName).toList();
+    
+    if (routineSessions.isEmpty) {
+      return {
+        'totalSessions': 0,
+        'averageDuration': 0,
+        'totalVolume': 0.0,
+        'averageRating': 0.0,
+        'lastPerformed': 'Never',
+      };
+    }
+
+    final totalDuration = routineSessions.fold<int>(0, (sum, s) => sum + s.duration);
+    final totalVolume = routineSessions.fold<double>(0, (sum, s) => sum + s.totalVolume);
+    final totalRating = routineSessions.fold<int>(0, (sum, s) => sum + s.rating);
+
+    return {
+      'totalSessions': routineSessions.length,
+      'averageDuration': (totalDuration / routineSessions.length).round(),
+      'totalVolume': totalVolume,
+      'averageRating': totalRating / routineSessions.length,
+      'lastPerformed': formatDate(routineSessions.first.date),
+    };
+  }
+
+  static String formatDate(DateTime date) {
+    final now = DateTime.now();
+    final difference = now.difference(date).inDays;
+
+    if (difference == 0) {
+      return 'Today';
+    } else if (difference == 1) {
+      return 'Yesterday';
+    } else if (difference < 7) {
+      return '$difference days ago';
+    } else {
+      return '${date.day}/${date.month}/${date.year}';
     }
   }
 }

@@ -33,21 +33,53 @@ class CoachModel {
 
   factory CoachModel.fromJson(Map<String, dynamic> json) {
     return CoachModel(
-      id: json['id'] ?? 0,
+      id: _safeParseInt(json['id']) ?? 0,
       name: json['name'] ?? '',
       specialty: json['specialty'] ?? '',
       experience: json['experience'] ?? '',
-      rating: (json['rating'] ?? 0.0).toDouble(),
-      totalClients: json['total_clients'] ?? 0,
+      rating: _safeParseDouble(json['rating']) ?? 0.0,
+      totalClients: _safeParseInt(json['total_clients']) ?? 0,
       bio: json['bio'] ?? '',
       imageUrl: json['image_url'] ?? '',
       isAvailable: json['is_available'] ?? true,
-      sessionRate: (json['hourly_rate'] ?? 0.0).toDouble(),
-      monthlyRate: json['monthly_rate'] != null ? (json['monthly_rate'] as num).toDouble() : null,
-      sessionPackageRate: json['session_package_rate'] != null ? (json['session_package_rate'] as num).toDouble() : null,
-      sessionPackageCount: json['session_package_count'],
+      sessionRate: _safeParseDouble(json['hourly_rate']) ?? 0.0,
+      monthlyRate: json['monthly_rate'] != null ? _safeParseDouble(json['monthly_rate']) : null,
+      sessionPackageRate: json['session_package_rate'] != null ? _safeParseDouble(json['session_package_rate']) : null,
+      sessionPackageCount: _safeParseInt(json['session_package_count']),
       certifications: List<String>.from(json['certifications'] ?? []),
     );
+  }
+
+  // Helper method to safely parse double values from API responses
+  static double? _safeParseDouble(dynamic value) {
+    if (value == null) return null;
+    if (value is double) return value;
+    if (value is int) return value.toDouble();
+    if (value is String) {
+      try {
+        return double.parse(value);
+      } catch (e) {
+        print('Error parsing double from string: $value');
+        return null;
+      }
+    }
+    return null;
+  }
+
+  // Helper method to safely parse int values from API responses
+  static int? _safeParseInt(dynamic value) {
+    if (value == null) return null;
+    if (value is int) return value;
+    if (value is double) return value.toInt();
+    if (value is String) {
+      try {
+        return int.parse(value);
+      } catch (e) {
+        print('Error parsing int from string: $value');
+        return null;
+      }
+    }
+    return null;
   }
 
   Map<String, dynamic> toJson() {

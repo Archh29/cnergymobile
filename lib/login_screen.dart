@@ -3,7 +3,7 @@ import 'package:gym/SignUp.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:get/get.dart';
-import 'guest_registration_screen.dart';
+import 'walk_in_registration_screen.dart';
 import 'package:flutter/gestures.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -11,10 +11,11 @@ import 'package:google_fonts/google_fonts.dart';
 import './User/services/auth_service.dart';
 import 'user_dashboard.dart';
 import 'account_verification_page.dart';
+import 'account_deactivated_page.dart';
 import 'coach_dashboard.dart'; // Import CoachDashboard
 import 'first_time_setup_screen.dart';
 import 'welcome_onboarding_screen.dart';
-// import 'guest_registration_screen.dart'; // Import GuestRegistrationScreen - File deleted
+// import 'walk_in_registration_screen.dart'; // Import WalkInRegistrationScreen - File deleted
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -375,10 +376,34 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       var data = jsonDecode(response.body);
       print('📡 Login response: $data');
 
+      // Handle deactivated account (403 status)
+      if (response.statusCode == 403 && data.containsKey("account_status") && data["account_status"] == "deactivated") {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => AccountDeactivatedPage(),
+          ),
+        );
+        return;
+      }
+
       if (response.statusCode == 200) {
         // Check for error first
         if (data.containsKey("error")) {
           String errorMessage = data["error"];
+          
+          // Check if account is deactivated
+          if (data.containsKey("account_status") && data["account_status"] == "deactivated") {
+            // Navigate to deactivation page
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) => AccountDeactivatedPage(),
+              ),
+            );
+            return;
+          }
+          
           Get.snackbar(
             "Login Failed",
             errorMessage,
@@ -524,7 +549,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => GuestRegistrationScreen(),
+        builder: (context) => WalkInRegistrationScreen(),
       ),
     );
   }
@@ -858,7 +883,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                         ),
                       ),
                       child: Text(
-                        'GUEST ACCESS',
+                        'WALK-IN ACCESS',
                         style: GoogleFonts.poppins(
                           fontSize: 16,
                           fontWeight: FontWeight.w600,

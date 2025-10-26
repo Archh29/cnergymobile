@@ -4,20 +4,22 @@ import 'package:fl_chart/fl_chart.dart';
 import '../models/progress_tracker_model.dart';
 import '../services/progress_analytics_service.dart';
 
-class CoachProgressTrackerWidget extends StatefulWidget {
-  const CoachProgressTrackerWidget({Key? key}) : super(key: key);
+class ProgressTrackerWidget extends StatefulWidget {
+  const ProgressTrackerWidget({Key? key}) : super(key: key);
 
   @override
-  _CoachProgressTrackerWidgetState createState() => _CoachProgressTrackerWidgetState();
+  _ProgressTrackerWidgetState createState() => _ProgressTrackerWidgetState();
 }
 
-class _CoachProgressTrackerWidgetState extends State<CoachProgressTrackerWidget>
+class _ProgressTrackerWidgetState extends State<ProgressTrackerWidget>
     with TickerProviderStateMixin {
   late TabController _tabController;
   Map<String, List<ProgressTrackerModel>> _allProgress = {};
   Map<String, ProgressAnalytics> _muscleGroupAnalytics = {};
   List<ProgressTrackerModel> _recentLifts = [];
   bool _isLoading = true;
+  String _selectedExercise = '';
+  String _selectedMuscleGroup = '';
 
   @override
   void initState() {
@@ -79,7 +81,7 @@ class _CoachProgressTrackerWidgetState extends State<CoachProgressTrackerWidget>
               children: [
                 const SizedBox(height: 8),
                 Text(
-                  'Monitor member strength progression and analyze their performance',
+                  'Track your strength progression and analyze your performance',
                   style: GoogleFonts.poppins(
                     color: Colors.white.withOpacity(0.7),
                     fontSize: 14,
@@ -177,7 +179,7 @@ class _CoachProgressTrackerWidgetState extends State<CoachProgressTrackerWidget>
             ),
             const SizedBox(height: 16),
             Text(
-              'No member progress data yet',
+              'No progress data yet',
               style: GoogleFonts.poppins(
                 color: Colors.white.withOpacity(0.7),
                 fontSize: 16,
@@ -185,7 +187,7 @@ class _CoachProgressTrackerWidgetState extends State<CoachProgressTrackerWidget>
             ),
             const SizedBox(height: 8),
             Text(
-              'Members need to complete workouts to see progression data',
+              'Start logging your lifts to see your progression',
               style: GoogleFonts.poppins(
                 color: Colors.white.withOpacity(0.5),
                 fontSize: 14,
@@ -355,7 +357,7 @@ class _CoachProgressTrackerWidgetState extends State<CoachProgressTrackerWidget>
       children: [
         Expanded(
           child: _buildStatCard(
-            'Member Workouts',
+            'Total Workouts',
             '${_recentLifts.length}',
             Icons.fitness_center,
             const Color(0xFF4ECDC4),
@@ -445,7 +447,7 @@ class _CoachProgressTrackerWidgetState extends State<CoachProgressTrackerWidget>
             ),
             const SizedBox(height: 16),
             Text(
-              'No member exercises tracked yet',
+              'No exercises tracked yet',
               style: GoogleFonts.poppins(
                 color: Colors.white.withOpacity(0.7),
                 fontSize: 18,
@@ -453,7 +455,7 @@ class _CoachProgressTrackerWidgetState extends State<CoachProgressTrackerWidget>
             ),
             const SizedBox(height: 8),
             Text(
-              'Members need to complete workouts from their programs to see progress here',
+              'Complete workouts from your programs to see progress here',
               style: GoogleFonts.poppins(
                 color: Colors.white.withOpacity(0.5),
                 fontSize: 14,
@@ -488,7 +490,7 @@ class _CoachProgressTrackerWidgetState extends State<CoachProgressTrackerWidget>
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '1. Assign workout programs to members\n2. Members complete exercises with weights & reps\n3. Member progress will appear here automatically',
+                    '1. Go to your workout programs\n2. Complete exercises with weights & reps\n3. Your progress will appear here automatically',
                     style: GoogleFonts.poppins(
                       color: Colors.white.withOpacity(0.8),
                       fontSize: 12,
@@ -513,7 +515,7 @@ class _CoachProgressTrackerWidgetState extends State<CoachProgressTrackerWidget>
           exerciseName: exerciseName,
           muscleGroup: exerciseData.first.muscleGroup,
           data: exerciseData,
-          programName: exerciseData.first.programName ?? 'Unknown',
+          programName: exerciseData.first.programName,
         );
 
         return Container(
@@ -792,7 +794,7 @@ class _CoachProgressTrackerWidgetState extends State<CoachProgressTrackerWidget>
             ),
             const SizedBox(height: 16),
             Text(
-              'No member recent lifts',
+              'No recent lifts',
               style: GoogleFonts.poppins(
                 color: Colors.white.withOpacity(0.7),
                 fontSize: 18,
@@ -800,7 +802,7 @@ class _CoachProgressTrackerWidgetState extends State<CoachProgressTrackerWidget>
             ),
             const SizedBox(height: 8),
             Text(
-              'Members need to complete workouts from their programs to see recent lifts here',
+              'Complete workouts from your programs to see recent lifts here',
               style: GoogleFonts.poppins(
                 color: Colors.white.withOpacity(0.5),
                 fontSize: 14,

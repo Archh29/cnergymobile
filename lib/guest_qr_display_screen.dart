@@ -6,19 +6,19 @@ import 'dart:convert';
 import './User/services/guest_session_service.dart';
 import 'guest_session_status_screen.dart';
 
-class GuestQRDisplayScreen extends StatefulWidget {
+class WalkInQRDisplayScreen extends StatefulWidget {
   final Map<String, dynamic> sessionData;
 
-  const GuestQRDisplayScreen({
+  const WalkInQRDisplayScreen({
     super.key,
     required this.sessionData,
   });
 
   @override
-  State<GuestQRDisplayScreen> createState() => _GuestQRDisplayScreenState();
+  State<WalkInQRDisplayScreen> createState() => _WalkInQRDisplayScreenState();
 }
 
-class _GuestQRDisplayScreenState extends State<GuestQRDisplayScreen> {
+class _WalkInQRDisplayScreenState extends State<WalkInQRDisplayScreen> {
   Map<String, dynamic>? _currentSessionData;
   bool _isLoading = false;
 
@@ -162,7 +162,7 @@ class _GuestQRDisplayScreenState extends State<GuestQRDisplayScreen> {
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
-          'Guest Session',
+          'Walk-in Session',
           style: GoogleFonts.poppins(
             color: Colors.white,
             fontSize: 20,
@@ -182,7 +182,7 @@ class _GuestQRDisplayScreenState extends State<GuestQRDisplayScreen> {
           padding: const EdgeInsets.all(20),
           child: Column(
             children: [
-              // Guest Info Card
+              // Walk-in Info Card
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(20),
@@ -326,7 +326,7 @@ class _GuestQRDisplayScreenState extends State<GuestQRDisplayScreen> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Your guest session is ready! You can now access the gym facilities.',
+                        'Your walk-in session is ready! You can now access the gym facilities.',
                         style: GoogleFonts.poppins(
                           color: Colors.white.withOpacity(0.9),
                           fontSize: 16,

@@ -418,7 +418,7 @@ class RoutineModel {
           : {},
       isPublic: json['is_public'] ?? false,
       isFavorite: json['is_favorite'] ?? false,
-      averageRating: json['average_rating']?.toDouble(),
+      averageRating: _safeParseDouble(json['average_rating']),
       totalRatings: json['total_ratings'],
       detailedExercises: json['detailedExercises'] != null && json['detailedExercises'] is List
           ? (() {
@@ -574,5 +574,62 @@ class RoutineModel {
   @override
   String toString() {
     return 'RoutineModel(id: $id, name: $name, category: $categoryText, difficulty: $difficultyText)';
+  }
+
+  // Helper method to safely parse double values from API responses
+  static double? _safeParseDouble(dynamic value) {
+    if (value == null) return null;
+    if (value is double) return value;
+    if (value is int) return value.toDouble();
+    if (value is String) {
+      try {
+        return double.parse(value);
+      } catch (e) {
+        print('Error parsing double from string: $value');
+        return null;
+      }
+    }
+    return null;
+  }
+}
+
+class WorkoutSession {
+  final String id;
+  final DateTime date;
+  final String routineName;
+  final int duration;
+  final int exercises;
+  final double totalVolume;
+  final int calories;
+  final int rating;
+  final String bodyPart;
+  final String notes;
+
+  WorkoutSession({
+    required this.id,
+    required this.date,
+    required this.routineName,
+    required this.duration,
+    required this.exercises,
+    required this.totalVolume,
+    required this.calories,
+    required this.rating,
+    required this.bodyPart,
+    required this.notes,
+  });
+
+  factory WorkoutSession.fromJson(Map<String, dynamic> json) {
+    return WorkoutSession(
+      id: json['id']?.toString() ?? '',
+      date: DateTime.parse(json['date']),
+      routineName: json['routine'] ?? '',
+      duration: json['duration'] ?? 0,
+      exercises: json['exercises'] ?? 0,
+      totalVolume: (json['totalVolume'] ?? 0.0).toDouble(),
+      calories: json['calories'] ?? 0,
+      rating: json['rating'] ?? 0,
+      bodyPart: json['bodyPart'] ?? '',
+      notes: json['notes'] ?? '',
+    );
   }
 }

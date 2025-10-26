@@ -18,6 +18,7 @@ import 'first_time_setup_screen.dart';
 import 'welcome_onboarding_screen.dart';
 import 'forgot_pass.dart';
 import 'account_verification_page.dart';
+import 'account_deactivated_page.dart';
 
 // Coach Pages
 import 'Coach/coach_messages_page.dart';
@@ -213,6 +214,20 @@ class _AuthWrapperState extends State<AuthWrapper> {
       }
     } catch (e) {
       print('❌ Error checking auth status: $e');
+      
+      // Check if the error is due to account deactivation
+      if (e.toString().contains('Account deactivated')) {
+        print('🚫 Account deactivated detected - redirecting to deactivation page');
+        if (mounted) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => AccountDeactivatedPage(),
+            ),
+          );
+          return;
+        }
+      }
     } finally {
       if (mounted) {
         setState(() {

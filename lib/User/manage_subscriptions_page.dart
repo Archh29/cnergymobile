@@ -215,6 +215,23 @@ class _ManageSubscriptionsPageState extends State<ManageSubscriptionsPage> {
         print('Debug: Error getting user subscriptions: $e');
       }
 
+      // Filter out individual Monthly Access plan if user has combination package
+      bool hasCombinationPackage = availedPlans.any((plan) => 
+          plan.planName.toLowerCase().contains('membership + 1 month access'));
+      
+      print('Debug: Has combination package: $hasCombinationPackage');
+      
+      if (hasCombinationPackage) {
+        int removedCount = availedPlans.length;
+        availedPlans.removeWhere((plan) => 
+            (plan.planName.toLowerCase().contains('monthly access (member rate)') && 
+             plan.price == 0.0) ||
+            (plan.planName.toLowerCase().contains('gym membership fee') && 
+             plan.price == 0.0));
+        removedCount = removedCount - availedPlans.length;
+        print('Debug: Filtered out $removedCount individual plan(s) due to combination package');
+      }
+
       print('Debug: Total availed plans found: ${availedPlans.length}');
       for (var plan in availedPlans) {
         print('Debug: Plan - ${plan.planName}, Price: ₱${plan.price}, Type: ${plan.isMembershipPlan ? "Membership" : "Monthly"}');
@@ -288,8 +305,16 @@ class _ManageSubscriptionsPageState extends State<ManageSubscriptionsPage> {
       final now = DateTime.now();
       UserSubscription? activeMonthly;
       for (final sub in subs) {
-        final isMembership = sub.planName.toLowerCase().contains('member fee');
+        final isMembership = sub.planName.toLowerCase().contains('member fee') || 
+                             sub.planName.toLowerCase().contains('gym membership fee') ||
+                             sub.planName.toLowerCase().contains('day pass');
         if (isMembership) continue;
+        
+        // Only consider actual monthly plans (Member Monthly Plan, Non-Member Monthly Plan, etc.)
+        final isMonthlyPlan = sub.planName.toLowerCase().contains('monthly') || 
+                              sub.planName.toLowerCase().contains('month access');
+        if (!isMonthlyPlan) continue;
+        
         DateTime? end;
         try { end = DateTime.parse(sub.endDate); } catch (_) { end = null; }
         if (end == null) continue;
@@ -1029,7 +1054,7 @@ class _ManageSubscriptionsPageState extends State<ManageSubscriptionsPage> {
               ),
               SizedBox(height: 16),
               Text(
-                'Are you sure you want to request this subscription plan? Your request will be sent to the admin for approval. Please proceed to the front desk to pay the required amount for activation.',
+                'Are you sure you want to request this subscription plan? Your request will be sent to the admin for approval. Please proceed to the front desk to pay the required amount for activation within 24 hours.',
                 style: GoogleFonts.poppins(
                   fontSize: 14,
                   color: Colors.grey[400],
@@ -1604,6 +1629,35 @@ class _ManageSubscriptionsPageState extends State<ManageSubscriptionsPage> {
                 color: Colors.orange,
                 fontSize: 12,
                 fontWeight: FontWeight.w500,
+              ),
+            ),
+            SizedBox(height: 8),
+            Container(
+              padding: EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.blue.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.blue.withOpacity(0.3)),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.info_outline,
+                    color: Colors.blue,
+                    size: 16,
+                  ),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Please go to the front desk to process your payment within 24 hours',
+                      style: GoogleFonts.poppins(
+                        color: Colors.blue,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ],

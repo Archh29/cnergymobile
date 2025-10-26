@@ -192,18 +192,64 @@ if ($method === 'GET' && $action === 'get_genders') {
         }
         
         try {
-            // FIXED: Query correct table names
+            // Check for login attempt limits first using existing columns
             $stmt = $pdo->prepare("
-                SELECT u.*, ut.type_name as user_role, g.gender_name 
+                SELECT failed_attempt, last_attempt
+                FROM user 
+                WHERE email = ?
+            ");
+            $stmt->execute([$input['email']]);
+            $attemptData = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            // Check if account is locked due to too many failed attempts (5 attempts = 5 minutes lock)
+            if ($attemptData && $attemptData['failed_attempt'] >= 5 && $attemptData['last_attempt']) {
+                $lastAttempt = new DateTime($attemptData['last_attempt']);
+                $now = new DateTime();
+                $timeDiff = $now->diff($lastAttempt);
+                $minutesSinceLastAttempt = ($timeDiff->h * 60) + $timeDiff->i;
+                
+                // If less than 5 minutes have passed since last attempt, account is still locked
+                if ($minutesSinceLastAttempt < 5) {
+                    $remainingMinutes = 5 - $minutesSinceLastAttempt;
+                    error_log("Account locked for email: " . $input['email'] . " - $remainingMinutes minutes remaining");
+                    http_response_code(401);
+                    echo json_encode([
+                        'success' => false, 
+                        'error' => "Account temporarily locked due to too many failed attempts. Please try again in $remainingMinutes minutes."
+                    ]);
+                    exit();
+                }
+            }
+            
+            // FIXED: Simplified query to avoid table name issues
+            $stmt = $pdo->prepare("
+                SELECT u.*, u.user_type_id
                 FROM user u 
-                LEFT JOIN usertype ut ON u.user_type_id = ut.id 
-                LEFT JOIN gender g ON u.gender_id = g.id 
                 WHERE u.email = ?
             ");
             $stmt->execute([$input['email']]);
             $user = $stmt->fetch(PDO::FETCH_ASSOC);
             
             if ($user && password_verify($input['password'], $user['password'])) {
+                // Check if account is deactivated
+                if ($user['account_status'] === 'deactivated') {
+                    error_log("Login blocked - account deactivated for user: " . $user['id']);
+                    http_response_code(403);
+                    echo json_encode([
+                        'success' => false,
+                        'error' => 'Account deactivated',
+                        'account_status' => 'deactivated'
+                    ]);
+                    exit();
+                }
+                
+                // Reset failed attempts on successful login using existing columns
+                $stmt = $pdo->prepare("
+                    UPDATE user 
+                    SET failed_attempt = 0, last_attempt = NULL 
+                    WHERE email = ?
+                ");
+                $stmt->execute([$input['email']]);
                 // Generate JWT token (simplified)
                 $jwt_token = base64_encode(json_encode([
                     'user_id' => $user['id'],
@@ -213,11 +259,20 @@ if ($method === 'GET' && $action === 'get_genders') {
                 
                 error_log("Login successful for user: " . $user['id']);
                 
+                // Determine user role based on user_type_id
+                $userRole = 'Customer'; // Default
+                switch ($user['user_type_id']) {
+                    case 1: $userRole = 'Admin'; break;
+                    case 2: $userRole = 'Staff'; break;
+                    case 3: $userRole = 'Coach'; break;
+                    case 4: $userRole = 'Customer'; break;
+                }
+                
                 echo json_encode([
                     'success' => true,
                     'jwt_token' => $jwt_token,
                     'user_id' => $user['id'],
-                    'user_role' => $user['user_role'],
+                    'user_role' => $userRole,
                     'user_name' => trim($user['fname'] . ' ' . $user['lname']),
                     'fname' => $user['fname'],
                     'lname' => $user['lname'],
@@ -227,14 +282,53 @@ if ($method === 'GET' && $action === 'get_genders') {
                 ]);
             } else {
                 error_log("Login failed for email: " . $input['email']);
-                http_response_code(401);
-                echo json_encode(['error' => 'Invalid email or password']);
+                
+                // Track failed login attempts using existing columns
+                $currentAttempts = $attemptData ? ($attemptData['failed_attempt'] ?? 0) : 0;
+                $newAttempts = $currentAttempts + 1;
+                
+                if ($newAttempts >= 5) {
+                    // Update failed attempts count and lock account
+                    $stmt = $pdo->prepare("
+                        UPDATE user 
+                        SET failed_attempt = ?, last_attempt = NOW()
+                        WHERE email = ?
+                    ");
+                    $stmt->execute([$newAttempts, $input['email']]);
+                    
+                    error_log("Account locked for email: " . $input['email'] . " due to 5 failed attempts");
+                    http_response_code(401);
+                    echo json_encode([
+                        'success' => false, 
+                        'error' => 'Account temporarily locked due to too many failed attempts. Please try again in 5 minutes.'
+                    ]);
+                } else {
+                    // Update failed attempts count
+                    $stmt = $pdo->prepare("
+                        UPDATE user 
+                        SET failed_attempt = ?, last_attempt = NOW()
+                        WHERE email = ?
+                    ");
+                    $stmt->execute([$newAttempts, $input['email']]);
+                    
+                    $remainingAttempts = 5 - $newAttempts;
+                    http_response_code(401);
+                    echo json_encode([
+                        'success' => false, 
+                        'error' => "Invalid email or password. $remainingAttempts attempts remaining."
+                    ]);
+                }
             }
             
         } catch (PDOException $e) {
-            error_log("Login error: " . $e->getMessage());
-            http_response_code(500);
-            echo json_encode(['error' => 'Login failed. Please try again.']);
+            error_log("Login database error: " . $e->getMessage());
+            // Don't expose database errors to users - return generic login error
+            http_response_code(401);
+            echo json_encode(['success' => false, 'error' => 'Invalid email or password']);
+        } catch (Exception $e) {
+            error_log("Login general error: " . $e->getMessage());
+            http_response_code(401);
+            echo json_encode(['success' => false, 'error' => 'Invalid email or password']);
         }
         
     } else {
@@ -400,20 +494,3 @@ function getTableList($pdo) {
     }
 }
 ?>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

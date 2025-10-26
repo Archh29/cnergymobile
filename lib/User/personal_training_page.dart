@@ -5,7 +5,10 @@ import './models/user_model.dart';
 import './models/coach_model.dart';
 import './services/coach_service.dart';
 import './services/auth_service.dart';
+import './services/coach_rating_service.dart';
 import 'manage_subscriptions_page.dart';
+import 'rate_coach_page.dart';
+import 'coach_feedback_viewer.dart';
 
 class PersonalTrainingPage extends StatefulWidget {
   final UserModel? currentUser;
@@ -30,6 +33,7 @@ class _PersonalTrainingPageState extends State<PersonalTrainingPage>
   String? requestDate;
   Map<String, dynamic>? _remoteCoachRequest; // latest from API
   bool _loadingCoachRequest = false;
+  bool _isCoachRelationshipExpired = false;
 
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
@@ -41,6 +45,17 @@ class _PersonalTrainingPageState extends State<PersonalTrainingPage>
     _initializeAnimations();
     _loadCoaches();
     _loadLocalData();
+    _loadCoachRequestStatus();
+    // Refresh ratings after a short delay to ensure coaches are loaded
+    Future.delayed(Duration(seconds: 2), () {
+      _refreshCoachRatings();
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Force refresh coach status when page becomes visible
     _loadCoachRequestStatus();
   }
 
@@ -85,6 +100,78 @@ class _PersonalTrainingPageState extends State<PersonalTrainingPage>
         isLoading = false;
       });
     }
+  }
+
+  // Refresh coach ratings in real-time
+  Future<void> _refreshCoachRatings() async {
+    if (coaches.isEmpty) return;
+    
+    try {
+      // Update ratings for all coaches
+      for (int i = 0; i < coaches.length; i++) {
+        final coach = coaches[i];
+        final ratingData = await CoachRatingService.getCoachRatings(coach.id);
+        
+        if (ratingData['success'] == true) {
+          final updatedCoach = CoachModel(
+            id: coach.id,
+            name: coach.name,
+            specialty: coach.specialty,
+            bio: coach.bio,
+            experience: coach.experience,
+            rating: _safeParseDouble(ratingData['average_rating']) ?? 0.0,
+            totalClients: _safeParseInt(ratingData['total_reviews']) ?? 0,
+            imageUrl: coach.imageUrl,
+            isAvailable: coach.isAvailable,
+            sessionRate: coach.sessionRate,
+            monthlyRate: coach.monthlyRate,
+            sessionPackageRate: coach.sessionPackageRate,
+            sessionPackageCount: coach.sessionPackageCount,
+            certifications: coach.certifications,
+          );
+          
+          if (mounted) {
+            setState(() {
+              coaches[i] = updatedCoach;
+            });
+          }
+        }
+      }
+    } catch (e) {
+      print('Error refreshing coach ratings: $e');
+    }
+  }
+
+  // Helper method to safely parse double values from API responses
+  double? _safeParseDouble(dynamic value) {
+    if (value == null) return null;
+    if (value is double) return value;
+    if (value is int) return value.toDouble();
+    if (value is String) {
+      try {
+        return double.parse(value);
+      } catch (e) {
+        print('Error parsing double from string: $value');
+        return null;
+      }
+    }
+    return null;
+  }
+
+  // Helper method to safely parse int values from API responses
+  int? _safeParseInt(dynamic value) {
+    if (value == null) return null;
+    if (value is int) return value;
+    if (value is double) return value.toInt();
+    if (value is String) {
+      try {
+        return int.parse(value);
+      } catch (e) {
+        print('Error parsing int from string: $value');
+        return null;
+      }
+    }
+    return null;
   }
 
   Future<void> _loadLocalData() async {
@@ -134,6 +221,9 @@ class _PersonalTrainingPageState extends State<PersonalTrainingPage>
           selectedCoachName = _remoteCoachRequest?['coach_name']?.toString();
           coachRequestStatus = (_remoteCoachRequest?['status'] ?? 'pending').toString();
           requestDate = _remoteCoachRequest?['requested_at']?.toString();
+          
+          // Check if coach relationship has expired
+          _checkCoachRelationshipExpiration();
           
           print('🔍 Parsed data - Coach ID: $selectedCoachId, Name: $selectedCoachName, Status: $coachRequestStatus');
         } else {
@@ -206,9 +296,12 @@ class _PersonalTrainingPageState extends State<PersonalTrainingPage>
       
       print('🔍 Coach approval: $coachApproval, Staff approval: $staffApproval, Status: $status');
       
-      // Check if user has an active coach (both coach and staff approved)
-      final isActive = coachApproval == 'approved' && staffApproval == 'approved';
-      print('🔍 Has active coach: $isActive');
+      // Check if user has an active coach (both coach and staff approved AND not expired)
+      final isApproved = coachApproval == 'approved' && staffApproval == 'approved';
+      final isExpired = status == 'expired' || status == 'ended' || status == 'completed';
+      final isActive = isApproved && !isExpired;
+      
+      print('🔍 Has active coach: $isActive (approved: $isApproved, expired: $isExpired)');
       
       return isActive;
     } catch (e) {
@@ -374,6 +467,26 @@ class _PersonalTrainingPageState extends State<PersonalTrainingPage>
         ));
       }
 
+      // Add rating section if user has an expired coach relationship
+      if (selectedCoachId != null && selectedCoachName != null && _isCoachRelationshipExpired) {
+        try {
+          slivers.add(_buildCoachRatingSection());
+          print('✅ _buildCoachRatingSection() completed');
+        } catch (e) {
+          print('❌ Error in _buildCoachRatingSection(): $e');
+        }
+      }
+
+      // Add expired coach status section if relationship is expired
+      if (selectedCoachId != null && selectedCoachName != null && _isCoachRelationshipExpired) {
+        try {
+          slivers.add(_buildExpiredCoachStatusSection());
+          print('✅ _buildExpiredCoachStatusSection() completed');
+        } catch (e) {
+          print('❌ Error in _buildExpiredCoachStatusSection(): $e');
+        }
+      }
+
       if (widget.currentUser != null && !widget.currentUser!.isPremium) {
         try {
           slivers.add(_buildUpgradeSection());
@@ -420,7 +533,7 @@ class _PersonalTrainingPageState extends State<PersonalTrainingPage>
         }
       }
       
-      if (widget.currentUser != null && widget.currentUser!.isPremium && _hasActiveCoach()) {
+      if (widget.currentUser != null && widget.currentUser!.isPremium && _hasActiveCoach() && !_isCoachRelationshipExpired) {
         try {
           slivers.add(_buildActiveCoachSection());
           print('✅ _buildActiveCoachSection() completed');
@@ -687,6 +800,11 @@ class _PersonalTrainingPageState extends State<PersonalTrainingPage>
       subtitle = 'Your request with $coachName was rejected.';
       color = Colors.red;
       icon = Icons.cancel;
+    } else if (status == 'expired' || status == 'ended' || status == 'completed') {
+      title = 'Training Session Ended';
+      subtitle = 'Your training with $coachName has concluded.';
+      color = Colors.orange;
+      icon = Icons.schedule;
     } else if (coachApproval == 'approved' && staffApproval == 'approved') {
       title = 'Coach Assigned';
       String sessionInfo = '';
@@ -793,13 +911,16 @@ class _PersonalTrainingPageState extends State<PersonalTrainingPage>
         onPressed: () => Navigator.pop(context),
       ),
       flexibleSpace: FlexibleSpaceBar(
+        titlePadding: EdgeInsets.only(left: 56, right: 80, bottom: 16),
         title: Text(
           'Personal Training',
           style: GoogleFonts.poppins(
             color: Colors.white,
-            fontSize: 20,
+            fontSize: 18,
             fontWeight: FontWeight.bold,
           ),
+          overflow: TextOverflow.ellipsis,
+          maxLines: 1,
         ),
         background: Container(
           decoration: BoxDecoration(
@@ -913,12 +1034,16 @@ class _PersonalTrainingPageState extends State<PersonalTrainingPage>
                   child: Icon(Icons.info_outline, color: Color(0xFF4ECDC4), size: 24),
                 ),
                 SizedBox(width: 16),
-                Text(
-                  'About Personal Training',
-                  style: GoogleFonts.poppins(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
+                Expanded(
+                  child: Text(
+                    'About Personal Training',
+                    style: GoogleFonts.poppins(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
                   ),
                 ),
               ],
@@ -1205,13 +1330,45 @@ class _PersonalTrainingPageState extends State<PersonalTrainingPage>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Find Your Coach',
-              style: GoogleFonts.poppins(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
+            Row(
+              children: [
+                Text(
+                  'Find Your Coach',
+                  style: GoogleFonts.poppins(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Spacer(),
+                IconButton(
+                  onPressed: () async {
+                    // Show loading indicator
+                    showDialog(
+                      context: context,
+                      barrierDismissible: false,
+                      builder: (context) => Center(
+                        child: CircularProgressIndicator(
+                          color: Color(0xFF4ECDC4),
+                        ),
+                      ),
+                    );
+                    
+                    await _refreshCoachRatings();
+                    Navigator.pop(context); // Close loading dialog
+                    
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Coach ratings updated!'),
+                        backgroundColor: Color(0xFF4ECDC4),
+                        duration: Duration(seconds: 2),
+                      ),
+                    );
+                  },
+                  icon: Icon(Icons.refresh, color: Color(0xFF4ECDC4)),
+                  tooltip: 'Refresh ratings',
+                ),
+              ],
             ),
             SizedBox(height: 12),
             SingleChildScrollView(
@@ -1430,13 +1587,68 @@ class _PersonalTrainingPageState extends State<PersonalTrainingPage>
                       SizedBox(height: 2),
                       Row(
                         children: [
-                          Icon(Icons.star, color: Color(0xFFFFD700), size: 16),
-                          SizedBox(width: 4),
-                          Text(
-                            '${coach.rating}',
-                            style: GoogleFonts.poppins(
-                              color: Colors.grey[400],
-                              fontSize: 12,
+                          GestureDetector(
+                            onTap: () async {
+                              // Show loading indicator
+                              showDialog(
+                                context: context,
+                                barrierDismissible: false,
+                                builder: (context) => Center(
+                                  child: CircularProgressIndicator(
+                                    color: Color(0xFF4ECDC4),
+                                  ),
+                                ),
+                              );
+                              
+                              try {
+                                final ratingData = await CoachRatingService.getCoachRatings(coach.id);
+                                Navigator.pop(context); // Close loading dialog
+                                
+                                if (ratingData['success'] == true) {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => CoachFeedbackViewer(
+                                        coachId: coach.id,
+                                        coachName: coach.name,
+                                        currentRating: _safeParseDouble(ratingData['average_rating']) ?? 0.0,
+                                        totalReviews: _safeParseInt(ratingData['total_reviews']) ?? 0,
+                                      ),
+                                    ),
+                                  );
+                                } else {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('Failed to load reviews'),
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  );
+                                }
+                              } catch (e) {
+                                Navigator.pop(context); // Close loading dialog
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('Error loading reviews: $e'),
+                                    backgroundColor: Colors.red,
+                                  ),
+                                );
+                              }
+                            },
+                            child: Row(
+                              children: [
+                                Icon(Icons.star, color: Color(0xFFFFD700), size: 16),
+                                SizedBox(width: 4),
+                                Text(
+                                  '${coach.rating}',
+                                  style: GoogleFonts.poppins(
+                                    color: Color(0xFF4ECDC4),
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                SizedBox(width: 4),
+                                Icon(Icons.arrow_forward_ios, color: Color(0xFF4ECDC4), size: 12),
+                              ],
                             ),
                           ),
                           SizedBox(width: 12),
@@ -1983,6 +2195,229 @@ class _PersonalTrainingPageState extends State<PersonalTrainingPage>
                     ),
                   ),
                 ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _checkCoachRelationshipExpiration() {
+    if (_remoteCoachRequest == null) {
+      _isCoachRelationshipExpired = false;
+      return;
+    }
+
+    // Check various expiration conditions
+    final status = _remoteCoachRequest?['status']?.toString() ?? '';
+    final expiresAt = _remoteCoachRequest?['expires_at']?.toString();
+    final remainingSessions = _remoteCoachRequest?['remaining_sessions'];
+    final rateType = _remoteCoachRequest?['rate_type']?.toString();
+
+    print('🔍 Checking expiration - Status: $status, Remaining: $remainingSessions, RateType: $rateType');
+
+    // Check if relationship is explicitly marked as expired/ended
+    if (status == 'expired' || status == 'ended' || status == 'completed') {
+      print('🔍 Relationship expired by status: $status');
+      _isCoachRelationshipExpired = true;
+      return;
+    }
+
+    // Check if package has expired based on date
+    if (expiresAt != null) {
+      try {
+        final expiryDate = DateTime.parse(expiresAt);
+        if (DateTime.now().isAfter(expiryDate)) {
+          print('🔍 Relationship expired by date: $expiresAt');
+          _isCoachRelationshipExpired = true;
+          return;
+        }
+      } catch (e) {
+        print('Error parsing expiry date: $e');
+      }
+    }
+
+    // Check if session package has run out of sessions
+    if (rateType == 'package' && remainingSessions != null) {
+      final sessions = int.tryParse(remainingSessions.toString()) ?? 0;
+      if (sessions <= 0) {
+        print('🔍 Relationship expired by sessions: $sessions');
+        _isCoachRelationshipExpired = true;
+        return;
+      }
+    }
+
+    // Additional check: If status is 'active' but we want to force expiration
+    // This handles cases where database was manually updated
+    if (status == 'active' && remainingSessions != null) {
+      final sessions = int.tryParse(remainingSessions.toString()) ?? 0;
+      // If sessions are 0 or negative, consider it expired
+      if (sessions <= 0) {
+        print('🔍 Relationship expired - active status but no sessions: $sessions');
+        _isCoachRelationshipExpired = true;
+        return;
+      }
+    }
+
+    // If none of the above conditions are met, relationship is still active
+    print('🔍 Relationship still active');
+    _isCoachRelationshipExpired = false;
+  }
+
+  Widget _buildExpiredCoachStatusSection() {
+    return SliverToBoxAdapter(
+      child: Container(
+        margin: EdgeInsets.fromLTRB(20, 10, 20, 10),
+        padding: EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFF2A2A2A), Color(0xFF1F1F1F)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.orange.withOpacity(0.5)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [Colors.orange, Colors.red],
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(Icons.schedule, color: Colors.white, size: 24),
+                ),
+                SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Training Session Ended',
+                        style: GoogleFonts.poppins(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Text(
+                        'Your training with $selectedCoachName has concluded',
+                        style: GoogleFonts.poppins(
+                          color: Colors.grey[400],
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: 16),
+            Text(
+              'Your coaching relationship has ended. You can now provide feedback about your training experience.',
+              style: GoogleFonts.poppins(
+                color: Colors.grey[300],
+                fontSize: 14,
+                height: 1.5,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCoachRatingSection() {
+    return SliverToBoxAdapter(
+      child: GestureDetector(
+        onTap: () async {
+          final result = await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => RateCoachPage(
+                coachId: selectedCoachId!,
+                coachName: selectedCoachName!,
+              ),
+            ),
+          );
+          if (result == true) {
+            // Optionally refresh the page or show success message
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Thank you for your feedback!'),
+                backgroundColor: Color(0xFF4ECDC4),
+              ),
+            );
+          }
+        },
+        child: Container(
+          margin: EdgeInsets.fromLTRB(20, 10, 20, 10),
+          padding: EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Color(0xFF2A2A2A), Color(0xFF1F1F1F)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Color(0xFF3A3A3A)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [Color(0xFFFFD700), Color(0xFFFFA500)],
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(Icons.star, color: Colors.white, size: 24),
+                  ),
+                  SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Rate Your Coach',
+                          style: GoogleFonts.poppins(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        Text(
+                          'Your training with $selectedCoachName has ended',
+                          style: GoogleFonts.poppins(
+                            color: Colors.grey[400],
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(Icons.arrow_forward_ios, color: Color(0xFF4ECDC4), size: 20),
+                ],
+              ),
+              SizedBox(height: 16),
+              Text(
+                'Now that your training has ended, please share your experience to help improve our coaching services.',
+                style: GoogleFonts.poppins(
+                  color: Colors.grey[300],
+                  fontSize: 14,
+                  height: 1.5,
+                ),
               ),
             ],
           ),

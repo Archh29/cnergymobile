@@ -42,6 +42,14 @@ class _CoachMemberSelectorState extends State<CoachMemberSelector>
       CurvedAnimation(parent: _animationController, curve: Curves.easeOut),
     );
     _tabController = TabController(length: 2, vsync: this);
+    
+    // Add listener to refresh pending requests when switching to pending tab
+    _tabController.addListener(() {
+      if (_tabController.index == 1) { // Pending requests tab
+        _loadPendingRequests();
+      }
+    });
+    
     _animationController.forward();
     _loadPendingRequests();
   }
@@ -230,7 +238,7 @@ class _CoachMemberSelectorState extends State<CoachMemberSelector>
                 ),
                 Tab(
                   child: Text(
-                    "PENDING REQUESTS",
+                    "PENDING REQUESTS${pendingRequests.isNotEmpty ? ' (${pendingRequests.length})' : ''}",
                     style: GoogleFonts.poppins(
                       fontWeight: FontWeight.w600,
                       fontSize: 12,

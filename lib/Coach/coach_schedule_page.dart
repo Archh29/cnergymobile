@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'models/member_model.dart';
 import '../User/models/schedule_model.dart';
+import '../User/services/auth_service.dart';
 
 class CoachSchedulePage extends StatefulWidget {
   final MemberModel selectedMember;
@@ -55,11 +56,10 @@ class _CoachSchedulePageState extends State<CoachSchedulePage>
     });
 
     try {
-      // Get current coach ID from SharedPreferences
-      final prefs = await SharedPreferences.getInstance();
-      final coachId = prefs.getInt('user_id');
+      // Get current coach ID from AuthService (same fix as CoachService)
+      final coachId = AuthService.getCurrentUserId();
       
-      if (coachId == null) {
+      if (coachId == null || coachId == 0) {
         throw Exception('Coach not logged in');
       }
 

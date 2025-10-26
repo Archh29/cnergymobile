@@ -39,7 +39,7 @@ class _CoachRoutinePageState extends State<CoachRoutinePage> with SingleTickerPr
     _tabController = TabController(length: 2, vsync: this);
     _tabController.addListener(() {
       setState(() {
-        _showFab = _tabController.index == 0;
+        _showFab = true; // Show FAB on both tabs
       });
       // Load templates when switching to second tab
       if (_tabController.index == 1 && coachTemplates.isEmpty) {
@@ -165,59 +165,7 @@ class _CoachRoutinePageState extends State<CoachRoutinePage> with SingleTickerPr
             fontWeight: FontWeight.w600,
           ),
         ),
-        actions: [
-          IconButton(
-            onPressed: () async {
-              print('🔄 DEBUG: Refresh button pressed');
-              print('📊 DEBUG: Current state before refresh - Members: ${assignedMembers.length}, Routines: ${memberRoutines.length}');
-              
-              // Show loading feedback
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(
-                    'Refreshing data...',
-                    style: GoogleFonts.poppins(color: Colors.white),
-                  ),
-                  backgroundColor: Color(0xFF4ECDC4),
-                  duration: Duration(seconds: 1),
-                ),
-              );
-              
-              print('🔄 DEBUG: Starting data refresh process');
-              // Refresh data
-              await _loadCoachData();
-              print('🔄 DEBUG: Completed _loadCoachData()');
-              
-              if (_tabController.index == 1) {
-                print('🔄 DEBUG: Refreshing templates (tab index is 1)');
-                await _loadCoachTemplates();
-                print('🔄 DEBUG: Completed _loadCoachTemplates()');
-              } else {
-                print('🔄 DEBUG: Skipping templates refresh (tab index is ${_tabController.index})');
-              }
-              
-              print('📊 DEBUG: Final state after refresh - Members: ${assignedMembers.length}, Routines: ${memberRoutines.length}');
-              
-              // Show success feedback
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(
-                    'Data refreshed successfully!',
-                    style: GoogleFonts.poppins(color: Colors.white),
-                  ),
-                  backgroundColor: Colors.green,
-                  duration: Duration(seconds: 2),
-                ),
-              );
-              print('✅ DEBUG: Refresh process completed successfully');
-            },
-            icon: Icon(
-              Icons.refresh,
-              color: Color(0xFF4ECDC4),
-            ),
-            tooltip: 'Refresh Data',
-          ),
-        ],
+        actions: [],
       ),
       body: Column(
         children: [
@@ -296,7 +244,7 @@ class _CoachRoutinePageState extends State<CoachRoutinePage> with SingleTickerPr
                     ? _navigateToClientSelection()
                     : _createNewTemplate(),
                 label: Text(
-                  _tabController.index == 0 ? "CREATE PROGRAM" : "CREATE PROGRAM",
+                  _tabController.index == 0 ? "CREATE PROGRAM" : "CREATE TEMPLATE",
                   style: GoogleFonts.poppins(
                     fontWeight: FontWeight.w600,
                     color: Colors.white,
@@ -694,33 +642,56 @@ class _CoachRoutinePageState extends State<CoachRoutinePage> with SingleTickerPr
 
   Widget _buildEmptyTemplatesState() {
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.fitness_center,
-            color: Colors.grey[600],
-            size: 64,
-          ),
-          SizedBox(height: 16),
-          Text(
-            'No Templates Created',
-            style: GoogleFonts.poppins(
-              color: Colors.grey[400],
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
+      child: Padding(
+        padding: EdgeInsets.all(20),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.fitness_center,
+              color: Colors.grey[600],
+              size: 64,
             ),
-          ),
-          SizedBox(height: 8),
-          Text(
-            'Create workout programs to quickly assign to your clients',
-            style: GoogleFonts.poppins(
-              color: Colors.grey[500],
-              fontSize: 14,
+            SizedBox(height: 16),
+            Text(
+              'No Templates Created',
+              style: GoogleFonts.poppins(
+                color: Colors.grey[400],
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+              ),
             ),
-            textAlign: TextAlign.center,
-          ),
-        ],
+            SizedBox(height: 8),
+            Text(
+              'Create workout programs to quickly assign to your clients',
+              style: GoogleFonts.poppins(
+                color: Colors.grey[500],
+                fontSize: 14,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: _createNewTemplate,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Color(0xFF4ECDC4),
+                foregroundColor: Colors.white,
+                padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+              icon: Icon(Icons.add_rounded, color: Colors.white),
+              label: Text(
+                'Create Template',
+                style: GoogleFonts.poppins(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

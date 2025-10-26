@@ -1317,6 +1317,50 @@ class EmailService {
                 return "Hi $userName, your CNERGY GYM membership is expiring soon. Please renew to continue enjoying all our premium facilities and services.";
         }
     }
+    
+    /**
+     * Send support email with Reply-To header
+     * @param string $toEmail - Recipient email
+     * @param string $toName - Recipient name
+     * @param string $subject - Email subject
+     * @param string $message - Email message
+     * @param string $replyToEmail - Reply-to email address
+     * @return array - Success/failure response
+     */
+    public function sendSupportEmail($toEmail, $toName, $subject, $message, $replyToEmail = null) {
+        if (!$this->isConfigured) {
+            return ['success' => false, 'message' => 'Email service not properly configured'];
+        }
+        
+        try {
+            $headers = "From: {$this->fromName} <{$this->fromEmail}>\r\n";
+            if ($replyToEmail) {
+                $headers .= "Reply-To: {$replyToEmail}\r\n";
+            }
+            $headers .= "MIME-Version: 1.0\r\n";
+            $headers .= "Content-Type: text/plain; charset=UTF-8\r\n";
+            $headers .= "X-Mailer: PHP/" . phpversion() . "\r\n";
+            $headers .= "X-Priority: 3\r\n";
+            
+            error_log("Attempting to send support email to: " . $toEmail);
+            error_log("Email subject: " . $subject);
+            error_log("Reply-To: " . ($replyToEmail ?: 'Not set'));
+            
+            $success = mail($toEmail, $subject, $message, $headers);
+            
+            if ($success) {
+                error_log("Support email sent successfully to: " . $toEmail);
+                return ['success' => true, 'message' => 'Support email sent successfully'];
+            } else {
+                error_log("Failed to send support email to: " . $toEmail);
+                return ['success' => false, 'message' => 'Failed to send support email - mail() function returned false'];
+            }
+            
+        } catch (Exception $e) {
+            error_log("Support email sending failed to " . $toEmail . ": " . $e->getMessage());
+            return ['success' => false, 'message' => 'Failed to send support email: ' . $e->getMessage()];
+        }
+    }
 }
 ?>
 

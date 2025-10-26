@@ -217,6 +217,20 @@ class RoutineService {
         print('   - Template Routines count: ${routineResponse.templateRoutines.length}');
         print('   - Is Premium: ${routineResponse.isPremium}');
         
+        // Debug: Check what's in template_routines in the raw JSON
+        if (responseData['template_routines'] != null) {
+          print('🔍 DEBUG: template_routines in JSON: ${responseData['template_routines']}');
+          print('🔍 DEBUG: template_routines type: ${responseData['template_routines'].runtimeType}');
+          if (responseData['template_routines'] is List) {
+            print('🔍 DEBUG: template_routines length: ${(responseData['template_routines'] as List).length}');
+            if ((responseData['template_routines'] as List).isNotEmpty) {
+              print('🔍 DEBUG: First template: ${(responseData['template_routines'] as List)[0]}');
+            }
+          }
+        } else {
+          print('❌ DEBUG: template_routines is NULL or missing in response!');
+        }
+        
         await _cacheMembershipStatus(
           routineResponse.isPremium,
           routineResponse.membershipStatus?['subscription_details']
@@ -752,6 +766,60 @@ class RoutineService {
       return '$difference days ago';
     } else {
       return '${date.day}/${date.month}/${date.year}';
+    }
+  }
+
+  // Clone program from programhdr to member_programhdr
+  static Future<Map<String, dynamic>> cloneProgramToUser(int programId) async {
+    try {
+      int currentUserId = await getCurrentUserId();
+      print('📋 Cloning program ID: $programId for user ID: $currentUserId');
+      
+      final response = await http.get(
+        Uri.parse('$baseUrl?action=clone_program&user_id=$currentUserId&program_id=$programId'),
+        headers: {"Content-Type": "application/json"},
+      );
+      
+      print('📊 Clone response status: ${response.statusCode}');
+      print('📋 Clone response body: ${response.body}');
+      
+      if (response.statusCode == 200) {
+        final responseData = json.decode(response.body);
+        
+        if (responseData['success'] == true) {
+          print('✅ Program cloned successfully with ID: ${responseData['member_program_hdr_id']}');
+          return {
+            'success': true,
+            'member_program_hdr_id': responseData['member_program_hdr_id'],
+            'message': responseData['message'],
+          };
+        } else if (responseData['already_exists'] == true) {
+          print('⚠️ Program already exists in user library');
+          return {
+            'success': false,
+            'already_exists': true,
+            'message': responseData['error'] ?? 'You already have this program',
+          };
+        } else {
+          print('❌ Clone error: ${responseData['error']}');
+          return {
+            'success': false,
+            'error': responseData['error'] ?? 'Failed to clone program',
+          };
+        }
+      } else {
+        print('❌ HTTP Error: ${response.statusCode}');
+        return {
+          'success': false,
+          'error': 'HTTP Error: ${response.statusCode}',
+        };
+      }
+    } catch (e) {
+      print('💥 Error cloning program: $e');
+      return {
+        'success': false,
+        'error': e.toString(),
+      };
     }
   }
 }

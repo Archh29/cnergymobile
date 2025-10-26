@@ -386,7 +386,8 @@ function getAvailablePlansForUser($pdo, $user_id) {
     $allPlans = $plansStmt->fetchAll();
     
     $hasActiveMemberFee = in_array(1, $activePlanIds);
-    $hasActiveMonthlyPlan = in_array(2, $activePlanIds) || in_array(3, $activePlanIds) || in_array(5, $activePlanIds);
+    $hasActiveMonthlyPlan = in_array(2, $activePlanIds) || in_array(3, $activePlanIds);
+    $hasActiveCombinationPackage = in_array(5, $activePlanIds); // Membership + 1 Month Access package
     $hasActiveDayPass = in_array(6, $activePlanIds);
     $activeMonthlyPlan = null;
     
@@ -405,7 +406,7 @@ function getAvailablePlansForUser($pdo, $user_id) {
         $isPlanActive = in_array($planId, $activePlanIds);
         
         // Get plan availability status
-        $availabilityStatus = getPlanAvailabilityStatus($planId, $hasActiveMemberFee, $hasActiveMonthlyPlan, $hasActiveDayPass, $isPlanActive, $activeMonthlyPlan);
+        $availabilityStatus = getPlanAvailabilityStatus($planId, $hasActiveMemberFee, $hasActiveMonthlyPlan, $hasActiveDayPass, $isPlanActive, $activeMonthlyPlan, $hasActiveCombinationPackage);
         
         $plan['is_available'] = $availabilityStatus['available'];
         $plan['is_locked'] = !$availabilityStatus['available'];
@@ -430,7 +431,7 @@ function getAvailablePlansForUser($pdo, $user_id) {
 }
 
 // New function to get plan availability status
-function getPlanAvailabilityStatus($planId, $hasActiveMemberFee, $hasActiveMonthlyPlan, $hasActiveDayPass, $isPlanActive, $activeMonthlyPlan) {
+function getPlanAvailabilityStatus($planId, $hasActiveMemberFee, $hasActiveMonthlyPlan, $hasActiveDayPass, $isPlanActive, $activeMonthlyPlan, $hasActiveCombinationPackage) {
     switch ($planId) {
         case 1: // Membership Fee - always available
             return [
@@ -446,6 +447,14 @@ function getPlanAvailabilityStatus($planId, $hasActiveMemberFee, $hasActiveMonth
                     'available' => false,
                     'reason' => 'already_active',
                     'message' => 'You already have an active Member Monthly Plan.',
+                    'icon' => '🔒'
+                ];
+            }
+            if ($hasActiveCombinationPackage) {
+                return [
+                    'available' => false,
+                    'reason' => 'has_combination_package',
+                    'message' => 'You have the Membership + 1 Month Access package which includes monthly access. This individual plan is not needed.',
                     'icon' => '🔒'
                 ];
             }
@@ -509,7 +518,7 @@ function getPlanAvailabilityStatus($planId, $hasActiveMemberFee, $hasActiveMonth
             ];
             
         case 5: // Membership + 1 Month Access - Combination package
-            if ($hasActiveMemberFee || $hasActiveMonthlyPlan) {
+            if ($hasActiveMemberFee || $hasActiveMonthlyPlan || $hasActiveCombinationPackage) {
                 return [
                     'available' => false,
                     'reason' => 'has_existing_plans',
@@ -1051,10 +1060,13 @@ function checkPlanCompatibility($pdo, $user_id, $plan_id) {
     $activeSubscriptions = $activeStmt->fetchAll();
     
     $hasActiveMembershipFee = false;
+    $hasActiveCombinationPackage = false;
     foreach ($activeSubscriptions as $sub) {
         if ($sub['plan_id'] == 1) { // Membership Fee
             $hasActiveMembershipFee = true;
-            break;
+        }
+        if ($sub['plan_id'] == 5) { // Combination package
+            $hasActiveCombinationPackage = true;
         }
     }
     
@@ -1067,6 +1079,12 @@ function checkPlanCompatibility($pdo, $user_id, $plan_id) {
             ];
             
         case 2: // Monthly Member Plan - requires active Membership Fee
+            if ($hasActiveCombinationPackage) {
+                return [
+                    'compatible' => false,
+                    'message' => 'You have the Membership + 1 Month Access package which includes monthly access. This individual plan is not needed.'
+                ];
+            }
             if (!$hasActiveMembershipFee) {
                 return [
                     'compatible' => false,
@@ -1275,10 +1293,10 @@ function getUserPendingRequest($pdo, $user_id) {
         return;
     }
     
-    // Calculate expiry date (48 hours from request date)
+    // Calculate expiry date (24 hours from request date)
     $requestDate = new DateTime($pendingRequest['request_date']);
     $expiryDate = clone $requestDate;
-    $expiryDate->add(new DateInterval('PT48H')); // 48 hours
+    $expiryDate->add(new DateInterval('PT24H')); // 24 hours
     $now = new DateTime();
     
     $isExpired = $now > $expiryDate;
@@ -1358,14 +1376,14 @@ function cancelPendingRequest($pdo, $data) {
 // New function to auto-expire old requests
 function autoExpireRequests($pdo) {
     try {
-        // Get expired pending requests (older than 48 hours)
+        // Get expired pending requests (older than 24 hours)
         $expiredStmt = $pdo->prepare("
             SELECT s.id, s.user_id, p.plan_name, s.start_date
             FROM subscription s
             JOIN subscription_status st ON s.status_id = st.id
             JOIN member_subscription_plan p ON s.plan_id = p.id
             WHERE st.status_name = 'pending_approval'
-            AND s.start_date < DATE_SUB(NOW(), INTERVAL 48 HOUR)
+            AND s.start_date < DATE_SUB(NOW(), INTERVAL 24 HOUR)
         ");
         $expiredStmt->execute();
         $expiredRequests = $expiredStmt->fetchAll();

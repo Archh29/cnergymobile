@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 import 'models/user_model.dart';
 import 'services/user_service.dart';
 import '../User/services/auth_service.dart';
@@ -22,6 +24,8 @@ class _CoachProfilePageState extends State<CoachProfilePage>
   int activePrograms = 0;
   int totalSessions = 0;
   double averageRating = 0.0;
+  int totalReviews = 0;
+  List<Map<String, dynamic>> recentReviews = [];
   
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
@@ -64,53 +68,31 @@ class _CoachProfilePageState extends State<CoachProfilePage>
     });
     
     try {
-      final prefs = await SharedPreferences.getInstance();
-      int coachId = 0;
+      // Get current coach ID from AuthService (same fix as CoachService and SchedulePage)
+      final coachId = AuthService.getCurrentUserId();
       
-      // FIXED: Handle both integer and string storage
-      if (prefs.containsKey('user_id')) {
-        try {
-          // Try getting as int first
-          coachId = prefs.getInt('user_id') ?? 0;
-          print('Debug: Retrieved coach ID as int: $coachId');
-        } catch (e) {
-          print('Debug: Failed to get as int, trying as string: $e');
-          // If that fails, try getting as string and convert
-          final coachIdString = prefs.getString('user_id');
-          if (coachIdString != null && coachIdString.isNotEmpty) {
-            coachId = int.tryParse(coachIdString) ?? 0;
-            print('Debug: Converted string "$coachIdString" to int: $coachId');
-            
-            // Fix storage format
-            if (coachId > 0) {
-              await prefs.remove('user_id');
-              await prefs.setInt('user_id', coachId);
-              print('Debug: Fixed storage type for user_id');
-            }
-          }
-        }
-      }
-      
-      // Fallback: check for string version
-      if (coachId == 0) {
-        final coachIdString = prefs.getString('user_id_string') ?? 
-                             prefs.getString('user_id') ?? '1';
-        coachId = int.tryParse(coachIdString) ?? 1;
-        print('Debug: Fallback coach ID: $coachId');
+      if (coachId == null || coachId == 0) {
+        throw Exception('Coach not logged in');
       }
       
       print('Loading coach data for ID: $coachId');
       
       final coach = await UserService.fetchUser(coachId);
+      print('Coach data received: ${coach?.toString()}');
+      print('Coach full name: ${coach?.fullName}');
+      print('Coach fname: ${coach?.fname}');
+      print('Coach lname: ${coach?.lname}');
       
       if (coach != null) {
+        // Load coach ratings and reviews
+        await _loadCoachRatings(coachId);
+        
         setState(() {
           currentCoach = coach;
           // Load coach-specific stats (these would come from API)
           assignedMembers = 12; // Mock data
           activePrograms = 8;
           totalSessions = 156;
-          averageRating = 4.8;
           isLoading = false;
         });
       } else {
@@ -126,6 +108,55 @@ class _CoachProfilePageState extends State<CoachProfilePage>
         isLoading = false;
       });
     }
+  }
+
+  Future<void> _loadCoachRatings(int coachId) async {
+    try {
+      print('Loading coach ratings for ID: $coachId');
+      final response = await http.get(
+        Uri.parse('https://api.cnergy.site/coach_rating.php?action=get_coach_ratings&coach_id=$coachId'),
+        headers: {'Content-Type': 'application/json'},
+      );
+
+      print('Rating API response status: ${response.statusCode}');
+      print('Rating API response body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        print('Rating API data: $data');
+        if (data['success'] == true) {
+          setState(() {
+            averageRating = _safeParseDouble(data['average_rating']) ?? 0.0;
+            totalReviews = _safeParseInt(data['total_reviews']) ?? 0;
+            recentReviews = List<Map<String, dynamic>>.from(data['reviews'] ?? []);
+          });
+          print('Updated ratings - Average: $averageRating, Total: $totalReviews');
+        }
+      }
+    } catch (e) {
+      print('Error loading coach ratings: $e');
+      // Keep default values if API fails
+    }
+  }
+
+  double? _safeParseDouble(dynamic value) {
+    if (value == null) return null;
+    if (value is double) return value;
+    if (value is int) return value.toDouble();
+    if (value is String) {
+      return double.tryParse(value);
+    }
+    return null;
+  }
+
+  int? _safeParseInt(dynamic value) {
+    if (value == null) return null;
+    if (value is int) return value;
+    if (value is double) return value.toInt();
+    if (value is String) {
+      return int.tryParse(value);
+    }
+    return null;
   }
 
   @override
@@ -278,7 +309,7 @@ class _CoachProfilePageState extends State<CoachProfilePage>
                 ),
                 SizedBox(height: 16),
                 Text(
-                  'Coach ${currentCoach!.fullName}',
+                  currentCoach!.fullName,
                   style: GoogleFonts.poppins(
                     color: Colors.white,
                     fontSize: 24,
@@ -332,100 +363,276 @@ class _CoachProfilePageState extends State<CoachProfilePage>
           ),
           SizedBox(height: 24),
 
-          // Coach Stats
-          Row(
-            children: [
-              Expanded(
-                child: _buildStatCard(
-                  'Members',
-                  assignedMembers.toString(),
-                  Icons.people,
-                  Color(0xFF4ECDC4),
-                ),
-              ),
-              SizedBox(width: 16),
-              Expanded(
-                child: _buildStatCard(
-                  'Programs',
-                  activePrograms.toString(),
-                  Icons.fitness_center,
-                  Color(0xFFFF6B35),
-                ),
-              ),
-            ],
-          ),
-          SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: _buildStatCard(
-                  'Sessions',
-                  totalSessions.toString(),
-                  Icons.schedule,
-                  Color(0xFF96CEB4),
-                ),
-              ),
-              SizedBox(width: 16),
-              Expanded(
-                child: _buildStatCard(
-                  'Rating',
-                  averageRating.toStringAsFixed(1),
-                  Icons.star,
-                  Color(0xFFFFD700),
-                ),
-              ),
-            ],
-          ),
-          SizedBox(height: 24),
-
-          // Coach Performance Section
+          // Modern Rating Section
           Container(
-            padding: EdgeInsets.all(20),
+            padding: EdgeInsets.all(24),
             decoration: BoxDecoration(
-              color: Color(0xFF1A1A1A),
-              borderRadius: BorderRadius.circular(20),
+              gradient: LinearGradient(
+                colors: [
+                  Color(0xFFFFD700).withOpacity(0.1),
+                  Color(0xFFFFA500).withOpacity(0.05),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(
+                color: Color(0xFFFFD700).withOpacity(0.3),
+                width: 1,
+              ),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.2),
-                  blurRadius: 8,
-                  offset: Offset(0, 4),
+                  color: Color(0xFFFFD700).withOpacity(0.1),
+                  blurRadius: 20,
+                  offset: Offset(0, 8),
                 ),
               ],
             ),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // Rating Header
                 Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Container(
-                      padding: EdgeInsets.all(8),
+                      padding: EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: Color(0xFF4ECDC4).withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(12),
+                        gradient: LinearGradient(
+                          colors: [Color(0xFFFFD700), Color(0xFFFFA500)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Color(0xFFFFD700).withOpacity(0.4),
+                            blurRadius: 12,
+                            offset: Offset(0, 4),
+                          ),
+                        ],
                       ),
-                      child: Icon(Icons.analytics, color: Color(0xFF4ECDC4), size: 20),
-                    ),
-                    SizedBox(width: 12),
-                    Text(
-                      'Coach Performance',
-                      style: GoogleFonts.poppins(
+                      child: Icon(
+                        Icons.star_rounded,
                         color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
+                        size: 28,
                       ),
+                    ),
+                    SizedBox(width: 16),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Coach Rating',
+                          style: GoogleFonts.poppins(
+                            color: Colors.grey[300],
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        Text(
+                          averageRating.toStringAsFixed(1),
+                          style: GoogleFonts.poppins(
+                            color: Colors.white,
+                            fontSize: 32,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
+                
                 SizedBox(height: 16),
-                _buildPerformanceMetric('Member Satisfaction', 95, Color(0xFF4ECDC4)),
+                
+                // Star Rating Display
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: List.generate(5, (index) {
+                    return Container(
+                      margin: EdgeInsets.symmetric(horizontal: 2),
+                      child: Icon(
+                        index < averageRating.floor() 
+                            ? Icons.star_rounded 
+                            : index < averageRating 
+                                ? Icons.star_half_rounded 
+                                : Icons.star_border_rounded,
+                        color: Color(0xFFFFD700),
+                        size: 24,
+                      ),
+                    );
+                  }),
+                ),
+                
                 SizedBox(height: 12),
-                _buildPerformanceMetric('Program Completion Rate', 88, Color(0xFF96CEB4)),
-                SizedBox(height: 12),
-                _buildPerformanceMetric('Session Attendance', 92, Color(0xFFFF6B35)),
+                
+                // Review Count
+                Container(
+                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Color(0xFF2A2A2A),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: Color(0xFFFFD700).withOpacity(0.3),
+                      width: 1,
+                    ),
+                  ),
+                  child: Text(
+                    '$totalReviews ${totalReviews == 1 ? 'Review' : 'Reviews'}',
+                    style: GoogleFonts.poppins(
+                      color: Color(0xFFFFD700),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
           SizedBox(height: 24),
+
+          // Modern Reviews Section
+          if (recentReviews.isNotEmpty) ...[
+            Container(
+              padding: EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    Color(0xFF1A1A1A),
+                    Color(0xFF2A2A2A).withOpacity(0.5),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(
+                  color: Colors.grey[800]!.withOpacity(0.3),
+                  width: 1,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.3),
+                    blurRadius: 20,
+                    offset: Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Reviews Header
+                  Row(
+                    children: [
+                      Container(
+                        padding: EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [Color(0xFF4ECDC4), Color(0xFF44A08D)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Color(0xFF4ECDC4).withOpacity(0.4),
+                              blurRadius: 12,
+                              offset: Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: Icon(
+                          Icons.rate_review_rounded,
+                          color: Colors.white,
+                          size: 24,
+                        ),
+                      ),
+                      SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Member Reviews',
+                              style: GoogleFonts.poppins(
+                                color: Colors.white,
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            Text(
+                              'What members say about this coach',
+                              style: GoogleFonts.poppins(
+                                color: Colors.grey[400],
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  
+                  SizedBox(height: 24),
+                  
+                  // Reviews List
+                  ...recentReviews.take(3).map((review) => _buildModernReviewCard(review)).toList(),
+                  
+                  if (recentReviews.length > 3) ...[
+                    SizedBox(height: 20),
+                    Center(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [Color(0xFF4ECDC4), Color(0xFF44A08D)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Color(0xFF4ECDC4).withOpacity(0.3),
+                              blurRadius: 12,
+                              offset: Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: TextButton(
+                          onPressed: () {
+                            // Navigate to full reviews page
+                          },
+                          style: TextButton.styleFrom(
+                            padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.arrow_forward_rounded,
+                                color: Colors.white,
+                                size: 18,
+                              ),
+                              SizedBox(width: 8),
+                              Text(
+                                'View All $totalReviews Reviews',
+                                style: GoogleFonts.poppins(
+                                  color: Colors.white,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            SizedBox(height: 24),
+          ],
 
           // Menu sections
           _buildMenuSection(
@@ -500,7 +707,7 @@ class _CoachProfilePageState extends State<CoachProfilePage>
     );
   }
 
-  Widget _buildStatCard(String label, String value, IconData icon, Color color) {
+  Widget _buildStatCard(String label, String value, IconData icon, Color color, {String? subtitle}) {
     return Container(
       padding: EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -541,46 +748,240 @@ class _CoachProfilePageState extends State<CoachProfilePage>
               fontSize: 12,
             ),
           ),
+          if (subtitle != null) ...[
+            SizedBox(height: 2),
+            Text(
+              subtitle,
+              style: GoogleFonts.poppins(
+                color: Colors.grey[500],
+                fontSize: 10,
+              ),
+            ),
+          ],
         ],
       ),
     );
   }
 
-  Widget _buildPerformanceMetric(String label, int percentage, Color color) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              label,
-              style: GoogleFonts.poppins(
-                color: Colors.white,
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
+  Widget _buildModernReviewCard(Map<String, dynamic> review) {
+    final rating = _safeParseInt(review['rating']) ?? 0;
+    final feedback = review['feedback'] ?? '';
+    final userName = review['user_name'] ?? 'Anonymous';
+    final timestamp = review['last_modified'] ?? review['created_at'] ?? '';
+    
+    return Container(
+      margin: EdgeInsets.only(bottom: 16),
+      padding: EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            Color(0xFF2A2A2A).withOpacity(0.8),
+            Color(0xFF1A1A1A).withOpacity(0.6),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: Colors.grey[700]!.withOpacity(0.3),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.2),
+            blurRadius: 12,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Review Header
+          Row(
+            children: [
+              // User Avatar
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Color(0xFF4ECDC4), Color(0xFF44A08D)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Color(0xFF4ECDC4).withOpacity(0.3),
+                      blurRadius: 8,
+                      offset: Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Center(
+                  child: Text(
+                    userName.isNotEmpty ? userName[0].toUpperCase() : 'A',
+                    style: GoogleFonts.poppins(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
               ),
-            ),
-            Text(
-              '$percentage%',
-              style: GoogleFonts.poppins(
-                color: color,
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
+              SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      userName,
+                      style: GoogleFonts.poppins(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    if (timestamp.isNotEmpty)
+                      Text(
+                        _formatTimestamp(timestamp),
+                        style: GoogleFonts.poppins(
+                          color: Colors.grey[500],
+                          fontSize: 12,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              // Star Rating
+              Row(
+                children: List.generate(5, (index) {
+                  return Container(
+                    margin: EdgeInsets.only(left: 2),
+                    child: Icon(
+                      index < rating 
+                          ? Icons.star_rounded 
+                          : Icons.star_border_rounded,
+                      color: Color(0xFFFFD700),
+                      size: 18,
+                    ),
+                  );
+                }),
+              ),
+            ],
+          ),
+          
+          if (feedback.isNotEmpty) ...[
+            SizedBox(height: 16),
+            Container(
+              padding: EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Color(0xFF1A1A1A).withOpacity(0.5),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: Colors.grey[800]!.withOpacity(0.3),
+                  width: 1,
+                ),
+              ),
+              child: Text(
+                feedback,
+                style: GoogleFonts.poppins(
+                  color: Colors.grey[200],
+                  fontSize: 14,
+                  height: 1.5,
+                ),
               ),
             ),
           ],
-        ),
-        SizedBox(height: 8),
-        LinearProgressIndicator(
-          value: percentage / 100,
-          backgroundColor: Colors.grey[800],
-          valueColor: AlwaysStoppedAnimation(color),
-          minHeight: 6,
-        ),
-      ],
+        ],
+      ),
     );
   }
+
+  Widget _buildReviewCard(Map<String, dynamic> review) {
+    final rating = _safeParseInt(review['rating']) ?? 0;
+    final feedback = review['feedback'] ?? '';
+    final userName = review['user_name'] ?? 'Anonymous';
+    final timestamp = review['last_modified'] ?? review['created_at'] ?? '';
+    
+    return Container(
+      margin: EdgeInsets.only(bottom: 12),
+      padding: EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Color(0xFF2A2A2A),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey[800]!, width: 1),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              // Star rating
+              ...List.generate(5, (index) {
+                return Icon(
+                  index < rating ? Icons.star : Icons.star_border,
+                  color: Color(0xFFFFD700),
+                  size: 16,
+                );
+              }),
+              SizedBox(width: 8),
+              Text(
+                userName,
+                style: GoogleFonts.poppins(
+                  color: Colors.white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              Spacer(),
+              if (timestamp.isNotEmpty)
+                Text(
+                  _formatTimestamp(timestamp),
+                  style: GoogleFonts.poppins(
+                    color: Colors.grey[500],
+                    fontSize: 12,
+                  ),
+                ),
+            ],
+          ),
+          if (feedback.isNotEmpty) ...[
+            SizedBox(height: 8),
+            Text(
+              feedback,
+              style: GoogleFonts.poppins(
+                color: Colors.grey[300],
+                fontSize: 13,
+                height: 1.4,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  String _formatTimestamp(String timestamp) {
+    try {
+      final date = DateTime.parse(timestamp);
+      final now = DateTime.now();
+      final difference = now.difference(date);
+      
+      if (difference.inDays > 0) {
+        return '${difference.inDays}d ago';
+      } else if (difference.inHours > 0) {
+        return '${difference.inHours}h ago';
+      } else if (difference.inMinutes > 0) {
+        return '${difference.inMinutes}m ago';
+      } else {
+        return 'Just now';
+      }
+    } catch (e) {
+      return '';
+    }
+  }
+
 
   Widget _buildMenuSection(String title, List<Widget> items) {
     return Column(

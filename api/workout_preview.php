@@ -185,8 +185,8 @@ switch ($action) {
                         e.description,
                         e.image_url,
                         e.video_url,
-                        pwe.id as program_workout_exercise_id,
-                        pwe.sets,
+                        MIN(pwe.id) as program_workout_exercise_id,
+                        COUNT(*) as sets,
                         pwe.reps,
                         pwe.weight,
                         GROUP_CONCAT(DISTINCT tm.name SEPARATOR ', ') as target_muscle,
@@ -199,8 +199,8 @@ switch ($action) {
                     LEFT JOIN target_muscle tm ON etm.muscle_id = tm.id
                     WHERE ph.program_id = :template_id AND ph.type = 'template'
                     GROUP BY e.id, e.name, e.description, e.image_url, e.video_url, 
-                             pwe.id, pwe.sets, pwe.reps, pwe.weight
-                    ORDER BY pwe.id ASC
+                             pwe.reps, pwe.weight
+                    ORDER BY MIN(pwe.id) ASC
                 ");
                 $exerciseStmt->bindParam(':template_id', $templateId, PDO::PARAM_INT);
                 $exerciseStmt->execute();
@@ -234,8 +234,8 @@ switch ($action) {
                         e.description,
                         e.image_url,
                         e.video_url,
-                        mwe.id as member_workout_exercise_id,
-                        mwe.sets,
+                        MIN(mwe.id) as member_workout_exercise_id,
+                        COUNT(*) as sets,
                         mwe.reps,
                         mwe.weight,
                         GROUP_CONCAT(DISTINCT tm.name SEPARATOR ', ') as target_muscle,
@@ -247,8 +247,8 @@ switch ($action) {
                     LEFT JOIN target_muscle tm ON etm.muscle_id = tm.id
                     WHERE mpw.member_program_hdr_id = :routine_id
                     GROUP BY e.id, e.name, e.description, e.image_url, e.video_url, 
-                             mwe.id, mwe.sets, mwe.reps, mwe.weight
-                    ORDER BY mwe.id ASC
+                             mwe.reps, mwe.weight
+                    ORDER BY MIN(mwe.id) ASC
                 ");
                 $exerciseStmt->bindParam(':routine_id', $routineId, PDO::PARAM_INT);
                 $exerciseStmt->execute();

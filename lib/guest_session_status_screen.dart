@@ -240,7 +240,7 @@ class _GuestSessionStatusScreenState extends State<GuestSessionStatusScreen> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    _buildDetailRow('Guest Name', _sessionData?['guest_name'] ?? 'Unknown', Icons.person),
+                    _buildDetailRow('Walk-in Name', _sessionData?['guest_name'] ?? 'Unknown', Icons.person),
                     _buildDetailRow('Session Type', _sessionData?['guest_type']?.toString().toUpperCase() ?? 'UNKNOWN', Icons.category),
                     _buildDetailRow('Amount Paid', '₱${_formatAmount(_sessionData?['amount_paid'])}', Icons.payment),
                     _buildDetailRow('Session ID', _sessionData?['id']?.toString() ?? 'Unknown', Icons.tag),

@@ -1894,8 +1894,8 @@ function getRoutineExercises($pdo)
                 e.description,
                 e.image_url,
                 e.video_url,
-                mwe.id as member_workout_exercise_id,
-                mwe.sets as target_sets,
+                MIN(mwe.id) as member_workout_exercise_id,
+                COUNT(*) as target_sets,
                 mwe.reps as target_reps,
                 mwe.weight as target_weight,
                 60 as rest_time,
@@ -1908,8 +1908,9 @@ function getRoutineExercises($pdo)
             LEFT JOIN exercise_target_muscle etm ON e.id = etm.exercise_id
             LEFT JOIN target_muscle tm ON etm.muscle_id = tm.id
             WHERE mph.id = :routine_id AND mph.user_id = :member_id
-            GROUP BY e.id, mwe.id
-            ORDER BY mwe.id ASC
+            GROUP BY e.id, e.name, e.description, e.image_url, e.video_url, 
+                     mwe.reps, mwe.weight
+            ORDER BY MIN(mwe.id) ASC
         ");
 
         $stmt->bindParam(':routine_id', $routineId, PDO::PARAM_INT);

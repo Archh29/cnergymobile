@@ -224,7 +224,7 @@ class ProgramTemplateModel {
       isPublic: json['is_public'] ?? false,
       isFavorite: json['is_favorite'] ?? false,
       timesUsed: json['times_used'] ?? 0,
-      averageRating: json['average_rating']?.toDouble(),
+      averageRating: _safeParseDouble(json['average_rating']),
       totalRatings: json['total_ratings'],
       equipment: json['equipment'] is List 
           ? List<String>.from(json['equipment']) 
@@ -328,5 +328,21 @@ class ProgramTemplateModel {
   @override
   String toString() {
     return 'ProgramTemplateModel(id: $id, name: $name, category: $categoryText)';
+  }
+
+  // Helper method to safely parse double values from API responses
+  static double? _safeParseDouble(dynamic value) {
+    if (value == null) return null;
+    if (value is double) return value;
+    if (value is int) return value.toDouble();
+    if (value is String) {
+      try {
+        return double.parse(value);
+      } catch (e) {
+        print('Error parsing double from string: $value');
+        return null;
+      }
+    }
+    return null;
   }
 }

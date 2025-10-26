@@ -122,6 +122,11 @@ switch ($action) {
                 ORDER BY created_at DESC");
                 $stmt->execute([$user_id]);
                 $measurements = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                
+                error_log("DEBUG: Retrieved " . count($measurements) . " body measurements for user_id: $user_id");
+                if (!empty($measurements)) {
+                    error_log("DEBUG: Latest measurement date: " . ($measurements[0]['date_recorded'] ?? 'N/A'));
+                }
 
                 // Get user's account creation date and profile weight for reference
                 $userStmt = $pdo->prepare("SELECT u.created_at as account_created, mpd.weight_kg as profile_weight 
@@ -229,13 +234,21 @@ switch ($action) {
                 }
 
                 // Check if there's already a weight entry for today (excluding starting weight entries)
-                $today = date('Y-m-d', strtotime('+8 hours')); // Philippines time
-                $checkStmt = $pdo->prepare("SELECT id FROM body_measurements 
+                // Use consistent timezone - get current date in Philippines timezone
+                $timezone = new DateTimeZone('Asia/Manila');
+                $now = new DateTime('now', $timezone);
+                $today = $now->format('Y-m-d');
+                
+                error_log("DEBUG: Checking for existing entry for today: $today (Philippines time)");
+                
+                $checkStmt = $pdo->prepare("SELECT id, DATE(CONVERT_TZ(created_at, '+00:00', '+08:00')) as created_date FROM body_measurements 
                     WHERE user_id = ? AND DATE(CONVERT_TZ(created_at, '+00:00', '+08:00')) = ? AND (notes IS NULL OR notes NOT LIKE '%profile%' OR notes NOT LIKE '%starting%')");
-                $checkStmt->execute([$measurement_user_id, $today]);
-                $existingEntry = $checkStmt->fetch(PDO::FETCH_ASSOC);
+                    $checkStmt->execute([$measurement_user_id, $today]);
+                    $existingEntry = $checkStmt->fetch(PDO::FETCH_ASSOC);
+                    
+                    error_log("DEBUG: Existing entry found: " . ($existingEntry ? 'YES (ID: ' . $existingEntry['id'] . ')' : 'NO'));
 
-                if ($existingEntry) {
+                    if ($existingEntry) {
                     // Update existing entry for today (but not starting weight entries)
                     $updateStmt = $pdo->prepare("UPDATE body_measurements SET 
                         weight = ?, 
@@ -263,7 +276,8 @@ switch ($action) {
                         $existingEntry['id'],
                         $measurement_user_id
                     ]);
-
+                    
+                    error_log("DEBUG: Updated measurement ID: {$existingEntry['id']} for user: $measurement_user_id on date: $today");
                     echo json_encode([
                         "success" => true,
                         "id" => (int) $existingEntry['id'],
@@ -299,6 +313,7 @@ switch ($action) {
                     ]);
 
                     $newId = (int) $pdo->lastInsertId();
+                    error_log("DEBUG: Created new measurement with ID: $newId for user: $measurement_user_id on date: $today");
                     echo json_encode([
                         "success" => true,
                         "id" => $newId,

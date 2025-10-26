@@ -129,8 +129,10 @@ class SubscriptionPlan {
     }
   }
 
-  bool get isMembershipPlan => planName.toLowerCase().contains('member fee');
-  bool get isMonthlyPlan => !isMembershipPlan;
+  bool get isMembershipPlan => planName.toLowerCase().contains('member fee') || 
+                               planName.toLowerCase().contains('gym membership fee');
+  bool get isMonthlyPlan => planName.toLowerCase().contains('monthly') || 
+                            planName.toLowerCase().contains('month access');
 
   String getAvailabilityText() {
     if (isAvailable) {

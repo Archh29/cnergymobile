@@ -384,7 +384,9 @@ function deleteMuscle($pdo) {
 // ============================================
 function fetchMusclesForUsers($pdo) {
     try {
-        // Fixed table name to lowercase
+        error_log("DEBUG: Fetching muscle groups for users");
+        
+        // Fixed table name to lowercase - get ALL muscle groups
         $stmt = $pdo->prepare("
             SELECT id, name, image_url 
             FROM target_muscle 
@@ -394,9 +396,39 @@ function fetchMusclesForUsers($pdo) {
         $stmt->execute();
         $muscles = $stmt->fetchAll(PDO::FETCH_ASSOC);
         
-        // Convert ID to integer for Flutter compatibility
+        error_log("DEBUG: Found " . count($muscles) . " muscle groups");
+        
+        // Convert ID to integer for Flutter compatibility and fix image URLs
         foreach ($muscles as &$muscle) {
             $muscle['id'] = (int)$muscle['id'];
+            
+            // Fix image URLs if they point to localhost or are relative
+            if (!empty($muscle['image_url'])) {
+                $imageUrl = $muscle['image_url'];
+                // Replace localhost URLs
+                if (strpos($imageUrl, 'localhost') !== false || strpos($imageUrl, '127.0.0.1') !== false) {
+                    // Extract the filename from localhost URL
+                    $filename = basename(parse_url($imageUrl, PHP_URL_PATH));
+                    if (empty($filename)) {
+                        // Try to extract from query parameter
+                        parse_str(parse_url($imageUrl, PHP_URL_QUERY), $params);
+                        $filename = $params['image'] ?? '';
+                    }
+                    if (!empty($filename)) {
+                        $muscle['image_url'] = 'https://api.cnergy.site/image-servers.php?image=' . $filename;
+                    } else {
+                        $muscle['image_url'] = getDefaultMuscleImage($muscle['name']);
+                    }
+                } elseif (strpos($imageUrl, 'http') !== 0) {
+                    // If it's a relative path, construct full URL
+                    $muscle['image_url'] = 'https://api.cnergy.site/image-servers.php?image=' . basename($imageUrl);
+                }
+            } else {
+                // Use default image if none is set
+                $muscle['image_url'] = getDefaultMuscleImage($muscle['name']);
+            }
+            
+            error_log("DEBUG: Muscle {$muscle['name']} has image_url: " . ($muscle['image_url'] ?? 'NULL'));
         }
                 
         echo json_encode([
@@ -404,6 +436,7 @@ function fetchMusclesForUsers($pdo) {
             'muscles' => $muscles
         ]);
     } catch(PDOException $e) {
+        error_log("DEBUG: Error fetching muscles: " . $e->getMessage());
         echo json_encode([
             'success' => false, 
             'error' => 'Error fetching muscle groups: ' . $e->getMessage()
@@ -696,8 +729,8 @@ function uploadFile() {
     $filepath = $uploadDir . $filename;
     // Move uploaded file
     if (move_uploaded_file($file['tmp_name'], $filepath)) {
-        // THIS IS THE LINE TO CHANGE
-        $fileUrl = 'http://localhost/cynergy/image-servers.php?image=' . $filename; // Corrected line for plural 'servers'
+        // Generate proper URL for the image server
+        $fileUrl = 'https://api.cnergy.site/image-servers.php?image=' . $filename;
         echo json_encode([
             'success' => true, 
             'message' => ucfirst($typeLabel) . ' uploaded successfully',
@@ -709,5 +742,40 @@ function uploadFile() {
     } else {
         echo json_encode(['success' => false, 'message' => 'Failed to move uploaded file']);
     }
+}
+
+// Helper function to provide default muscle images
+function getDefaultMuscleImage($muscleName) {
+    // Static image mapping - URLs point to actual images on server
+    $imageMap = [
+        'Chest' => 'https://api.cnergy.site/image-servers.php?image=68e4bdc995d2a_1759821257.jpg',
+        'Back' => 'https://api.cnergy.site/image-servers.php?image=68e3601c90c68_1759731740.jpg',
+        'Shoulder' => 'https://api.cnergy.site/image-servers.php?image=68e35ff3c80bf_1759731699.jpg',
+        'Shoulders' => 'https://api.cnergy.site/image-servers.php?image=68e35ff3c80bf_1759731699.jpg',
+        'Core' => 'https://api.cnergy.site/image-servers.php?image=68e4bdbf3044e_1759821247.jpg',
+        'Arms' => 'https://api.cnergy.site/image-servers.php?image=68e4bdaac1683_1759821226.jpg',
+        'Legs' => 'https://api.cnergy.site/image-servers.php?image=68e4bdb72737e_1759821239.jpg',
+        'Biceps' => 'https://api.cnergy.site/image-servers.php?image=68e35fc7a61a1_1759731655.jpg',
+        'Upper Chest' => 'https://api.cnergy.site/image-servers.php?image=68f64dd7e8266_1760972247.jpg',
+        'Middle Chest' => 'https://api.cnergy.site/image-servers.php?image=68f64de00c60e_1760972256.jpg',
+        'Lower Chest' => 'https://api.cnergy.site/image-servers.php?image=68f64dcc3d660_1760972236.jpg',
+        'Lats' => 'https://api.cnergy.site/image-servers.php?image=68f64d9478f41_1760972180.jpg',
+        'Triceps' => 'https://api.cnergy.site/image-servers.php?image=68f64ea977586_1760972457.jpg',
+        'Forearms' => 'https://api.cnergy.site/image-servers.php?image=68f64eb18b226_1760972465.jpg',
+        'Quads' => 'https://api.cnergy.site/image-servers.php?image=68f64dad93d06_1760972205.jpg',
+        'Quadriceps' => 'https://api.cnergy.site/image-servers.php?image=68f64dad93d06_1760972205.jpg',
+        'Hamstring' => 'https://api.cnergy.site/image-servers.php?image=68f64db61bead_1760972214.jpg',
+        'Hamstrings' => 'https://api.cnergy.site/image-servers.php?image=68f64db61bead_1760972214.jpg',
+        'Calves' => 'https://api.cnergy.site/image-servers.php?image=68f64d9e5c757_1760972190.jpg',
+        'Obliques' => 'https://api.cnergy.site/image-servers.php?image=68f64e10591ac_1760972304.jpg',
+        'Abs' => 'https://api.cnergy.site/image-servers.php?image=68e4bdbf3044e_1759821247.jpg',
+        'Glutes' => 'https://api.cnergy.site/image-servers.php?image=68e4bdb72737e_1759821239.jpg',
+        'Traps' => 'https://api.cnergy.site/image-servers.php?image=68e3601c90c68_1759731740.jpg',
+        'Delts' => 'https://api.cnergy.site/image-servers.php?image=68e35ff3c80bf_1759731699.jpg',
+        'Lower Back' => 'https://api.cnergy.site/image-servers.php?image=68e3601c90c68_1759731740.jpg',
+    ];
+
+    // Return the mapped image URL or empty string
+    return $imageMap[$muscleName] ?? '';
 }
 ?>

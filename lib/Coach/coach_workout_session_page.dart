@@ -8,6 +8,7 @@ import '../User/models/workoutpreview_model.dart';
 import '../User/exercise_instructions_page.dart';
 import 'models/member_model.dart';
 import 'package:http/http.dart' as http;
+import 'coach_workout_summary_page.dart';
 
 class CoachWorkoutSessionPage extends StatefulWidget {
   final UserModels.RoutineModel routine;
@@ -154,6 +155,7 @@ class _CoachWorkoutSessionPageState extends State<CoachWorkoutSessionPage> {
       final exerciseKey = '${exercise.exerciseId}_${exercise.name}';
       exerciseRestTimes[exerciseKey] = exercise.restTime;
       print('🎯 Initialized rest time for ${exercise.name}: ${exercise.restTime}s');
+      print('🎯 Exercise key: $exerciseKey, Rest time: ${exerciseRestTimes[exerciseKey]}');
     }
         
     if (workoutExercises.isNotEmpty) {
@@ -200,10 +202,30 @@ class _CoachWorkoutSessionPageState extends State<CoachWorkoutSessionPage> {
       _showExerciseCompletedModal();
     } else {
       if (!mounted) return;
-      setState(() {
-        showRestTimer = true;
-      });
-      _startRestTimer();
+      
+      // Get the exercise-specific rest time
+      final exerciseKey = '${currentExercise.exerciseId}_${currentExercise.name}';
+      final exerciseRestTime = exerciseRestTimes[exerciseKey] ?? 0;
+      
+      print('🔍 REST TIMER DEBUG:');
+      print('🔍 Exercise: ${currentExercise.name}');
+      print('🔍 Exercise key: $exerciseKey');
+      print('🔍 Exercise rest time from model: ${currentExercise.restTime}');
+      print('🔍 Exercise rest time from map: $exerciseRestTime');
+      print('🔍 All exercise rest times: $exerciseRestTimes');
+      
+      if (exerciseRestTime > 0) {
+        // Start the rest timer with exercise-specific time
+        print('🎯 Setting showRestTimer = true, exerciseRestTime: $exerciseRestTime');
+        setState(() {
+          showRestTimer = true;
+          restTimeRemaining = exerciseRestTime;
+          print('🎯 Inside setState - showRestTimer set to: $showRestTimer, restTimeRemaining: $restTimeRemaining');
+        });
+        _startRestTimer();
+      } else {
+        print('🎯 Exercise rest time is 0, not showing timer');
+      }
     }
   }
 
@@ -321,9 +343,64 @@ class _CoachWorkoutSessionPageState extends State<CoachWorkoutSessionPage> {
     });
   }
 
-  void _loadLatestWorkoutData() {
-    // This would load previous workout data for the client
-    // For now, we'll leave it empty as it's not essential for the basic functionality
+  void _loadLatestWorkoutData() async {
+    try {
+      print('🔄 Loading latest workout data for client: ${widget.selectedMember.id}');
+      
+      // Get all progress data for the client
+      final response = await http.get(
+        Uri.parse('https://api.cnergy.site/progress_tracker.php?action=get_all_progress&user_id=${widget.selectedMember.id}'),
+        headers: {'Content-Type': 'application/json'},
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['progress'] != null) {
+          final allProgress = data['progress'];
+          
+          // Process each exercise
+          for (String exerciseName in allProgress.keys) {
+            final exerciseData = allProgress[exerciseName] ?? [];
+            
+            if (exerciseData.isNotEmpty) {
+              // Sort by date (newest first) and take the latest workout
+              exerciseData.sort((a, b) => DateTime.parse(b['date']).compareTo(DateTime.parse(a['date'])));
+              
+              // Group by workout session (same date)
+              Map<String, List<Map<String, dynamic>>> sessionData = {};
+              
+              for (final record in exerciseData) {
+                final dateKey = DateTime.parse(record['date']).toIso8601String().split('T')[0];
+                if (!sessionData.containsKey(dateKey)) {
+                  sessionData[dateKey] = [];
+                }
+                sessionData[dateKey]!.add({
+                  'weight': record['weight'],
+                  'reps': record['reps'],
+                  'sets': record['sets'],
+                  'date': DateTime.parse(record['date']),
+                });
+              }
+              
+              // Get the most recent session
+              if (sessionData.isNotEmpty) {
+                final sortedDates = sessionData.keys.toList()..sort((a, b) => b.compareTo(a));
+                final latestDate = sortedDates.first;
+                final latestSessionData = sessionData[latestDate]!;
+                
+                // Store the latest workout data for this exercise
+                latestWorkoutData[exerciseName] = latestSessionData;
+                print('📊 Loaded latest data for $exerciseName: ${latestSessionData.length} sets');
+              }
+            }
+          }
+          
+          print('✅ Loaded workout data for ${latestWorkoutData.length} exercises');
+        }
+      }
+    } catch (e) {
+      print('❌ Error loading latest workout data: $e');
+    }
   }
 
   void _showExerciseCompletedModal() {
@@ -440,13 +517,27 @@ class _CoachWorkoutSessionPageState extends State<CoachWorkoutSessionPage> {
 
       if (success) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Workout saved successfully!'),
-              backgroundColor: const Color(0xFF4ECDC4),
+          // Calculate workout metrics for summary
+          final workoutDuration = DateTime.now().difference(workoutStartTime);
+          final totalVolume = workoutExercises.fold(0.0, (sum, exercise) => 
+              sum + exercise.loggedSets.where((set) => set.isCompleted)
+                  .fold(0.0, (setSum, set) => setSum + (set.weight * set.reps)));
+          final totalSets = workoutExercises.fold(0, (sum, exercise) => sum + exercise.completedSets);
+          
+          // Navigate to workout summary page
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => CoachWorkoutSummaryPage(
+                routine: widget.routine,
+                exercises: workoutExercises,
+                workoutDuration: workoutDuration,
+                totalVolume: totalVolume,
+                totalSets: totalSets,
+                selectedMember: widget.selectedMember,
+              ),
             ),
           );
-          Navigator.pop(context);
         }
       } else {
         if (mounted) {
@@ -532,6 +623,12 @@ class _CoachWorkoutSessionPageState extends State<CoachWorkoutSessionPage> {
         
         if (success) {
           print('✅ Workout completed successfully for client $clientId');
+          
+          // Update program weights with latest logged weights
+          await _updateProgramWeightsSimple(routineId, exercises);
+          
+          // Also save all completed exercises to progress tracker for progressive overload
+          await _saveAllExercisesToProgressTracker(routineId, exercises, clientId);
         }
         
         return success;
@@ -541,6 +638,136 @@ class _CoachWorkoutSessionPageState extends State<CoachWorkoutSessionPage> {
     } catch (e) {
       print('💥 Error completing workout session for client: $e');
       return false;
+    }
+  }
+
+  // Update program weights with latest logged weights
+  static Future<void> _updateProgramWeightsSimple(String routineId, List<WorkoutExerciseModel> exercises) async {
+    try {
+      print('🔄 Updating program weights for routine: $routineId');
+      
+      for (final exercise in exercises) {
+        if (exercise.exerciseId != null && exercise.loggedSets.isNotEmpty) {
+          // Get the latest weight for this exercise
+          final completedSets = exercise.loggedSets.where((set) => set.isCompleted && set.weight > 0).toList();
+          
+          if (completedSets.isNotEmpty) {
+            // Sort by timestamp to get the most recent set
+            completedSets.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+            final latestWeight = completedSets.first.weight;
+            
+            // Update the program weight in the database
+            await _updateProgramWeightsInDatabase(routineId, exercise.exerciseId!, latestWeight);
+            print('📊 Updated program weight for ${exercise.name}: ${latestWeight}kg');
+          }
+        }
+      }
+    } catch (e) {
+      print('❌ Error updating program weights: $e');
+    }
+  }
+
+  static Future<void> _updateProgramWeightsInDatabase(String routineId, int exerciseId, double weight) async {
+    try {
+      final response = await http.post(
+        Uri.parse('https://api.cnergy.site/workout_preview.php'),
+        headers: {"Content-Type": "application/json"},
+        body: json.encode({
+          "action": "update_program_weight",
+          "routine_id": routineId,
+          "exercise_id": exerciseId,
+          "weight": weight,
+        }),
+      );
+      
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data['success'] == true) {
+          print('✅ Program weight updated successfully');
+        } else {
+          print('❌ Failed to update program weight: ${data['message']}');
+        }
+      }
+    } catch (e) {
+      print('❌ Error updating program weight in database: $e');
+    }
+  }
+
+  // Save all completed exercises to progress tracker for progressive overload
+  static Future<void> _saveAllExercisesToProgressTracker(String routineId, List<WorkoutExerciseModel> exercises, int clientId) async {
+    try {
+      print('🔄 Saving exercises to progress tracker for client: $clientId');
+      
+      for (final exercise in exercises) {
+        if (exercise.isCompleted && exercise.loggedSets.isNotEmpty) {
+          final completedSets = exercise.loggedSets.where((set) => set.isCompleted).toList();
+          
+          if (completedSets.isNotEmpty) {
+            // Calculate total volume for this exercise
+            final totalVolume = completedSets.fold(0.0, (sum, set) => sum + (set.weight * set.reps));
+            final totalWeight = completedSets.fold(0.0, (sum, set) => sum + set.weight);
+            final avgWeight = totalWeight / completedSets.length;
+            final totalReps = completedSets.fold(0, (sum, set) => sum + set.reps);
+            
+            // Save to progress tracker
+            await _saveToProgressTracker(
+              clientId: clientId,
+              exerciseName: exercise.name,
+              muscleGroup: exercise.targetMuscle.isNotEmpty ? exercise.targetMuscle : 'Unknown',
+              weight: avgWeight,
+              reps: totalReps,
+              sets: completedSets.length,
+              programName: routineId,
+              programId: int.tryParse(routineId),
+            );
+          }
+        }
+      }
+    } catch (e) {
+      print('❌ Error saving to progress tracker: $e');
+    }
+  }
+
+  static Future<void> _saveToProgressTracker({
+    required int clientId,
+    required String exerciseName,
+    required String muscleGroup,
+    required double weight,
+    required int reps,
+    required int sets,
+    String? programName,
+    int? programId,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('https://api.cnergy.site/progress_tracker.php'),
+        headers: {"Content-Type": "application/json"},
+        body: json.encode({
+          'action': 'save_lift',
+          'data': {
+            'user_id': clientId,
+            'exercise_name': exerciseName,
+            'muscle_group': muscleGroup,
+            'weight': weight,
+            'reps': reps,
+            'sets': sets,
+            'date': DateTime.now().toIso8601String(),
+            'program_name': programName,
+            'program_id': programId,
+          },
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data['success'] == true) {
+          print('✅ Progress tracker updated for $exerciseName');
+        } else {
+          print('❌ Failed to update progress tracker: ${data['message']}');
+        }
+      }
+    } catch (e) {
+      print('❌ Error saving to progress tracker: $e');
     }
   }
 
@@ -1353,14 +1580,27 @@ class _CoachWorkoutSessionPageState extends State<CoachWorkoutSessionPage> {
   }
 
   String _getPreviousWorkoutText(String exerciseName, int setIndex) {
-    // This would show previous workout data
-    // For now, return a dash
+    // Get previous workout data for this exercise
+    final previousData = latestWorkoutData[exerciseName];
+    
+    if (previousData != null && previousData.isNotEmpty && setIndex < previousData.length) {
+      final data = previousData[setIndex];
+      final weight = data['weight']?.toStringAsFixed(0) ?? '0';
+      final reps = data['reps']?.toString() ?? '0';
+      return '$weight kg x $reps';
+    }
+    
     return '-';
   }
 
   Map<String, dynamic>? _getPreviousWorkoutData(String exerciseName, int setIndex) {
-    // This would return previous workout data for the exercise
-    // For now, return null
+    // Get previous workout data for this exercise
+    final previousData = latestWorkoutData[exerciseName];
+    
+    if (previousData != null && previousData.isNotEmpty && setIndex < previousData.length) {
+      return previousData[setIndex];
+    }
+    
     return null;
   }
 
@@ -1472,6 +1712,36 @@ class _CoachWorkoutSessionPageState extends State<CoachWorkoutSessionPage> {
         
         // Update completed sets count for this exercise
         exercise.completedSets = exercise.loggedSets.where((set) => set.isCompleted).length;
+        
+        // Update total completed sets across all exercises
+        totalCompletedSets = workoutExercises.fold(0, (sum, ex) => sum + ex.completedSets);
+        
+        // If we just completed a set, start the rest timer if it's enabled for this exercise
+        if (!currentSet.isCompleted && exercise.loggedSets[setIndex].isCompleted) {
+          final exerciseKey = '${exercise.exerciseId}_${exercise.name}';
+          final exerciseRestTime = exerciseRestTimes[exerciseKey] ?? 0;
+          
+          print('🔍 TOGGLE SET COMPLETION REST TIMER DEBUG:');
+          print('🔍 Exercise: ${exercise.name}');
+          print('🔍 Exercise key: $exerciseKey');
+          print('🔍 Exercise rest time from model: ${exercise.restTime}');
+          print('🔍 Exercise rest time from map: $exerciseRestTime');
+          print('🔍 Previous set completed: ${currentSet.isCompleted}');
+          print('🔍 New set completed: ${exercise.loggedSets[setIndex].isCompleted}');
+          
+          if (exerciseRestTime > 0) {
+            // Start the rest timer
+            print('🎯 Setting showRestTimer = true, exerciseRestTime: $exerciseRestTime');
+            setState(() {
+              showRestTimer = true;
+              restTimeRemaining = exerciseRestTime;
+              print('🎯 Inside setState - showRestTimer set to: $showRestTimer, restTimeRemaining: $restTimeRemaining');
+            });
+            _startRestTimer();
+          } else {
+            print('🎯 Exercise rest time is 0, not showing timer');
+          }
+        }
       });
     }
   }

@@ -584,11 +584,11 @@ class _CoachDashboardState extends State<CoachDashboard> with TickerProviderStat
           ],
         ),
         child: FloatingActionButton(
-          onPressed: _showQuickActionsMenu,
+          onPressed: _navigateToMessages,
           backgroundColor: Colors.transparent,
           elevation: 0,
           child: Icon(
-            Icons.add,
+            Icons.chat_bubble_outline,
             color: Colors.white,
             size: isSmallScreen ? 20 : 24, // Smaller icon
           ),
@@ -666,163 +666,6 @@ class _CoachDashboardState extends State<CoachDashboard> with TickerProviderStat
               ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-
-  void _showQuickActionsMenu() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        decoration: BoxDecoration(
-          color: Color(0xFF1A1A1A),
-          borderRadius: BorderRadius.only(
-            topLeft: Radius.circular(20),
-            topRight: Radius.circular(20),
-          ),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 40,
-              height: 4,
-              margin: EdgeInsets.symmetric(vertical: 12),
-              decoration: BoxDecoration(
-                color: Colors.grey[600],
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            Padding(
-              padding: EdgeInsets.all(20),
-              child: Column(
-                children: [
-                  Text(
-                    'Quick Actions',
-                    style: GoogleFonts.poppins(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
-                  SizedBox(height: 20),
-                  _buildQuickActionTile(
-                    icon: Icons.fitness_center,
-                    title: 'Create Program',
-                    subtitle: 'Create a new program template',
-                    color: Color(0xFF4ECDC4),
-                    onTap: () {
-                      Navigator.pop(context);
-                      _navigateToCreateProgram();
-                    },
-                  ),
-                  SizedBox(height: 12),
-                  _buildQuickActionTile(
-                    icon: Icons.chat_bubble_outline,
-                    title: 'Messages',
-                    subtitle: 'View messages from members',
-                    color: Color(0xFF45B7D1),
-                    onTap: () {
-                      Navigator.pop(context);
-                      _navigateToMessages();
-                    },
-                  ),
-                  SizedBox(height: 12),
-                  _buildQuickActionTile(
-                    icon: Icons.fitness_center,
-                    title: 'Start Client Workout',
-                    subtitle: 'Begin a coaching session',
-                    color: Color(0xFFFF6B35),
-                    onTap: () {
-                      Navigator.pop(context);
-                      _showClientWorkoutSelector();
-                    },
-                  ),
-                  SizedBox(height: 12),
-                  _buildQuickActionTile(
-                    icon: Icons.people_outline,
-                    title: 'Add Member',
-                    subtitle: 'Assign a new member to you',
-                    color: Color(0xFF96CEB4),
-                    onTap: () {
-                      Navigator.pop(context);
-                      setState(() {
-                        _selectedIndex = 2; // Members tab
-                      });
-                    },
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildQuickActionTile({
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required Color color,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Color(0xFF2A2A2A),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.grey[700]!),
-        ),
-        child: Row(
-          children: [
-            Container(
-              padding: EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: color.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(
-                icon,
-                color: color,
-                size: 24,
-              ),
-            ),
-            SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: GoogleFonts.poppins(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
-                    ),
-                  ),
-                  SizedBox(height: 4),
-                  Text(
-                    subtitle,
-                    style: GoogleFonts.poppins(
-                      fontSize: 14,
-                      color: Colors.grey[400],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Icon(
-              Icons.arrow_forward_ios,
-              color: Colors.grey[400],
-              size: 16,
-            ),
-          ],
         ),
       ),
     );

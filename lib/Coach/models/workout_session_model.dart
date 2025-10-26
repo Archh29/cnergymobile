@@ -323,7 +323,7 @@ class WorkoutSessionModel {
       location: json['location'],
       notes: json['notes'],
       coachNotes: json['coach_notes'],
-      rating: json['rating']?.toDouble(),
+      rating: _safeParseDouble(json['rating']),
       feedback: json['feedback'],
       exercises: json['exercises'] != null 
           ? List<String>.from(json['exercises']) 
@@ -535,5 +535,21 @@ class WorkoutSessionModel {
   @override
   String toString() {
     return 'WorkoutSessionModel(id: $id, type: $type, status: $status, date: $scheduledDate)';
+  }
+
+  // Helper method to safely parse double values from API responses
+  static double? _safeParseDouble(dynamic value) {
+    if (value == null) return null;
+    if (value is double) return value;
+    if (value is int) return value.toDouble();
+    if (value is String) {
+      try {
+        return double.parse(value);
+      } catch (e) {
+        print('Error parsing double from string: $value');
+        return null;
+      }
+    }
+    return null;
   }
 }

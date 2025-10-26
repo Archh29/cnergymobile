@@ -30,7 +30,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   
   // Loading state
   bool _isLoading = true;
-  bool _hasAnnualMembership = false; // Check for Plan ID 1 specifically
+  bool _hasAnnualMembership = false; // Check for Plan ID 1 (Annual) or Plan ID 5 (Package)
   
   // Announcement filters
   String _announcementFilter = 'all'; // 'all', 'newest', 'important', 'oldest'
@@ -118,8 +118,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         final subscription = subscriptionData['subscription'];
         final planId = subscription['plan_id'];
         
-        // Check if user has Plan ID 1 (Gym Membership Fee - Annual Membership)
-        _hasAnnualMembership = planId == 1;
+        // Check if user has premium access (Plan ID 1 or Plan ID 5 - Package Plan)
+        _hasAnnualMembership = planId == 1 || planId == 5;
         
         if (mounted) {
           setState(() {});

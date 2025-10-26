@@ -244,11 +244,8 @@ class _ProfilePageState extends State<ProfilePage> with TickerProviderStateMixin
             ),
           ),
         ),
-        // Membership Information (centered)
-        if (membershipInfo != null && membershipInfo!['has_membership']) ...[
-          SizedBox(height: 12),
-          Center(child: _buildMembershipInfo()),
-        ] else if (membershipInfo != null && !membershipInfo!['has_membership']) ...[
+        // Membership Information (centered) - Monthly plan status removed
+        if (membershipInfo != null && !membershipInfo!['has_membership']) ...[
           SizedBox(height: 12),
           Center(child: _buildNoMembershipInfo()),
         ],
@@ -711,18 +708,6 @@ class _ProfilePageState extends State<ProfilePage> with TickerProviderStateMixin
               onPressed: () => _confirmSignOut(context),
             ),
           ),
-          SizedBox(height: 16),
-          TextButton(
-            onPressed: () => _confirmDeleteAccount(context),
-            child: Text(
-              'Delete Account',
-              style: GoogleFonts.poppins(
-                color: Colors.red,
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
           SizedBox(height: 20),
         ],
       ),
@@ -986,129 +971,5 @@ class _ProfilePageState extends State<ProfilePage> with TickerProviderStateMixin
       await AuthService.logout();
       Navigator.pushReplacementNamed(context, '/login');
     }
-  }
-
-  Future<void> _confirmDeleteAccount(BuildContext context) async {
-    if (currentUser == null) return;
-    
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (_) => Dialog(
-        backgroundColor: Colors.transparent,
-        child: Container(
-          padding: EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: Color(0xFF1A1A1A),
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.3),
-                blurRadius: 20,
-                offset: Offset(0, 10),
-              ),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                padding: EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.red.withOpacity(0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  Icons.delete_forever,
-                  color: Colors.red,
-                  size: 32,
-                ),
-              ),
-              SizedBox(height: 16),
-              Text(
-                'Delete Account',
-                style: GoogleFonts.poppins(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.red,
-                ),
-              ),
-              SizedBox(height: 8),
-              Text(
-                'This action is irreversible. Are you sure you want to delete your account?',
-                style: GoogleFonts.poppins(
-                  fontSize: 14,
-                  color: Colors.grey[400],
-                ),
-                textAlign: TextAlign.center,
-              ),
-              SizedBox(height: 24),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => Navigator.pop(context, false),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.white54,
-                        side: BorderSide(color: Colors.grey[700]!),
-                        padding: EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      child: Text(
-                        'Cancel',
-                        style: GoogleFonts.poppins(),
-                      ),
-                    ),
-                  ),
-                  SizedBox(width: 16),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () async {
-                        Navigator.pop(context, true);
-                        
-                        final success = await UserService.deleteUser(currentUser!.id);
-                        
-                        if (success) {
-                          // FIXED: Use AuthService logout method
-                          await AuthService.logout();
-                          Navigator.pushReplacementNamed(context, '/login');
-                        } else {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                "Failed to delete account. Please try again.",
-                                style: GoogleFonts.poppins(),
-                              ),
-                              backgroundColor: Colors.red,
-                              behavior: SnackBarBehavior.floating,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                            ),
-                          );
-                        }
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.red,
-                        foregroundColor: Colors.white,
-                        padding: EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      child: Text(
-                        'Delete',
-                        style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 }

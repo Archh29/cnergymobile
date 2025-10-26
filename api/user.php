@@ -3,7 +3,6 @@ header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type, Accept, Authorization, X-Requested-With, Origin");
 header("Access-Control-Max-Age: 86400");
-header("Content-Type: application/json");
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit(0);
@@ -31,6 +30,47 @@ try {
 
 $input = json_decode(file_get_contents("php://input"), true);
 $action = $_GET['action'] ?? ($input['action'] ?? '');
+
+// Handle REST API endpoints - try multiple approaches
+$request_uri = $_SERVER['REQUEST_URI'];
+$path = parse_url($request_uri, PHP_URL_PATH);
+
+// Debug logging
+error_log("Request URI: " . $request_uri);
+error_log("Parsed Path: " . $path);
+error_log("Action before processing: " . $action);
+
+// Method 1: Check if URL contains /users/ pattern
+if (preg_match('/\/users\/(\d+)/', $path, $matches)) {
+    $user_id = $matches[1];
+    error_log("Method 1 - Found user ID in URL: " . $user_id);
+    
+    if ($_SERVER['REQUEST_METHOD'] === 'GET') {
+        $action = 'fetch';
+        $_GET['user_id'] = $user_id;
+    } elseif ($_SERVER['REQUEST_METHOD'] === 'PUT') {
+        $action = 'update';
+        $input['id'] = $user_id;
+    }
+}
+// Method 2: Check query parameters for user_id
+elseif (isset($_GET['user_id']) && !empty($_GET['user_id'])) {
+    error_log("Method 2 - Found user_id in query params: " . $_GET['user_id']);
+    $action = 'fetch';
+}
+// Method 3: Check if action is fetch but no user_id
+elseif ($action === 'fetch' && !isset($_GET['user_id'])) {
+    error_log("Method 3 - Action is fetch but no user_id found");
+    // Try to extract from URL path
+    $path_parts = array_filter(explode('/', trim($path, '/')));
+    if (count($path_parts) >= 2 && $path_parts[0] === 'users' && is_numeric($path_parts[1])) {
+        $_GET['user_id'] = $path_parts[1];
+        error_log("Method 3 - Extracted user_id from path: " . $path_parts[1]);
+    }
+}
+
+error_log("Final action: " . $action);
+error_log("Final user_id: " . ($_GET['user_id'] ?? 'not set'));
 
 // === FETCH USER AND PREMIUM STATUS ===
 if ($action === 'fetch') {
@@ -68,7 +108,12 @@ if ($action === 'fetch') {
 
         $user['is_premium'] = $active ? true : false;
         
-        echo json_encode(['success' => true, 'data' => $user]);
+        // Return data in the format expected by Flutter UserService
+        echo json_encode([
+            'success' => true, 
+            'user' => $user,
+            'data' => $user  // Also include as 'data' for compatibility
+        ]);
         exit;
     } catch (Exception $e) {
         echo json_encode(['success' => false, 'message' => 'Database query failed', 'error' => $e->getMessage()]);

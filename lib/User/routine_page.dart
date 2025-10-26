@@ -102,6 +102,11 @@ class _RoutinePageState extends State<RoutinePage> with SingleTickerProviderStat
       
       // Load user-created routines (Tab 1)
       final userRoutinesResponse = await RoutineService.fetchUserCreatedRoutines();
+      print('🔍 RAW API RESPONSE CHECK:');
+      print('🔍 User routines response - myRoutines: ${userRoutinesResponse.myRoutines.length}');
+      print('🔍 User routines response - coachAssigned: ${userRoutinesResponse.coachAssigned.length}');
+      print('🔍 User routines response - templateRoutines: ${userRoutinesResponse.templateRoutines.length}');
+      print('🔍 User routines response - templateRoutines NAMES: ${userRoutinesResponse.templateRoutines.map((r) => r.name).toList()}');
       
       // Load coach-created routines (Tab 2)
       final coachRoutinesResponse = await RoutineService.fetchCoachCreatedRoutines();
@@ -115,7 +120,7 @@ class _RoutinePageState extends State<RoutinePage> with SingleTickerProviderStat
         // Use separate endpoints for each tab
         myRoutines = userRoutinesResponse.myRoutines;
         coachAssignedRoutines = coachRoutinesResponse.coachAssigned;
-        templateRoutines = coachRoutinesResponse.templateRoutines;
+        templateRoutines = userRoutinesResponse.templateRoutines; // FIXED: Use userRoutinesResponse for admin templates
         workoutHistory = history;
         isProMember = userRoutinesResponse.isPremium; // Use user routines for membership status
         _totalRoutines = userRoutinesResponse.totalRoutines + coachRoutinesResponse.totalRoutines;
@@ -169,6 +174,72 @@ class _RoutinePageState extends State<RoutinePage> with SingleTickerProviderStat
       case 'delete':
         _showDeleteConfirmation(routine);
         break;
+    }
+  }
+
+  Future<void> _cloneProgram(int programId) async {
+    try {
+      // Show loading indicator
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => Center(
+          child: CircularProgressIndicator(
+            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF4ECDC4)),
+          ),
+        ),
+      );
+
+      print('📋 Cloning program ID: $programId');
+      final result = await RoutineService.cloneProgramToUser(programId);
+      
+      // Close loading dialog
+      Navigator.of(context).pop();
+      
+      if (result['success'] == true) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result['message'] ?? 'Program added to your library successfully!'),
+            backgroundColor: Color(0xFF4ECDC4),
+            duration: Duration(seconds: 3),
+          ),
+        );
+        
+        // Refresh the routines list
+        await _loadData();
+        
+        // Navigate to "My Programs" tab
+        _tabController.animateTo(0);
+      } else if (result['already_exists'] == true) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result['message'] ?? 'You already have this program in your library'),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result['error'] ?? 'Failed to add program to your library'),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      // Close loading dialog if still open
+      if (Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
+      
+      print('💥 Error cloning program: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
@@ -1041,11 +1112,15 @@ class _RoutinePageState extends State<RoutinePage> with SingleTickerProviderStat
   }
 
   Widget _buildTemplatesTab() {
+    print('🔍 Building Explore tab - templateRoutines count: ${templateRoutines.length}');
+    print('🔍 First 3 template routines: ${templateRoutines.take(3).map((r) => r.name).toList()}');
+    
     if (_isLoading) return _buildLoadingState();
     if (_errorMessage != null) return _buildErrorState();
 
     final list = templateRoutines;
     if (list.isEmpty) {
+      print('⚠️ Explore tab: No template routines found');
       return Center(
         child: Container(
           margin: EdgeInsets.all(20),
@@ -1115,7 +1190,7 @@ class _RoutinePageState extends State<RoutinePage> with SingleTickerProviderStat
   Widget _buildWorkoutInProgressBanner() {
     return Container(
       margin: EdgeInsets.fromLTRB(20, 0, 20, 16),
-      padding: EdgeInsets.all(20),
+      padding: EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Color(0xFF2A2A2A),
         borderRadius: BorderRadius.circular(16),
@@ -1124,116 +1199,131 @@ class _RoutinePageState extends State<RoutinePage> with SingleTickerProviderStat
           width: 1,
         ),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Workout Icon
-          Container(
-            width: 50,
-            height: 50,
-            decoration: BoxDecoration(
-              color: Color(0xFF007AFF).withOpacity(0.1),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(
-              Icons.fitness_center,
-              color: Color(0xFF007AFF),
-              size: 24,
-            ),
-          ),
-          SizedBox(width: 16),
-          
-          // Text Content
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Workout in Progress',
-                  style: GoogleFonts.poppins(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                  ),
+          Row(
+            children: [
+              // Workout Icon
+              Container(
+                width: 50,
+                height: 50,
+                decoration: BoxDecoration(
+                  color: Color(0xFF007AFF).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                SizedBox(height: 4),
-                Text(
-                  'You have an active workout session',
-                  style: GoogleFonts.poppins(
-                    color: Colors.grey[400],
-                    fontSize: 14,
-                  ),
+                child: Icon(
+                  Icons.fitness_center,
+                  color: Color(0xFF007AFF),
+                  size: 24,
                 ),
-              ],
-            ),
+              ),
+              SizedBox(width: 16),
+              
+              // Text Content
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Workout in Progress',
+                      style: GoogleFonts.poppins(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'You have an active workout session',
+                      style: GoogleFonts.poppins(
+                        color: Colors.grey[400],
+                        fontSize: 14,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
           
-          // Action Buttons
+          SizedBox(height: 12),
+          
+          // Action Buttons - Now in a responsive Row that wraps
           Row(
             children: [
               // Resume Button
-              GestureDetector(
-                onTap: () {
-                  // Go back to the workout session
-                  Navigator.pop(context);
-                },
-                child: Container(
-                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: Color(0xFF007AFF),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.play_arrow,
-                        color: Colors.white,
-                        size: 16,
-                      ),
-                      SizedBox(width: 4),
-                      Text(
-                        'Resume',
-                        style: GoogleFonts.poppins(
+              Expanded(
+                child: GestureDetector(
+                  onTap: () {
+                    // Go back to the workout session
+                    Navigator.pop(context);
+                  },
+                  child: Container(
+                    padding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: Color(0xFF007AFF),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.play_arrow,
                           color: Colors.white,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
+                          size: 18,
                         ),
-                      ),
-                    ],
+                        SizedBox(width: 6),
+                        Text(
+                          'Resume',
+                          style: GoogleFonts.poppins(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
-              SizedBox(width: 8),
+              SizedBox(width: 12),
               
               // Discard Button
-              GestureDetector(
-                onTap: () {
-                  _showDiscardConfirmation();
-                },
-                child: Container(
-                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: Colors.red,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.close,
-                        color: Colors.white,
-                        size: 16,
-                      ),
-                      SizedBox(width: 4),
-                      Text(
-                        'Discard',
-                        style: GoogleFonts.poppins(
+              Expanded(
+                child: GestureDetector(
+                  onTap: () {
+                    _showDiscardConfirmation();
+                  },
+                  child: Container(
+                    padding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: Colors.red,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.close,
                           color: Colors.white,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
+                          size: 18,
                         ),
-                      ),
-                    ],
+                        SizedBox(width: 6),
+                        Text(
+                          'Discard',
+                          style: GoogleFonts.poppins(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -1508,8 +1598,8 @@ class _RoutinePageState extends State<RoutinePage> with SingleTickerProviderStat
               overflow: TextOverflow.ellipsis,
             ),
             SizedBox(height: 24),
-            // Show session status for coach-created routines
-            if (routine.createdBy.isNotEmpty && routine.createdBy != 'null' && routine.createdBy != '0') ...[
+            // Show session status ONLY for coach-created routines (not admin templates)
+            if (routine.createdBy.isNotEmpty && routine.createdBy != 'null' && routine.createdBy != '0' && routine.createdByTypeId != 1) ...[
               Builder(
                 builder: (context) {
                   final coachId = int.tryParse(routine.createdBy);
@@ -1549,32 +1639,103 @@ class _RoutinePageState extends State<RoutinePage> with SingleTickerProviderStat
                   ),
                 ],
               ),
-              child: ElevatedButton.icon(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => StartWorkoutPreviewPage(routine: routine),
+              child: Builder(
+                builder: (context) {
+                  // Check if this is an Explore program (createdByTypeId == 1 means admin template)
+                  final isExploreProgram = routine.createdByTypeId == 1;
+                  
+                  return ElevatedButton.icon(
+                    onPressed: () async {
+                      if (isExploreProgram) {
+                        // Show confirmation dialog
+                        final confirm = await showDialog<bool>(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                            backgroundColor: Color(0xFF1A1A1A),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            title: Text(
+                              'Add to My Workouts?',
+                              style: GoogleFonts.poppins(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            content: Text(
+                              'This will add "${routine.name}" to your personal workout library. You can then start workouts from your "My Programs" tab.',
+                              style: GoogleFonts.poppins(
+                                color: Colors.grey[300],
+                                fontSize: 14,
+                              ),
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(context, false),
+                                child: Text(
+                                  'Cancel',
+                                  style: GoogleFonts.poppins(
+                                    color: Colors.grey[400],
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                              ElevatedButton(
+                                onPressed: () => Navigator.pop(context, true),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Color(0xFF4ECDC4),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                                child: Text(
+                                  'Add',
+                                  style: GoogleFonts.poppins(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                        
+                        if (confirm == true) {
+                          // Clone the program
+                          await _cloneProgram(int.parse(routine.id));
+                        }
+                      } else {
+                        // Normal workout - navigate to preview
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => StartWorkoutPreviewPage(routine: routine),
+                          ),
+                        );
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.transparent,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      padding: EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                    icon: Icon(
+                      isExploreProgram ? Icons.add_rounded : Icons.play_arrow_rounded, 
+                      size: 24
+                    ),
+                    label: Text(
+                      isExploreProgram ? "Add to My Workouts" : "Start Workout",
+                      style: GoogleFonts.poppins(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 16,
+                      ),
                     ),
                   );
                 },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.transparent,
-                  foregroundColor: Colors.white,
-                  elevation: 0,
-                  padding: EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                ),
-                icon: Icon(Icons.play_arrow_rounded, size: 24),
-                label: Text(
-                  "Start Workout",
-                  style: GoogleFonts.poppins(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 16,
-                  ),
-                ),
               ),
             ),
           ],

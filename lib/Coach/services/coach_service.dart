@@ -5,6 +5,7 @@ import '../models/member_model.dart';
 import '../models/routine.models.dart';
 import '../models/workout_session_model.dart';
 import '../models/goal_model.dart';
+import '../../User/services/auth_service.dart';
 
 class CoachService {
   static const String baseUrl = 'https://api.cnergy.site/coach_api.php';
@@ -59,10 +60,22 @@ class CoachService {
     return null;
   }
 
-  // FIXED: Robust coach ID retrieval that handles both string and int storage
+  // FIXED: Get coach ID from AuthService instead of SharedPreferences to avoid stale data
   static Future<int> getCoachId() async {
     try {
       print('🆔 DEBUG: Starting getCoachId()');
+      
+      // Import AuthService to get current user ID
+      final currentUserId = AuthService.getCurrentUserId();
+      print('🔍 DEBUG: Current user ID from AuthService: $currentUserId');
+      
+      if (currentUserId != null && currentUserId > 0) {
+        print('✅ DEBUG: Using current user ID as coach ID: $currentUserId');
+        return currentUserId;
+      }
+      
+      // Fallback to SharedPreferences if AuthService fails
+      print('⚠️ DEBUG: AuthService returned null/0, falling back to SharedPreferences');
       final prefs = await SharedPreferences.getInstance();
       int coachId = 0;
       
@@ -98,45 +111,6 @@ class CoachService {
         }
       } else {
         print('❌ DEBUG: user_id key does not exist in SharedPreferences');
-      }
-      
-      // If still 0, check all possible keys that might contain the user ID
-      if (coachId == 0) {
-        print('🔍 DEBUG: Coach ID is 0, checking all SharedPreferences keys for user_id...');
-        final keys = prefs.getKeys();
-        print('📋 DEBUG: Available keys: $keys');
-        
-        for (String key in keys) {
-          if (key.toLowerCase().contains('user') || key.toLowerCase().contains('id')) {
-            try {
-              final value = prefs.get(key);
-              print('🔍 DEBUG: Key "$key" has value: $value (${value.runtimeType})');
-              
-              if (value is int && value > 0) {
-                coachId = value;
-                // Store it in the correct key
-                await prefs.setInt('user_id', coachId);
-                print('✅ DEBUG: Found user ID in key "$key": $coachId');
-                break;
-              } else if (value is String) {
-                final parsedValue = int.tryParse(value);
-                if (parsedValue != null && parsedValue > 0) {
-                  coachId = parsedValue;
-                  // Store it in the correct key as int
-                  await prefs.setInt('user_id', coachId);
-                  print('✅ DEBUG: Found and converted user ID in key "$key": $coachId');
-                  break;
-                } else {
-                  print('❌ DEBUG: Could not parse value "$value" to int');
-                }
-              } else {
-                print('❌ DEBUG: Value is not int or string: ${value.runtimeType}');
-              }
-            } catch (e) {
-              print('❌ DEBUG: Error checking key "$key": $e');
-            }
-          }
-        }
       }
       
       print('🏁 DEBUG: Final coach ID: $coachId (type: ${coachId.runtimeType})');

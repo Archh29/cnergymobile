@@ -433,6 +433,23 @@
             $subscriptionStmt->execute([$userId]);
             $allSubscriptions = $subscriptionStmt->fetchAll(PDO::FETCH_ASSOC);
             
+            // Filter out individual plans if user has combination package
+            $hasCombinationPackage = false;
+            foreach ($allSubscriptions as $sub) {
+                if ($sub['plan_id'] == 5) { // Membership + 1 Month Access package
+                    $hasCombinationPackage = true;
+                    break;
+                }
+            }
+            
+            if ($hasCombinationPackage) {
+                // Remove individual plans (Gym Membership Fee and Monthly Access) when combination package exists
+                $allSubscriptions = array_filter($allSubscriptions, function($sub) {
+                    return !($sub['plan_id'] == 1 || $sub['plan_id'] == 2); // Keep only combination package and other plans
+                });
+                error_log("Filtered out individual plans due to combination package");
+            }
+            
             // Get current subscription (most recent approved one with latest end date)
             $subscription = null;
             $latestEndDate = null;

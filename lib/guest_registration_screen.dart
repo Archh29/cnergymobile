@@ -95,7 +95,7 @@ class _GuestRegistrationScreenState extends State<GuestRegistrationScreen> {
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
-          'Guest Registration',
+          'Walk-in Registration',
           style: GoogleFonts.poppins(
             color: Colors.white,
             fontSize: 18,
@@ -145,7 +145,7 @@ class _GuestRegistrationScreenState extends State<GuestRegistrationScreen> {
                       ),
                       SizedBox(height: 16),
                       Text(
-                        'Guest Access',
+                        'Walk-in Access',
                         style: GoogleFonts.poppins(
                           color: Colors.white,
                           fontSize: 28,
@@ -351,7 +351,7 @@ class _GuestRegistrationScreenState extends State<GuestRegistrationScreen> {
                               Icon(Icons.check_circle_outline, color: Colors.white, size: 24),
                               SizedBox(width: 12),
                               Text(
-                                'Register as Guest - ₱${_walkInPrice.toStringAsFixed(0)}',
+                                'Register as Walk-in - ₱${_walkInPrice.toStringAsFixed(0)}',
                                 style: GoogleFonts.poppins(
                                   color: Colors.white,
                                   fontSize: 18,

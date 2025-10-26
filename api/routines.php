@@ -282,6 +282,139 @@ switch ($action) {
 
             error_log("DEBUG: Before membership restriction - myRoutines: " . count($myRoutines) . ", coachAssigned: " . count($coachAssigned) . ", templateRoutines: " . count($templateRoutines));
 
+            // Fetch admin-created programs from programs table for EXPLORE tab
+            try {
+                error_log("Fetching admin programs from programs/programhdr tables for EXPLORE tab");
+                
+                // First, check if programhdr table exists
+                $tableCheckStmt = $pdo->prepare("SHOW TABLES LIKE 'programhdr'");
+                $tableCheckStmt->execute();
+                $tableExists = $tableCheckStmt->fetch();
+                
+                $adminPrograms = [];
+                
+                // First check if programs table exists (this is where admin creates free programs)
+                $programsTableCheck = $pdo->prepare("SHOW TABLES LIKE 'programs'");
+                $programsTableCheck->execute();
+                $programsTableExists = $programsTableCheck->fetch();
+                
+                if ($programsTableExists) {
+                    error_log("programs table exists - checking for admin-created programs");
+                    
+                    // Check how many programs exist
+                    $programsCountStmt = $pdo->prepare("SELECT COUNT(*) as count FROM programs");
+                    $programsCountStmt->execute();
+                    $programsCount = $programsCountStmt->fetch(PDO::FETCH_ASSOC)['count'];
+                    error_log("Found $programsCount total programs in programs table");
+                    
+                    // Get ALL programs from programhdr table - NO FILTER
+                    $adminStmt = $pdo->prepare("
+                        SELECT 
+                            ph.id as id,
+                            ph.name,
+                            ph.header_name,
+                            ph.description,
+                            ph.goal,
+                            ph.difficulty,
+                            ph.duration,
+                            ph.color,
+                            ph.tags,
+                            ph.notes,
+                            ph.created_by,
+                            ph.created_at,
+                            ph.updated_at,
+                            pw.workout_details,
+                            COUNT(pwe.id) as exercise_count,
+                            COALESCE(u.user_type_id, 1) AS createdByTypeId,
+                            p.id as program_id
+                        FROM programhdr ph
+                        LEFT JOIN programs p ON ph.program_id = p.id
+                        LEFT JOIN program_workout pw ON ph.id = pw.program_hdr_id
+                        LEFT JOIN program_workout_exercise pwe ON pw.id = pwe.program_workout_id
+                        LEFT JOIN user u ON ph.created_by = u.id
+                        WHERE ph.is_active = 1
+                        GROUP BY ph.id
+                        ORDER BY ph.created_at DESC
+                    ");
+                    $adminStmt->execute();
+                    $adminPrograms = $adminStmt->fetchAll(PDO::FETCH_ASSOC);
+                    
+                    error_log("Found " . count($adminPrograms) . " programs from programhdr table (ALL programs for explore)");
+                }
+                
+                // Process each admin program
+                if (count($adminPrograms) > 0) {
+                foreach ($adminPrograms as &$adminProgram) {
+                    $adminProgram['tags'] = json_decode($adminProgram['tags'] ?? '[]', true);
+                    $adminProgram['exerciseList'] = '';
+                    $adminProgram['version'] = 1.0;
+                    $adminProgram['createdByTypeId'] = intval($adminProgram['createdByTypeId'] ?? 1);
+                    $adminProgram['category'] = 'admin';
+                    $adminProgram['user_id'] = null; // Admin programs don't belong to any specific user
+                    $adminProgram['createdBy'] = ''; // Empty for admin programs to prevent session status widget
+                    $adminProgram['createdById'] = 0; // Set to 0 for Explore programs (admin templates)
+                    $adminProgram['completionRate'] = 0;
+                    $adminProgram['totalSessions'] = 0;
+                    $adminProgram['lastPerformed'] = 'Never';
+                    $adminProgram['scheduledDays'] = [];
+                    $adminProgram['notes'] = $adminProgram['notes'] ?? '';
+                    $adminProgram['difficulty'] = $adminProgram['difficulty'] ?? 'Beginner';
+                    $adminProgram['color'] = $adminProgram['color'] ?? '0xFF96CEB4';
+                    
+                    // Get workout details
+                    if ($adminProgram['workout_details']) {
+                        $workoutDetails = json_decode($adminProgram['workout_details'], true);
+                        $adminProgram['name'] = $workoutDetails['name'] ?? $adminProgram['name'] ?? 'Program #' . $adminProgram['id'];
+                        $adminProgram['duration'] = $workoutDetails['duration'] ?? ($adminProgram['duration'] ?? '30-45 min');
+                    } else {
+                        $adminProgram['name'] = $adminProgram['name'] ?? 'Program #' . $adminProgram['id'];
+                        $adminProgram['duration'] = $adminProgram['duration'] ?? '30-45 min';
+                    }
+                    
+                    // Get exercise names for exercise list
+                    if ($adminProgram['exercise_count'] > 0) {
+                        $exerciseListStmt = $pdo->prepare("
+                            SELECT e.name 
+                            FROM program_workout_exercise pwe 
+                            JOIN exercise e ON pwe.exercise_id = e.id 
+                            JOIN program_workout pw ON pwe.program_workout_id = pw.id 
+                            WHERE pw.program_hdr_id = :program_hdr_id 
+                            ORDER BY pwe.id LIMIT 3
+                        ");
+                        $exerciseListStmt->bindParam(':program_hdr_id', $adminProgram['id'], PDO::PARAM_INT);
+                        $exerciseListStmt->execute();
+                        $exercises = $exerciseListStmt->fetchAll(PDO::FETCH_COLUMN);
+                        
+                        if (!empty($exercises)) {
+                            $adminProgram['exerciseList'] = implode(', ', $exercises);
+                            if ($adminProgram['exercise_count'] > 3) {
+                                $adminProgram['exerciseList'] .= '...';
+                            }
+                        }
+                    }
+                    
+                    // Set exercise count
+                    $adminProgram['exercises'] = (int)$adminProgram['exercise_count'];
+                    
+                    // Add to templateRoutines
+                    $templateRoutines[] = $adminProgram;
+                    error_log("Added admin program ID {$adminProgram['id']} to templateRoutines");
+                }
+                } else {
+                    error_log("No admin programs found to process");
+                }
+            } catch (Exception $e) {
+                error_log("Error fetching admin programs: " . $e->getMessage());
+                error_log("Stack trace: " . $e->getTraceAsString());
+            }
+
+            error_log("DEBUG: After fetching admin programs - templateRoutines: " . count($templateRoutines));
+            
+            // Log details of templateRoutines
+            foreach ($templateRoutines as $idx => $tr) {
+                error_log("Template Routine #{$idx}: ID={$tr['id']}, Name={$tr['name']}, Exercises={$tr['exercises']}, category={$tr['category']}");
+            }
+
             // Apply membership restriction ONLY to user's own routines
             if (!$isPremium && count($myRoutines) > 1) {
                 $myRoutines = array_slice($myRoutines, 0, 1);
@@ -289,6 +422,13 @@ switch ($action) {
             }
 
             error_log("DEBUG: After membership restriction - myRoutines: " . count($myRoutines) . ", coachAssigned: " . count($coachAssigned) . ", templateRoutines: " . count($templateRoutines));
+            
+            // Final response summary
+            error_log("=== FINAL RESPONSE SUMMARY ===");
+            error_log("myRoutines: " . count($myRoutines));
+            error_log("coachAssigned: " . count($coachAssigned));
+            error_log("templateRoutines: " . count($templateRoutines));
+            error_log("Total template routines being sent to frontend: " . count($templateRoutines));
 
             // For backward compatibility, set combined routines to just myRoutines
             $routines = $myRoutines;
@@ -332,8 +472,9 @@ switch ($action) {
 
             error_log("User $userId is " . ($isPremium ? 'PREMIUM' : 'BASIC') . " - fetching USER routines only");
 
-            // ONLY get user-created routines (created_by IS NULL) - NO coach logic
-            $stmt = $pdo->prepare("SELECT m.id, m.user_id, m.program_hdr_id, m.created_by, CONCAT(u.fname, ' ', u.mname, ' ', u.lname) AS createdByName, u.user_type_id AS createdByTypeId, m.color, m.tags, m.goal, m.notes, m.completion_rate AS completionRate, m.scheduled_days AS scheduledDays, m.difficulty, m.total_sessions AS totalSessions, m.created_at, m.updated_at FROM member_programhdr m LEFT JOIN user u ON u.id = m.created_by WHERE m.user_id = :user_id AND (m.created_by IS NULL OR m.created_by = '') ORDER BY m.created_at DESC");
+            // Get ALL routines belonging to this user (both user-created AND cloned)
+            // Filter: only routines where user_id matches (regardless of created_by)
+            $stmt = $pdo->prepare("SELECT m.id, m.user_id, m.program_hdr_id, m.created_by, CONCAT(u.fname, ' ', u.mname, ' ', u.lname) AS createdByName, u.user_type_id AS createdByTypeId, m.color, m.tags, m.goal, m.notes, m.completion_rate AS completionRate, m.scheduled_days AS scheduledDays, m.difficulty, m.total_sessions AS totalSessions, m.created_at, m.updated_at FROM member_programhdr m LEFT JOIN user u ON u.id = m.created_by WHERE m.user_id = :user_id ORDER BY m.created_at DESC");
             $stmt->bindParam(':user_id', $userId, PDO::PARAM_INT);
             $stmt->execute();
             $userRoutines = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -414,13 +555,126 @@ switch ($action) {
                 error_log("Limited user routines to 1 for basic user");
             }
 
-            // IMPORTANT: This endpoint ONLY returns user-created routines (NO coach logic)
+            // Fetch ALL programs from programhdr table for EXPLORE tab
+            $templateRoutines = [];
+            try {
+                error_log("Fetching programs for explore tab from programhdr table");
+                
+                // Simple check first
+                $simpleStmt = $pdo->prepare("SELECT id, name, header_name, is_active FROM programhdr WHERE is_active = 1 LIMIT 10");
+                $simpleStmt->execute();
+                $simplePrograms = $simpleStmt->fetchAll(PDO::FETCH_ASSOC);
+                error_log("DEBUG: Found " . count($simplePrograms) . " programs in programhdr: " . json_encode($simplePrograms));
+                
+                // Get ALL programs from programhdr table
+                // Exclude test programs by filtering out common test names
+                $adminStmt = $pdo->prepare("
+                    SELECT 
+                        ph.id as id,
+                        ph.name,
+                        ph.header_name,
+                        ph.description,
+                        ph.goal,
+                        ph.difficulty,
+                        ph.duration,
+                        ph.color,
+                        ph.tags,
+                        ph.notes,
+                        ph.created_by,
+                        ph.created_at,
+                        ph.updated_at,
+                        pw.workout_details,
+                        COUNT(pwe.id) as exercise_count,
+                        COALESCE(u.user_type_id, 1) AS createdByTypeId,
+                        p.id as program_id
+                    FROM programhdr ph
+                    LEFT JOIN programs p ON ph.program_id = p.id
+                    LEFT JOIN program_workout pw ON ph.id = pw.program_hdr_id
+                    LEFT JOIN program_workout_exercise pwe ON pw.id = pwe.program_workout_id
+                    LEFT JOIN user u ON ph.created_by = u.id
+                    WHERE ph.is_active = 1
+                    AND (COALESCE(ph.name, '') NOT LIKE '%Test%' 
+                         AND COALESCE(ph.name, '') NOT LIKE '%Template%'
+                         AND COALESCE(ph.header_name, '') NOT LIKE '%Test%'
+                         AND COALESCE(ph.header_name, '') NOT LIKE '%Template%')
+                    GROUP BY ph.id
+                    ORDER BY ph.created_at DESC
+                ");
+                $adminStmt->execute();
+                $adminPrograms = $adminStmt->fetchAll(PDO::FETCH_ASSOC);
+                error_log("DEBUG: Query returned " . count($adminPrograms) . " programs from programhdr (after filtering test programs)");
+                
+                // Process admin programs
+                foreach ($adminPrograms as &$adminProgram) {
+                    $adminProgram['tags'] = json_decode($adminProgram['tags'] ?? '[]', true);
+                    $adminProgram['exerciseList'] = '';
+                    $adminProgram['version'] = 1.0;
+                    $adminProgram['createdByTypeId'] = intval($adminProgram['createdByTypeId'] ?? 1);
+                    $adminProgram['category'] = 'admin';
+                    $adminProgram['user_id'] = null;
+                    $adminProgram['createdBy'] = '';
+                    $adminProgram['createdById'] = 0; // Set to 0 for Explore programs (admin templates)
+                    $adminProgram['completionRate'] = 0;
+                    $adminProgram['totalSessions'] = 0;
+                    $adminProgram['lastPerformed'] = 'Never';
+                    $adminProgram['scheduledDays'] = [];
+                    $adminProgram['notes'] = $adminProgram['notes'] ?? '';
+                    $adminProgram['difficulty'] = $adminProgram['difficulty'] ?? 'Beginner';
+                    $adminProgram['color'] = $adminProgram['color'] ?? '0xFF96CEB4';
+                    
+                    // Use header_name if available, otherwise use name
+                    $programName = !empty($adminProgram['header_name']) ? $adminProgram['header_name'] : $adminProgram['name'];
+                    
+                    // Get workout details
+                    if ($adminProgram['workout_details']) {
+                        $workoutDetails = json_decode($adminProgram['workout_details'], true);
+                        $adminProgram['name'] = $workoutDetails['name'] ?? $programName ?? 'Program #' . $adminProgram['id'];
+                        $adminProgram['duration'] = $workoutDetails['duration'] ?? ($adminProgram['duration'] ?? '30-45 min');
+                    } else {
+                        $adminProgram['name'] = $programName ?? 'Program #' . $adminProgram['id'];
+                        $adminProgram['duration'] = $adminProgram['duration'] ?? '30-45 min';
+                    }
+                    
+                    // Get exercise names for exercise list
+                    if ($adminProgram['exercise_count'] > 0) {
+                        $exerciseListStmt = $pdo->prepare("
+                            SELECT e.name 
+                            FROM program_workout_exercise pwe 
+                            JOIN exercise e ON pwe.exercise_id = e.id 
+                            JOIN program_workout pw ON pwe.program_workout_id = pw.id 
+                            WHERE pw.program_hdr_id = :program_hdr_id 
+                            ORDER BY pwe.id LIMIT 3
+                        ");
+                        $exerciseListStmt->bindParam(':program_hdr_id', $adminProgram['id'], PDO::PARAM_INT);
+                        $exerciseListStmt->execute();
+                        $exercises = $exerciseListStmt->fetchAll(PDO::FETCH_COLUMN);
+                        
+                        if (!empty($exercises)) {
+                            $adminProgram['exerciseList'] = implode(', ', $exercises);
+                            if ($adminProgram['exercise_count'] > 3) {
+                                $adminProgram['exerciseList'] .= '...';
+                            }
+                        }
+                    }
+                    
+                    // Set exercise count
+                    $adminProgram['exercises'] = (int)$adminProgram['exercise_count'];
+                    
+                    // Add to templateRoutines
+                    $templateRoutines[] = $adminProgram;
+                }
+                error_log("Added " . count($templateRoutines) . " admin programs to template_routines");
+            } catch (Exception $e) {
+                error_log("Error fetching admin programs in user_routines: " . $e->getMessage());
+            }
+            
+            // IMPORTANT: This endpoint returns user-created routines AND admin programs
             respond([
                 'success' => true,
                 'routines' => $processedRoutines,
                 'my_routines' => $processedRoutines,
                 'coach_assigned' => [], // Empty - coach routines handled separately
-                'template_routines' => [], // Empty - template routines handled separately
+                'template_routines' => $templateRoutines, // Now includes admin programs
                 'total_routines' => count($processedRoutines),
                 'is_premium' => $isPremium,
                 'membership_status' => [
@@ -430,7 +684,7 @@ switch ($action) {
                 'debug_info' => $membershipData['debug_info'] ?? null,
                 'user_id' => $userId,
                 'fetched_at' => date('Y-m-d H:i:s'),
-                'note' => 'This endpoint only returns user-created routines. Use coach_routines action for coach routines.'
+                'note' => 'Returns user-created routines and admin programs for explore tab.'
             ]);
 
         } catch (PDOException $e) {
@@ -476,7 +730,7 @@ switch ($action) {
                 WHERE m.user_id = :user_id 
                 AND m.created_by IS NOT NULL 
                 AND m.created_by != m.user_id
-                AND u.user_type_id IN (1, 3)
+                AND u.user_type_id = 3
                 ORDER BY m.created_at DESC
             ");
             $stmt->bindParam(':user_id', $userId, PDO::PARAM_INT);
@@ -751,37 +1005,54 @@ switch ($action) {
                         $exerciseId = $exercise['exercise_id'] ?? $exercise['id'] ?? null;
 
                         if ($exerciseId && !in_array($exerciseId, $addedExerciseIds)) {
-                            // Handle individual set configurations
-                            if (isset($exercise['sets']) && is_array($exercise['sets'])) {
-                                // Process each set individually
-                                foreach ($exercise['sets'] as $setIndex => $set) {
-                                    $reps = $set['reps'] ?? $exercise['reps'] ?? $exercise['target_reps'] ?? '10';
-                                    $weight = $set['weight'] ?? $exercise['weight'] ?? $exercise['target_weight'] ?? 0;
-
-                                    $exerciseStmt->execute([
-                                        $workoutId,
-                                        $exerciseId,
-                                        is_numeric($reps) ? $reps : 10,
-                                        1, // Each set is inserted as a separate row
-                                        is_numeric($weight) ? $weight : 0
-                                    ]);
-                                }
-                                error_log("Added " . count($exercise['sets']) . " sets for exercise ID $exerciseId with individual weights");
-                            } else {
-                                // Fallback to old format
-                                $sets = $exercise['target_sets'] ?? 3;
-                                $reps = $exercise['target_reps'] ?? '10';
-                                $weight = $exercise['target_weight'] ?? 0;
-
-                                $exerciseStmt->execute([
-                                    $workoutId,
-                                    $exerciseId,
-                                    is_numeric($reps) ? $reps : 10,
-                                    $sets,
-                                    is_numeric($weight) ? $weight : 0
-                                ]);
-                                error_log("Added exercise ID $exerciseId with fallback format");
+                            // Use target_sets if available, otherwise count sets array
+                            $totalSets = 0;
+                            $avgReps = 0;
+                            $avgWeight = 0;
+                            
+                            // Priority 1: Use target_sets if available
+                            if (isset($exercise['target_sets']) && is_numeric($exercise['target_sets'])) {
+                                $totalSets = (int)$exercise['target_sets'];
+                                $avgReps = $exercise['target_reps'] ?? 10;
+                                $avgWeight = $exercise['target_weight'] ?? 0;
+                                
+                                error_log("Added exercise ID $exerciseId using target_sets: $totalSets, reps: $avgReps, weight: $avgWeight");
                             }
+                            // Priority 2: Count sets array if target_sets not available
+                            else if (isset($exercise['sets']) && is_array($exercise['sets'])) {
+                                $totalSets = count($exercise['sets']);
+                                $totalReps = 0;
+                                $totalWeight = 0;
+                                
+                                foreach ($exercise['sets'] as $set) {
+                                    $reps = $set['reps'] ?? $exercise['reps'] ?? $exercise['target_reps'] ?? 10;
+                                    $weight = $set['weight'] ?? $exercise['weight'] ?? $exercise['target_weight'] ?? 0;
+                                    $totalReps += is_numeric($reps) ? $reps : 10;
+                                    $totalWeight += is_numeric($weight) ? $weight : 0;
+                                }
+                                
+                                $avgReps = $totalSets > 0 ? round($totalReps / $totalSets) : 10;
+                                $avgWeight = $totalSets > 0 ? round($totalWeight / $totalSets, 1) : 0;
+                                
+                                error_log("Added exercise ID $exerciseId counting sets array: $totalSets, avg reps: $avgReps, avg weight: $avgWeight");
+                            }
+                            // Priority 3: Fallback to default
+                            else {
+                                $totalSets = 3;
+                                $avgReps = 10;
+                                $avgWeight = 0;
+                                
+                                error_log("Added exercise ID $exerciseId with default values - sets: $totalSets, reps: $avgReps, weight: $avgWeight");
+                            }
+
+                            // Insert ONE row per exercise with total sets
+                            $exerciseStmt->execute([
+                                $workoutId,
+                                $exerciseId,
+                                is_numeric($avgReps) ? $avgReps : 10,
+                                $totalSets,
+                                is_numeric($avgWeight) ? $avgWeight : 0
+                            ]);
 
                             $addedExerciseIds[] = $exerciseId; // Mark as added
                         } elseif ($exerciseId && in_array($exerciseId, $addedExerciseIds)) {
@@ -1316,6 +1587,359 @@ switch ($action) {
         }
         break;
 
+    case 'fetch_routine_details':
+        try {
+            $routineId = $_GET['routine_id'] ?? $input['routine_id'] ?? null;
+            $userId = validateUserId($_GET['user_id'] ?? $input['user_id'] ?? null);
+            
+            if (!$routineId) {
+                respond(["error" => "Missing routine ID"]);
+            }
+            
+            $routineId = is_numeric($routineId) ? intval($routineId) : $routineId;
+            
+            error_log("Fetching routine details for routine ID: $routineId, user ID: $userId");
+            
+            // Fetch routine header
+            $routineStmt = $pdo->prepare("
+                SELECT 
+                    m.id,
+                    m.user_id,
+                    m.program_hdr_id,
+                    m.created_by,
+                    m.color,
+                    m.tags,
+                    m.goal,
+                    m.notes,
+                    m.completion_rate AS completionRate,
+                    m.scheduled_days AS scheduledDays,
+                    m.difficulty,
+                    m.total_sessions AS totalSessions,
+                    m.created_at,
+                    m.updated_at,
+                    CONCAT(u.fname, ' ', u.mname, ' ', u.lname) AS createdByName,
+                    u.user_type_id AS createdByTypeId
+                FROM member_programhdr m 
+                LEFT JOIN user u ON u.id = m.created_by 
+                WHERE m.id = :routine_id
+            ");
+            $routineStmt->bindParam(':routine_id', $routineId, PDO::PARAM_INT);
+            $routineStmt->execute();
+            $routineData = $routineStmt->fetch(PDO::FETCH_ASSOC);
+            
+            if (!$routineData) {
+                respond(["error" => "Routine not found"]);
+            }
+            
+            // Verify the routine belongs to the user
+            if ($routineData['user_id'] != $userId) {
+                respond(["error" => "Unauthorized: Cannot access another user's routine"]);
+            }
+            
+            // Get workout details
+            $workoutStmt = $pdo->prepare("
+                SELECT workout_details 
+                FROM member_program_workout 
+                WHERE member_program_hdr_id = :routine_id 
+                ORDER BY id DESC 
+                LIMIT 1
+            ");
+            $workoutStmt->bindParam(':routine_id', $routineId, PDO::PARAM_INT);
+            $workoutStmt->execute();
+            $workoutData = $workoutStmt->fetch(PDO::FETCH_ASSOC);
+            
+            $workoutDetails = [];
+            if ($workoutData && !empty($workoutData['workout_details'])) {
+                $workoutDetails = json_decode($workoutData['workout_details'], true);
+            }
+            
+            // Fetch all exercises with details
+            // Note: GROUP_CONCAT for target_muscle requires GROUP BY
+            $exerciseStmt = $pdo->prepare("
+                SELECT 
+                    e.id as exercise_id,
+                    e.name,
+                    e.description,
+                    e.image_url,
+                    e.video_url,
+                    mwe.id as member_workout_exercise_id,
+                    mwe.reps as target_reps,
+                    mwe.sets as target_sets,
+                    mwe.weight as target_weight,
+                    GROUP_CONCAT(DISTINCT tm.name SEPARATOR ', ') as target_muscle
+                FROM member_workout_exercise mwe
+                JOIN exercise e ON mwe.exercise_id = e.id
+                JOIN member_program_workout mpw ON mwe.member_program_workout_id = mpw.id
+                LEFT JOIN exercise_target_muscle etm ON e.id = etm.exercise_id
+                LEFT JOIN target_muscle tm ON etm.muscle_id = tm.id
+                WHERE mpw.member_program_hdr_id = :routine_id
+                GROUP BY mwe.id
+                ORDER BY mwe.id ASC
+            ");
+            $exerciseStmt->bindParam(':routine_id', $routineId, PDO::PARAM_INT);
+            $exerciseStmt->execute();
+            $exercises = $exerciseStmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // Build detailed exercises array
+            $detailedExercises = [];
+            foreach ($exercises as $exercise) {
+                // Create empty sets array for editing
+                $sets = [];
+                $targetSets = (int)$exercise['target_sets'];
+                $targetReps = (string)$exercise['target_reps'];
+                $targetWeight = (string)$exercise['target_weight'];
+                
+                // Create sets array based on target sets
+                for ($i = 0; $i < $targetSets; $i++) {
+                    $sets[] = [
+                        'reps' => $targetReps,
+                        'weight' => $targetWeight,
+                        'rpe' => 0,
+                        'duration' => '',
+                        'timestamp' => date('c')
+                    ];
+                }
+                
+                $detailedExercises[] = [
+                    'id' => (int)$exercise['exercise_id'],
+                    'name' => $exercise['name'],
+                    'target_sets' => $targetSets,
+                    'target_reps' => $targetReps,
+                    'target_weight' => $targetWeight,
+                    'completed_sets' => 0,
+                    'sets' => $sets,
+                    'completed' => false,
+                    'category' => '', // Not in database
+                    'difficulty' => $routineData['difficulty'] ?? 'Beginner', // Use routine difficulty
+                    'color' => $routineData['color'],
+                    'rest_time' => 60, // Default 60 seconds
+                    'notes' => '',
+                    'target_muscle' => $exercise['target_muscle'] ?? '',
+                    'description' => $exercise['description'] ?? '',
+                    'image_url' => $exercise['image_url'] ?? '',
+                    'video_url' => $exercise['video_url'] ?? ''
+                ];
+            }
+            
+            // Build routine name from workout_details
+            $routineName = $workoutDetails['name'] ?? $routineData['goal'] ?? 'Routine #' . $routineId;
+            $routineDuration = $workoutDetails['duration'] ?? '30-45 min';
+            
+            // Build exercise list string
+            $exerciseNames = array_column($exercises, 'name');
+            $exerciseList = !empty($exerciseNames) ? implode(', ', array_slice($exerciseNames, 0, 3)) : 'No exercises';
+            
+            // Format response
+            $formattedRoutine = [
+                'id' => (string)$routineData['id'],
+                'name' => $routineName,
+                'exercises' => count($detailedExercises),
+                'duration' => $routineDuration,
+                'difficulty' => $routineData['difficulty'] ?? 'Beginner',
+                'createdById' => $routineData['created_by'] ? (string)$routineData['created_by'] : '',
+                'createdByTypeId' => (int)($routineData['createdByTypeId'] ?? 0),
+                'exerciseList' => $exerciseList,
+                'color' => $routineData['color'] ?? '0xFF96CEB4',
+                'lastPerformed' => $routineData['updated_at'] ?? 'Never',
+                'tags' => json_decode($routineData['tags'] ?? '[]', true),
+                'goal' => $routineData['goal'] ?? '',
+                'completionRate' => (int)$routineData['completionRate'],
+                'totalSessions' => (int)$routineData['totalSessions'],
+                'notes' => $routineData['notes'] ?? '',
+                'scheduledDays' => json_decode($routineData['scheduledDays'] ?? '[]', true),
+                'version' => 1.0,
+                'detailedExercises' => $detailedExercises
+            ];
+            
+            respond([
+                'success' => true,
+                'routine' => $formattedRoutine
+            ]);
+            
+        } catch (PDOException $e) {
+            error_log("Database error in fetch_routine_details: " . $e->getMessage());
+            respond(["error" => "Database error: " . $e->getMessage()]);
+        } catch (Exception $e) {
+            error_log("General error in fetch_routine_details: " . $e->getMessage());
+            respond(["success" => false, "error" => $e->getMessage()]);
+        }
+        break;
+
+    case 'add_exercise_to_routine':
+        try {
+            $routineId = $input['routine_id'] ?? $input['routineId'] ?? null;
+            $userId = validateUserId($input['user_id'] ?? $input['userId'] ?? null);
+            $exerciseId = $input['exercise_id'] ?? $input['exerciseId'] ?? null;
+            $sets = intval($input['sets'] ?? 3);
+            $reps = intval($input['reps'] ?? 10);
+            $weight = floatval($input['weight'] ?? 0);
+            
+            if (!$routineId || !$exerciseId) {
+                respond(["error" => "Missing routine ID or exercise ID"]);
+            }
+            
+            $routineId = is_numeric($routineId) ? intval($routineId) : null;
+            $exerciseId = is_numeric($exerciseId) ? intval($exerciseId) : null;
+            
+            if (!$routineId || !$exerciseId) {
+                error_log("DEBUG: Invalid routine_id=$routineId or exercise_id=$exerciseId");
+                respond(["error" => "Invalid routine ID or exercise ID"]);
+            }
+            
+            error_log("Adding exercise to routine: routine_id=$routineId, exercise_id=$exerciseId, user_id=$userId");
+            
+            // Verify the routine belongs to the user - also get created_by
+            $checkStmt = $pdo->prepare("SELECT user_id, id, created_by FROM member_programhdr WHERE id = :routine_id");
+            $checkStmt->bindParam(':routine_id', $routineId, PDO::PARAM_INT);
+            $checkStmt->execute();
+            $routine = $checkStmt->fetch(PDO::FETCH_ASSOC);
+            
+            error_log("DEBUG: Routine query result: " . json_encode($routine));
+            
+            if ($routine) {
+                error_log("DEBUG: user_id from DB: " . $routine['user_id'] . " (assigned to)");
+                error_log("DEBUG: created_by from DB: " . ($routine['created_by'] ?? 'NULL') . " (created by)");
+            } else {
+                error_log("DEBUG: Routine with ID $routineId NOT FOUND in database");
+            }
+            
+            error_log("DEBUG: user_id from request: $userId (who is trying to add exercise)");
+            
+            // Get info about both users (after we find out the routine owner)
+            // We'll log this info later when we know who owns the routine
+            
+            // Additional debug: Check if any routines exist for this user
+            $checkAllRoutinesStmt = $pdo->prepare("SELECT id, user_id FROM member_programhdr WHERE user_id = :user_id LIMIT 5");
+            $checkAllRoutinesStmt->bindParam(':user_id', $userId, PDO::PARAM_INT);
+            $checkAllRoutinesStmt->execute();
+            $allRoutines = $checkAllRoutinesStmt->fetchAll(PDO::FETCH_ASSOC);
+            error_log("DEBUG: User $userId has these routines: " . json_encode($allRoutines));
+            
+            if (!$routine) {
+                error_log("DEBUG: Routine not found in database");
+                respond([
+                    "success" => false,
+                    "error" => "Routine not found",
+                    "debug_info" => [
+                        "routine_id" => $routineId,
+                        "user_id" => $userId,
+                        "message" => "Routine ID $routineId does not exist in the database"
+                    ]
+                ]);
+            }
+            
+            // Allow access if routine belongs to user OR if it's assigned to this user (coach-created)
+            $routineUserId = (int)$routine['user_id'];
+            $requestUserId = (int)$userId;
+            
+            // Check if user has access to this routine (either owns it, or it's assigned to them)
+            $hasAccess = false;
+            
+            // If user owns the routine (user_id matches), allow access
+            if ($routineUserId == $requestUserId) {
+                $hasAccess = true;
+                error_log("DEBUG: User $requestUserId owns routine $routineId");
+            } else {
+                // User doesn't own it, deny access
+                // The user might be logged in as the wrong account
+                error_log("DEBUG: User $requestUserId trying to modify routine $routineId which belongs to user $routineUserId");
+                $hasAccess = false;
+            }
+            
+            if (!$hasAccess) {
+                error_log("DEBUG: Access denied - Routine owner: $routineUserId, Request user: $requestUserId");
+                
+                // Get user names for better error message
+                $ownerInfoStmt = $pdo->prepare("SELECT email, fname, lname FROM user WHERE id = :user_id");
+                $ownerInfoStmt->bindParam(':user_id', $routineUserId, PDO::PARAM_INT);
+                $ownerInfoStmt->execute();
+                $ownerInfo = $ownerInfoStmt->fetch(PDO::FETCH_ASSOC);
+                
+                $requestInfoStmt = $pdo->prepare("SELECT email, fname, lname FROM user WHERE id = :user_id");
+                $requestInfoStmt->bindParam(':user_id', $requestUserId, PDO::PARAM_INT);
+                $requestInfoStmt->execute();
+                $requestInfo = $requestInfoStmt->fetch(PDO::FETCH_ASSOC);
+                
+                respond([
+                    "success" => false,
+                    "error" => "Unauthorized",
+                    "debug_info" => [
+                        "routine_id" => $routineId,
+                        "routine_user_id" => $routineUserId,
+                        "request_user_id" => $requestUserId,
+                        "message" => "Routine belongs to user $routineUserId but request is from user $requestUserId",
+                        "routine_owner" => $ownerInfo ? ($ownerInfo['fname'] . ' ' . $ownerInfo['lname'] . ' (' . $ownerInfo['email'] . ')') : 'Unknown',
+                        "request_user" => $requestInfo ? ($requestInfo['fname'] . ' ' . $requestInfo['lname'] . ' (' . $requestInfo['email'] . ')') : 'Unknown'
+                    ]
+                ]);
+            }
+            
+            // Get the workout ID for this routine
+            $workoutStmt = $pdo->prepare("SELECT id FROM member_program_workout WHERE member_program_hdr_id = :routine_id ORDER BY id DESC LIMIT 1");
+            $workoutStmt->bindParam(':routine_id', $routineId, PDO::PARAM_INT);
+            $workoutStmt->execute();
+            $workoutData = $workoutStmt->fetch(PDO::FETCH_ASSOC);
+            
+            if (!$workoutData) {
+                respond(["error" => "No workout found for this routine"]);
+            }
+            
+            $workoutId = $workoutData['id'];
+            
+            // Check if this exercise already exists in this workout
+            $checkStmt = $pdo->prepare("SELECT id FROM member_workout_exercise WHERE member_program_workout_id = :workout_id AND exercise_id = :exercise_id");
+            $checkStmt->bindParam(':workout_id', $workoutId, PDO::PARAM_INT);
+            $checkStmt->bindParam(':exercise_id', $exerciseId, PDO::PARAM_INT);
+            $checkStmt->execute();
+            $existingExercise = $checkStmt->fetch(PDO::FETCH_ASSOC);
+            
+            if ($existingExercise) {
+                error_log("Exercise $exerciseId already exists in routine $routineId");
+                respond([
+                    "success" => false,
+                    "message" => "Exercise already exists in routine",
+                    "error" => "This exercise is already in the routine"
+                ]);
+            }
+            
+            // Insert the exercise into member_workout_exercise
+            $insertStmt = $pdo->prepare("INSERT INTO member_workout_exercise (member_program_workout_id, exercise_id, sets, reps, weight) VALUES (:workout_id, :exercise_id, :sets, :reps, :weight)");
+            $insertStmt->bindParam(':workout_id', $workoutId, PDO::PARAM_INT);
+            $insertStmt->bindParam(':exercise_id', $exerciseId, PDO::PARAM_INT);
+            $insertStmt->bindParam(':sets', $sets, PDO::PARAM_INT);
+            $insertStmt->bindParam(':reps', $reps, PDO::PARAM_INT);
+            $insertStmt->bindParam(':weight', $weight, PDO::PARAM_STR);
+            
+            if ($insertStmt->execute()) {
+                $newExerciseId = $pdo->lastInsertId();
+                error_log("Successfully added exercise $exerciseId to routine $routineId with new ID: $newExerciseId");
+                
+                // Get exercise name for response
+                $exerciseNameStmt = $pdo->prepare("SELECT name FROM exercise WHERE id = :exercise_id");
+                $exerciseNameStmt->bindParam(':exercise_id', $exerciseId, PDO::PARAM_INT);
+                $exerciseNameStmt->execute();
+                $exerciseData = $exerciseNameStmt->fetch(PDO::FETCH_ASSOC);
+                
+                respond([
+                    "success" => true,
+                    "message" => "Exercise added to routine successfully",
+                    "exercise_id" => $exerciseId,
+                    "exercise_name" => $exerciseData['name'] ?? '',
+                    "member_workout_exercise_id" => $newExerciseId
+                ]);
+            } else {
+                respond(["error" => "Failed to add exercise to routine"]);
+            }
+            
+        } catch (PDOException $e) {
+            error_log("Database error in add_exercise_to_routine: " . $e->getMessage());
+            respond(["error" => "Database error: " . $e->getMessage()]);
+        } catch (Exception $e) {
+            error_log("General error in add_exercise_to_routine: " . $e->getMessage());
+            respond(["success" => false, "error" => $e->getMessage()]);
+        }
+        break;
+
     case 'get_today_workout':
         try {
             $userId = validateUserId($_GET['user_id'] ?? null);
@@ -1428,6 +2052,250 @@ switch ($action) {
             respond(["error" => "Database error: " . $e->getMessage()]);
         } catch (Exception $e) {
             error_log("Error in get_today_workout: " . $e->getMessage());
+            respond(["error" => $e->getMessage()]);
+        }
+        break;
+
+    case 'clone_program':
+        try {
+            error_log("=== CLONE PROGRAM REQUEST ===");
+            $userId = $_GET['user_id'] ?? $input['user_id'] ?? null;
+            $userId = validateUserId($userId);
+            $programId = $_GET['program_id'] ?? $input['program_id'] ?? null;
+            
+            if (!$programId || !is_numeric($programId)) {
+                respond(["error" => "Invalid or missing program ID"]);
+            }
+            
+            $programId = intval($programId);
+            error_log("Cloning program ID: $programId for user ID: $userId");
+            
+            // Start transaction
+            $pdo->beginTransaction();
+            
+            try {
+                // Get the original program from programhdr
+                $getProgramStmt = $pdo->prepare("
+                    SELECT * FROM programhdr WHERE id = :program_id
+                ");
+                $getProgramStmt->bindParam(':program_id', $programId, PDO::PARAM_INT);
+                $getProgramStmt->execute();
+                $originalProgram = $getProgramStmt->fetch(PDO::FETCH_ASSOC);
+                
+                if (!$originalProgram) {
+                    throw new Exception("Program not found");
+                }
+                
+                error_log("Original program found: " . json_encode($originalProgram));
+                
+                // Check if this program is already cloned for this user
+                error_log("DEBUG: Checking if program_hdr_id=$programId already exists for user_id=$userId");
+                
+                // Check if there's an existing clone (with or without complete data)
+                $checkCloneStmt = $pdo->prepare("
+                    SELECT id, program_hdr_id, user_id 
+                    FROM member_programhdr 
+                    WHERE user_id = :user_id AND program_hdr_id = :program_id
+                ");
+                $checkCloneStmt->bindParam(':user_id', $userId, PDO::PARAM_INT);
+                $checkCloneStmt->bindParam(':program_id', $programId, PDO::PARAM_INT);
+                $checkCloneStmt->execute();
+                $existingClone = $checkCloneStmt->fetch(PDO::FETCH_ASSOC);
+                
+                error_log("DEBUG: Duplicate check result: " . json_encode($existingClone));
+                
+                if ($existingClone) {
+                    error_log("DEBUG: Program already exists as member_programhdr ID: {$existingClone['id']}");
+                    $pdo->rollBack();
+                    respond([
+                        "error" => "You already have this program in your library", 
+                        "already_exists" => true,
+                        "debug_info" => $existingClone
+                    ]);
+                }
+                
+                error_log("DEBUG: No existing clone found, proceeding with clone");
+                
+                // Delete any incomplete clones (without workouts) before cloning
+                $deleteIncompleteStmt = $pdo->prepare("
+                    DELETE FROM member_programhdr 
+                    WHERE user_id = :user_id AND program_hdr_id = :program_id
+                    AND NOT EXISTS (
+                        SELECT 1 FROM member_program_workout WHERE member_program_hdr_id = member_programhdr.id
+                    )
+                ");
+                $deleteIncompleteStmt->bindParam(':user_id', $userId, PDO::PARAM_INT);
+                $deleteIncompleteStmt->bindParam(':program_id', $programId, PDO::PARAM_INT);
+                $deleteIncompleteStmt->execute();
+                $deletedCount = $deleteIncompleteStmt->rowCount();
+                if ($deletedCount > 0) {
+                    error_log("Deleted $deletedCount incomplete clone(s)");
+                }
+                
+                // Insert into member_programhdr
+                // IMPORTANT: Set program_hdr_id to track which template was cloned
+                $insertStmt = $pdo->prepare("
+                    INSERT INTO member_programhdr (
+                        user_id, program_hdr_id, created_by, color, tags, goal, notes, 
+                        completion_rate, scheduled_days, difficulty, total_sessions
+                    ) VALUES (
+                        :user_id, :program_hdr_id, :created_by, :color, :tags, :goal, :notes,
+                        :completion_rate, :scheduled_days, :difficulty, :total_sessions
+                    )
+                ");
+                
+                // Extract name from programhdr for the goal field
+                $programName = $originalProgram['header_name'] ?? $originalProgram['name'] ?? 'Workout Program';
+                
+                $insertStmt->execute([
+                    ':user_id' => $userId,
+                    ':program_hdr_id' => $programId, // Set to track which template was cloned (prevents duplicates)
+                    ':created_by' => $originalProgram['created_by'] ?? 0,
+                    ':color' => $originalProgram['color'] ?? '0xFF96CEB4',
+                    ':tags' => $originalProgram['tags'] ?? '[]',
+                    ':goal' => '', // Leave goal empty - program name comes from workout_details
+                    ':notes' => $originalProgram['notes'] ?? '',
+                    ':completion_rate' => 0,
+                    ':scheduled_days' => json_encode([]),
+                    ':difficulty' => $originalProgram['difficulty'] ?? 'Beginner',
+                    ':total_sessions' => 0
+                ]);
+                
+                $newMemberProgramId = $pdo->lastInsertId();
+                error_log("Created member_programhdr with ID: $newMemberProgramId");
+                
+                // Get workouts from program_workout
+                $getWorkoutsStmt = $pdo->prepare("
+                    SELECT * FROM program_workout WHERE program_hdr_id = :program_id
+                ");
+                $getWorkoutsStmt->bindParam(':program_id', $programId, PDO::PARAM_INT);
+                $getWorkoutsStmt->execute();
+                $workouts = $getWorkoutsStmt->fetchAll(PDO::FETCH_ASSOC);
+                
+                error_log("Found " . count($workouts) . " workouts to clone");
+                
+                // If no workouts found, create a default one
+                if (count($workouts) == 0) {
+                    error_log("No workouts found, creating default workout");
+                    $workouts = [[
+                        'workout_details' => json_encode([
+                            'name' => $programName,
+                            'duration' => $originalProgram['duration'] ?? '30-45 min',
+                            'created_at' => date('Y-m-d H:i:s')
+                        ])
+                    ]];
+                }
+                
+                foreach ($workouts as $workout) {
+                    // Insert into member_program_workout
+                    $insertWorkoutStmt = $pdo->prepare("
+                        INSERT INTO member_program_workout (member_program_hdr_id, workout_details)
+                        VALUES (:member_program_hdr_id, :workout_details)
+                    ");
+                    $insertWorkoutStmt->execute([
+                        ':member_program_hdr_id' => $newMemberProgramId,
+                        ':workout_details' => $workout['workout_details']
+                    ]);
+                    
+                    $newWorkoutId = $pdo->lastInsertId();
+                    error_log("Created member_program_workout with ID: $newWorkoutId");
+                    
+                    // Get exercises from program_workout_exercise
+                    $getExercisesStmt = $pdo->prepare("
+                        SELECT * FROM program_workout_exercise WHERE program_workout_id = :program_workout_id
+                    ");
+                    $getExercisesStmt->bindParam(':program_workout_id', $workout['id'], PDO::PARAM_INT);
+                    $getExercisesStmt->execute();
+                    $exercises = $getExercisesStmt->fetchAll(PDO::FETCH_ASSOC);
+                    
+                    error_log("Found " . count($exercises) . " exercises to clone for workout ID: {$workout['id']}");
+                    
+                    // Check what columns exist in member_workout_exercise table
+                    $columnCheckStmt = $pdo->prepare("SHOW COLUMNS FROM member_workout_exercise");
+                    $columnCheckStmt->execute();
+                    $columns = $columnCheckStmt->fetchAll(PDO::FETCH_COLUMN);
+                    error_log("DEBUG - member_workout_exercise columns: " . json_encode($columns));
+                    
+                    foreach ($exercises as $exercise) {
+                        // Build INSERT statement based on available columns
+                        $insertData = [];
+                        $insertFields = [];
+                        $insertValues = [];
+                        
+                        if (in_array('member_program_workout_id', $columns)) {
+                            $insertFields[] = 'member_program_workout_id';
+                            $insertValues[] = '?';
+                            $insertData[] = $newWorkoutId;
+                        }
+                        
+                        if (in_array('exercise_id', $columns)) {
+                            $insertFields[] = 'exercise_id';
+                            $insertValues[] = '?';
+                            $insertData[] = $exercise['exercise_id'];
+                        }
+                        
+                        if (in_array('sets', $columns)) {
+                            $insertFields[] = 'sets';
+                            $insertValues[] = '?';
+                            $insertData[] = $exercise['sets'] ?? 3;
+                        }
+                        
+                        if (in_array('reps', $columns)) {
+                            $insertFields[] = 'reps';
+                            $insertValues[] = '?';
+                            $insertData[] = $exercise['reps'] ?? 10;
+                        }
+                        
+                        if (in_array('weight', $columns)) {
+                            $insertFields[] = 'weight';
+                            $insertValues[] = '?';
+                            $insertData[] = $exercise['weight'] ?? 0.0;
+                        }
+                        
+                        if (in_array('rest_time', $columns)) {
+                            $insertFields[] = 'rest_time';
+                            $insertValues[] = '?';
+                            // Default to 60 seconds (1 minute) if no rest_time specified
+                            $insertData[] = $exercise['rest_time'] ?? 60;
+                        }
+                        
+                        if (in_array('notes', $columns)) {
+                            $insertFields[] = 'notes';
+                            $insertValues[] = '?';
+                            $insertData[] = $exercise['notes'] ?? '';
+                        }
+                        
+                        if (!empty($insertFields)) {
+                            $insertSql = "INSERT INTO member_workout_exercise (" . implode(', ', $insertFields) . ") VALUES (" . implode(', ', $insertValues) . ")";
+                            $insertExerciseStmt = $pdo->prepare($insertSql);
+                            $insertExerciseStmt->execute($insertData);
+                            error_log("Cloned exercise ID: {$exercise['exercise_id']}");
+                        }
+                    }
+                }
+                
+                // Commit transaction
+                $pdo->commit();
+                
+                respond([
+                    "success" => true,
+                    "message" => "Program added to your library successfully",
+                    "member_program_hdr_id" => $newMemberProgramId,
+                    "cloned_from_program_id" => $programId,
+                    "note" => "If this shows duplicate error, delete member_programhdr record with program_hdr_id=$programId"
+                ]);
+                
+            } catch (Exception $e) {
+                $pdo->rollBack();
+                error_log("Error cloning program: " . $e->getMessage());
+                throw $e;
+            }
+            
+        } catch (PDOException $e) {
+            error_log("Database error in clone_program: " . $e->getMessage());
+            respond(["error" => "Database error: " . $e->getMessage()]);
+        } catch (Exception $e) {
+            error_log("Error in clone_program: " . $e->getMessage());
             respond(["error" => $e->getMessage()]);
         }
         break;

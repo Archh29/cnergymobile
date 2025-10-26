@@ -105,6 +105,9 @@ class _WelcomeOnboardingScreenState extends State<WelcomeOnboardingScreen>
 
   @override
   Widget build(BuildContext context) {
+    final screenHeight = MediaQuery.of(context).size.height;
+    final isSmallScreen = screenHeight < 700;
+    
     return Scaffold(
       backgroundColor: const Color(0xFF0F0F0F),
       body: SafeArea(
@@ -113,7 +116,7 @@ class _WelcomeOnboardingScreenState extends State<WelcomeOnboardingScreen>
             // Progress indicator
             _buildProgressIndicator(),
             
-            // Page content
+            // Page content - Make it scrollable
             Expanded(
               child: PageView(
                 controller: _pageController,
@@ -125,9 +128,9 @@ class _WelcomeOnboardingScreenState extends State<WelcomeOnboardingScreen>
                   _animationController.forward();
                 },
                 children: [
-                  _buildWelcomePage(),
-                  _buildFeaturesPage(),
-                  _buildReadyPage(),
+                  _buildWelcomePage(isSmallScreen),
+                  _buildFeaturesPage(isSmallScreen),
+                  _buildReadyPage(isSmallScreen),
                 ],
               ),
             ),
@@ -162,29 +165,35 @@ class _WelcomeOnboardingScreenState extends State<WelcomeOnboardingScreen>
     );
   }
 
-  Widget _buildWelcomePage() {
+  Widget _buildWelcomePage(bool isSmallScreen) {
     return FadeTransition(
       opacity: _fadeAnimation,
       child: SlideTransition(
         position: _slideAnimation,
         child: ScaleTransition(
           scale: _scaleAnimation,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 32),
+          child: SingleChildScrollView(
+            padding: EdgeInsets.symmetric(
+              horizontal: isSmallScreen ? 24 : 32,
+              vertical: isSmallScreen ? 16 : 24,
+            ),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
+                // Add some top spacing for small screens
+                SizedBox(height: isSmallScreen ? 20 : 40),
+                
                 // Animated Logo/Icon
                 Container(
-                  width: 120,
-                  height: 120,
+                  width: isSmallScreen ? 100 : 120,
+                  height: isSmallScreen ? 100 : 120,
                   decoration: BoxDecoration(
                     gradient: const LinearGradient(
                       colors: [Color(0xFFFF6B35), Color(0xFFFF8E53)],
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                     ),
-                    borderRadius: BorderRadius.circular(30),
+                    borderRadius: BorderRadius.circular(isSmallScreen ? 25 : 30),
                     boxShadow: [
                       BoxShadow(
                         color: const Color(0xFFFF6B35).withOpacity(0.3),
@@ -193,45 +202,45 @@ class _WelcomeOnboardingScreenState extends State<WelcomeOnboardingScreen>
                       ),
                     ],
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.fitness_center,
-                    size: 60,
+                    size: isSmallScreen ? 50 : 60,
                     color: Colors.white,
                   ),
                 ),
                 
-                const SizedBox(height: 40),
+                SizedBox(height: isSmallScreen ? 24 : 40),
                 
                 // Title with emoji
                 Text(
                   'Welcome to\nCnergy Gym 💪',
                   textAlign: TextAlign.center,
                   style: GoogleFonts.poppins(
-                    fontSize: 32,
+                    fontSize: isSmallScreen ? 26 : 32,
                     fontWeight: FontWeight.bold,
                     color: Colors.white,
                     height: 1.2,
                   ),
                 ),
                 
-                const SizedBox(height: 20),
+                SizedBox(height: isSmallScreen ? 16 : 20),
                 
                 // Exciting subtitle
                 Text(
                   'Transform your fitness journey with our\nall-in-one gym management platform!',
                   textAlign: TextAlign.center,
                   style: GoogleFonts.poppins(
-                    fontSize: 16,
+                    fontSize: isSmallScreen ? 14 : 16,
                     color: Colors.grey[400],
                     height: 1.5,
                   ),
                 ),
                 
-                const SizedBox(height: 30),
+                SizedBox(height: isSmallScreen ? 20 : 30),
                 
                 // Quick feature highlights
                 Container(
-                  padding: const EdgeInsets.all(20),
+                  padding: EdgeInsets.all(isSmallScreen ? 16 : 20),
                   decoration: BoxDecoration(
                     color: Colors.grey[900],
                     borderRadius: BorderRadius.circular(16),
@@ -243,13 +252,16 @@ class _WelcomeOnboardingScreenState extends State<WelcomeOnboardingScreen>
                   child: Column(
                     children: [
                       _buildQuickFeature('🎯', 'Personalized Workouts'),
-                      const SizedBox(height: 12),
+                      SizedBox(height: isSmallScreen ? 8 : 12),
                       _buildQuickFeature('📊', 'Progress Tracking'),
-                      const SizedBox(height: 12),
+                      SizedBox(height: isSmallScreen ? 8 : 12),
                       _buildQuickFeature('👨‍💼', 'Expert Coaching'),
                     ],
                   ),
                 ),
+                
+                // Add bottom spacing for small screens
+                SizedBox(height: isSmallScreen ? 20 : 40),
               ],
             ),
           ),
@@ -258,29 +270,35 @@ class _WelcomeOnboardingScreenState extends State<WelcomeOnboardingScreen>
     );
   }
 
-  Widget _buildFeaturesPage() {
+  Widget _buildFeaturesPage(bool isSmallScreen) {
     return FadeTransition(
       opacity: _fadeAnimation,
       child: SlideTransition(
         position: _slideAnimation,
         child: ScaleTransition(
           scale: _scaleAnimation,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 32),
+          child: SingleChildScrollView(
+            padding: EdgeInsets.symmetric(
+              horizontal: isSmallScreen ? 24 : 32,
+              vertical: isSmallScreen ? 16 : 24,
+            ),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
+                // Add some top spacing for small screens
+                SizedBox(height: isSmallScreen ? 20 : 40),
+                
                 // Features icon
                 Container(
-                  width: 100,
-                  height: 100,
+                  width: isSmallScreen ? 80 : 100,
+                  height: isSmallScreen ? 80 : 100,
                   decoration: BoxDecoration(
                     gradient: const LinearGradient(
                       colors: [Color(0xFF4ECDC4), Color(0xFF44A08D)],
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                     ),
-                    borderRadius: BorderRadius.circular(25),
+                    borderRadius: BorderRadius.circular(isSmallScreen ? 20 : 25),
                     boxShadow: [
                       BoxShadow(
                         color: const Color(0xFF4ECDC4).withOpacity(0.3),
@@ -289,59 +307,66 @@ class _WelcomeOnboardingScreenState extends State<WelcomeOnboardingScreen>
                       ),
                     ],
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.auto_awesome,
-                    size: 50,
+                    size: isSmallScreen ? 40 : 50,
                     color: Colors.white,
                   ),
                 ),
                 
-                const SizedBox(height: 40),
+                SizedBox(height: isSmallScreen ? 24 : 40),
                 
                 // Title
                 Text(
                   'Powerful Features\nAwait You! 🚀',
                   textAlign: TextAlign.center,
                   style: GoogleFonts.poppins(
-                    fontSize: 28,
+                    fontSize: isSmallScreen ? 22 : 28,
                     fontWeight: FontWeight.bold,
                     color: Colors.white,
                     height: 1.2,
                   ),
                 ),
                 
-                const SizedBox(height: 30),
+                SizedBox(height: isSmallScreen ? 20 : 30),
                 
                 // Features list with gym-specific features
                 _buildFeatureItem(
                   Icons.qr_code_scanner,
                   'QR Code Check-in',
                   'Quick and secure gym access',
+                  isSmallScreen,
                 ),
                 
-                const SizedBox(height: 20),
+                SizedBox(height: isSmallScreen ? 16 : 20),
                 
                 _buildFeatureItem(
                   Icons.fitness_center,
                   'Smart Routines',
                   'AI-powered workout recommendations',
+                  isSmallScreen,
                 ),
                 
-                const SizedBox(height: 20),
+                SizedBox(height: isSmallScreen ? 16 : 20),
                 
                 _buildFeatureItem(
                   Icons.analytics,
                   'Progress Analytics',
                   'Track your fitness journey with detailed insights',
+                  isSmallScreen,
                 ),
                 
-                const SizedBox(height: 20),
+                SizedBox(height: isSmallScreen ? 16 : 20),
                 
                 _buildFeatureItem(
                   Icons.message,
                   'Coach Communication',
                   'Direct messaging with your personal trainer',
+                  isSmallScreen,
                 ),
+                
+                // Add bottom spacing for small screens
+                SizedBox(height: isSmallScreen ? 20 : 40),
               ],
             ),
           ),
@@ -350,24 +375,24 @@ class _WelcomeOnboardingScreenState extends State<WelcomeOnboardingScreen>
     );
   }
 
-  Widget _buildFeatureItem(IconData icon, String title, String description) {
+  Widget _buildFeatureItem(IconData icon, String title, String description, bool isSmallScreen) {
     return Row(
       children: [
         Container(
-          width: 40,
-          height: 40,
+          width: isSmallScreen ? 32 : 40,
+          height: isSmallScreen ? 32 : 40,
           decoration: BoxDecoration(
             color: const Color(0xFFFF6B35).withOpacity(0.2),
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(isSmallScreen ? 8 : 10),
           ),
           child: Icon(
             icon,
-            size: 20,
+            size: isSmallScreen ? 16 : 20,
             color: const Color(0xFFFF6B35),
           ),
         ),
         
-        const SizedBox(width: 16),
+        SizedBox(width: isSmallScreen ? 12 : 16),
         
         Expanded(
           child: Column(
@@ -376,7 +401,7 @@ class _WelcomeOnboardingScreenState extends State<WelcomeOnboardingScreen>
               Text(
                 title,
                 style: GoogleFonts.poppins(
-                  fontSize: 16,
+                  fontSize: isSmallScreen ? 14 : 16,
                   fontWeight: FontWeight.w600,
                   color: Colors.white,
                 ),
@@ -385,7 +410,7 @@ class _WelcomeOnboardingScreenState extends State<WelcomeOnboardingScreen>
               Text(
                 description,
                 style: GoogleFonts.poppins(
-                  fontSize: 14,
+                  fontSize: isSmallScreen ? 12 : 14,
                   color: Colors.grey[400],
                 ),
               ),
@@ -396,32 +421,38 @@ class _WelcomeOnboardingScreenState extends State<WelcomeOnboardingScreen>
     );
   }
 
-  Widget _buildReadyPage() {
+  Widget _buildReadyPage(bool isSmallScreen) {
     return FadeTransition(
       opacity: _fadeAnimation,
       child: SlideTransition(
         position: _slideAnimation,
         child: ScaleTransition(
           scale: _scaleAnimation,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 32),
+          child: SingleChildScrollView(
+            padding: EdgeInsets.symmetric(
+              horizontal: isSmallScreen ? 24 : 32,
+              vertical: isSmallScreen ? 16 : 24,
+            ),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
+                // Add some top spacing for small screens
+                SizedBox(height: isSmallScreen ? 20 : 40),
+                
                 // Ready icon with premium badge
                 Stack(
                   alignment: Alignment.center,
                   children: [
                     Container(
-                      width: 120,
-                      height: 120,
+                      width: isSmallScreen ? 100 : 120,
+                      height: isSmallScreen ? 100 : 120,
                       decoration: BoxDecoration(
                         gradient: const LinearGradient(
                           colors: [Color(0xFFFF6B35), Color(0xFFFF8E53)],
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
                         ),
-                        borderRadius: BorderRadius.circular(30),
+                        borderRadius: BorderRadius.circular(isSmallScreen ? 25 : 30),
                         boxShadow: [
                           BoxShadow(
                             color: const Color(0xFFFF6B35).withOpacity(0.3),
@@ -430,9 +461,9 @@ class _WelcomeOnboardingScreenState extends State<WelcomeOnboardingScreen>
                           ),
                         ],
                       ),
-                      child: const Icon(
+                      child: Icon(
                         Icons.rocket_launch,
-                        size: 60,
+                        size: isSmallScreen ? 50 : 60,
                         color: Colors.white,
                       ),
                     ),
@@ -441,17 +472,20 @@ class _WelcomeOnboardingScreenState extends State<WelcomeOnboardingScreen>
                       top: -5,
                       right: -5,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding: EdgeInsets.symmetric(
+                          horizontal: isSmallScreen ? 6 : 8,
+                          vertical: isSmallScreen ? 3 : 4,
+                        ),
                         decoration: BoxDecoration(
                           gradient: const LinearGradient(
                             colors: [Color(0xFFFFD700), Color(0xFFFFA500)],
                           ),
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(isSmallScreen ? 10 : 12),
                         ),
                         child: Text(
                           'PREMIUM',
                           style: GoogleFonts.poppins(
-                            fontSize: 10,
+                            fontSize: isSmallScreen ? 8 : 10,
                             fontWeight: FontWeight.bold,
                             color: Colors.black,
                           ),
@@ -461,38 +495,38 @@ class _WelcomeOnboardingScreenState extends State<WelcomeOnboardingScreen>
                   ],
                 ),
                 
-                const SizedBox(height: 40),
+                SizedBox(height: isSmallScreen ? 24 : 40),
                 
                 // Title
                 Text(
                   'Ready to Transform\nYour Fitness? 🎯',
                   textAlign: TextAlign.center,
                   style: GoogleFonts.poppins(
-                    fontSize: 32,
+                    fontSize: isSmallScreen ? 26 : 32,
                     fontWeight: FontWeight.bold,
                     color: Colors.white,
                     height: 1.2,
                   ),
                 ),
                 
-                const SizedBox(height: 20),
+                SizedBox(height: isSmallScreen ? 16 : 20),
                 
                 // Subtitle
                 Text(
                   'Join thousands of members who have transformed their lives with Cnergy Gym\'s comprehensive fitness platform!',
                   textAlign: TextAlign.center,
                   style: GoogleFonts.poppins(
-                    fontSize: 16,
+                    fontSize: isSmallScreen ? 14 : 16,
                     color: Colors.grey[400],
                     height: 1.5,
                   ),
                 ),
                 
-                const SizedBox(height: 40),
+                SizedBox(height: isSmallScreen ? 24 : 40),
                 
                 // Premium benefits
                 Container(
-                  padding: const EdgeInsets.all(20),
+                  padding: EdgeInsets.all(isSmallScreen ? 16 : 20),
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       colors: [
@@ -510,18 +544,21 @@ class _WelcomeOnboardingScreenState extends State<WelcomeOnboardingScreen>
                   ),
                   child: Column(
                     children: [
-                      _buildBenefitItem('💎', 'Premium Membership Access'),
-                      const SizedBox(height: 12),
-                      _buildBenefitItem('🏋️‍♂️', 'Unlimited Workout Routines'),
-                      const SizedBox(height: 12),
-                      _buildBenefitItem('📈', 'Advanced Progress Tracking'),
-                      const SizedBox(height: 12),
-                      _buildBenefitItem('👨‍💼', 'Personal Coach Sessions'),
-                      const SizedBox(height: 12),
-                      _buildBenefitItem('📱', 'Smart Gym Check-in'),
+                      _buildBenefitItem('💎', 'Premium Membership Access', isSmallScreen),
+                      SizedBox(height: isSmallScreen ? 8 : 12),
+                      _buildBenefitItem('🏋️‍♂️', 'Unlimited Workout Routines', isSmallScreen),
+                      SizedBox(height: isSmallScreen ? 8 : 12),
+                      _buildBenefitItem('📈', 'Advanced Progress Tracking', isSmallScreen),
+                      SizedBox(height: isSmallScreen ? 8 : 12),
+                      _buildBenefitItem('👨‍💼', 'Personal Coach Sessions', isSmallScreen),
+                      SizedBox(height: isSmallScreen ? 8 : 12),
+                      _buildBenefitItem('📱', 'Smart Gym Check-in', isSmallScreen),
                     ],
                   ),
                 ),
+                
+                // Add bottom spacing for small screens
+                SizedBox(height: isSmallScreen ? 20 : 40),
               ],
             ),
           ),
@@ -535,35 +572,39 @@ class _WelcomeOnboardingScreenState extends State<WelcomeOnboardingScreen>
       children: [
         Text(
           emoji,
-          style: const TextStyle(fontSize: 20),
+          style: const TextStyle(fontSize: 18),
         ),
         const SizedBox(width: 12),
-        Text(
-          text,
-          style: GoogleFonts.poppins(
-            fontSize: 14,
-            color: Colors.grey[300],
-            fontWeight: FontWeight.w500,
+        Expanded(
+          child: Text(
+            text,
+            style: GoogleFonts.poppins(
+              fontSize: 14,
+              color: Colors.grey[300],
+              fontWeight: FontWeight.w500,
+            ),
           ),
         ),
       ],
     );
   }
 
-  Widget _buildBenefitItem(String emoji, String text) {
+  Widget _buildBenefitItem(String emoji, String text, bool isSmallScreen) {
     return Row(
       children: [
         Text(
           emoji,
-          style: const TextStyle(fontSize: 20),
+          style: TextStyle(fontSize: isSmallScreen ? 16 : 20),
         ),
-        const SizedBox(width: 12),
-        Text(
-          text,
-          style: GoogleFonts.poppins(
-            fontSize: 14,
-            color: Colors.grey[300],
-            fontWeight: FontWeight.w500,
+        SizedBox(width: isSmallScreen ? 8 : 12),
+        Expanded(
+          child: Text(
+            text,
+            style: GoogleFonts.poppins(
+              fontSize: isSmallScreen ? 12 : 14,
+              color: Colors.grey[300],
+              fontWeight: FontWeight.w500,
+            ),
           ),
         ),
       ],
@@ -571,8 +612,11 @@ class _WelcomeOnboardingScreenState extends State<WelcomeOnboardingScreen>
   }
 
   Widget _buildNavigationButtons() {
+    final screenHeight = MediaQuery.of(context).size.height;
+    final isSmallScreen = screenHeight < 700;
+    
     return Padding(
-      padding: const EdgeInsets.all(32),
+      padding: EdgeInsets.all(isSmallScreen ? 24 : 32),
       child: Row(
         children: [
           // Skip button (only show on first page)
@@ -584,27 +628,27 @@ class _WelcomeOnboardingScreenState extends State<WelcomeOnboardingScreen>
                   'Skip',
                   style: GoogleFonts.poppins(
                     color: Colors.grey[500],
-                    fontSize: 16,
+                    fontSize: isSmallScreen ? 14 : 16,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
               ),
             ),
           
-          if (currentPage == 0) const SizedBox(width: 16),
+          if (currentPage == 0) SizedBox(width: isSmallScreen ? 12 : 16),
           
           // Next/Get Started button
           Expanded(
             flex: currentPage == 0 ? 2 : 1,
             child: Container(
-              height: 56,
+              height: isSmallScreen ? 48 : 56,
               decoration: BoxDecoration(
                 gradient: const LinearGradient(
                   colors: [Color(0xFFFF6B35), Color(0xFFFF8E53)],
                   begin: Alignment.centerLeft,
                   end: Alignment.centerRight,
                 ),
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(isSmallScreen ? 12 : 16),
                 boxShadow: [
                   BoxShadow(
                     color: const Color(0xFFFF6B35).withOpacity(0.3),
@@ -617,7 +661,7 @@ class _WelcomeOnboardingScreenState extends State<WelcomeOnboardingScreen>
                 color: Colors.transparent,
                 child: InkWell(
                   onTap: _nextPage,
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(isSmallScreen ? 12 : 16),
                   child: Center(
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -626,17 +670,17 @@ class _WelcomeOnboardingScreenState extends State<WelcomeOnboardingScreen>
                           currentPage == totalPages - 1 ? 'Start My Journey!' : 'Continue',
                           style: GoogleFonts.poppins(
                             color: Colors.white,
-                            fontSize: 16,
+                            fontSize: isSmallScreen ? 14 : 16,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
-                        const SizedBox(width: 8),
+                        SizedBox(width: isSmallScreen ? 6 : 8),
                         Icon(
                           currentPage == totalPages - 1 
                               ? Icons.rocket_launch 
                               : Icons.arrow_forward_ios,
                           color: Colors.white,
-                          size: 18,
+                          size: isSmallScreen ? 16 : 18,
                         ),
                       ],
                     ),

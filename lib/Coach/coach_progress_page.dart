@@ -10,6 +10,7 @@ import 'detail_pages/workout_logs_detail_page.dart';
 import 'detail_pages/personal_records_detail_page.dart';
 import 'detail_pages/progress_over_time_detail_page.dart';
 import 'widgets/coach_progressive_overload_tracker.dart';
+import './weekly_muscle_analytics_page.dart';
 
 class CoachProgressPage extends StatefulWidget {
   final MemberModel selectedMember;
@@ -514,21 +515,15 @@ class _CoachProgressPageState extends State<CoachProgressPage>
                         SizedBox(height: 20),
                         _buildProgressiveOverloadSection(),
                         SizedBox(height: 20),
+                        _buildWeeklyMuscleAnalyticsSection(),
+                        SizedBox(height: 20),
                 _buildBodyWeightSection(),
                 SizedBox(height: 20),
                 _buildAttendanceSection(),
                 SizedBox(height: 20),
-                _buildWorkoutStatsSection(),
-                SizedBox(height: 20),
-                _buildPersonalRecordsSection(),
-                SizedBox(height: 20),
-                _buildGoalsSection(),
-                SizedBox(height: 20),
-                _buildProgressOverTimeSection(),
-                SizedBox(height: 20),
                 _buildSessionOverview(),
-                SizedBox(height: 20),
-                _buildRoutinesSection(),
+                        SizedBox(height: 20),
+                        _buildRoutinesSection(),
                       ],
                     ),
                   ),
@@ -836,15 +831,19 @@ class _CoachProgressPageState extends State<CoachProgressPage>
                 child: Icon(Icons.fitness_center, color: Color(0xFF4ECDC4), size: 20),
               ),
               SizedBox(width: 12),
-              Text(
-                'Session Overview',
-                style: GoogleFonts.poppins(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
+              Expanded(
+                child: Text(
+                  'Session Overview',
+                  style: GoogleFonts.poppins(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
                 ),
               ),
-              Spacer(),
+              SizedBox(width: 8),
               Container(
                 padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
@@ -869,6 +868,8 @@ class _CoachProgressPageState extends State<CoachProgressPage>
               color: Colors.grey[400],
               fontSize: 14,
             ),
+            overflow: TextOverflow.ellipsis,
+            maxLines: 1,
           ),
           SizedBox(height: 12),
           Container(
@@ -945,22 +946,31 @@ class _CoachProgressPageState extends State<CoachProgressPage>
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(
-              label,
-              style: GoogleFonts.poppins(
-                color: Colors.white,
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
+            Expanded(
+              child: Text(
+                label,
+                style: GoogleFonts.poppins(
+                  color: Colors.white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
               ),
             ),
-            Text(
-              value,
-              style: GoogleFonts.poppins(
-                color: color,
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
+            SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                value,
+                style: GoogleFonts.poppins(
+                  color: color,
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                ),
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+                textAlign: TextAlign.end,
               ),
             ),
           ],
@@ -3049,8 +3059,8 @@ class _CoachProgressPageState extends State<CoachProgressPage>
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => CoachProgressiveOverloadTracker(
-              selectedMember: currentMember!,
+            builder: (context) => ProgressiveOverloadTracker(
+              selectedMember: currentMember,
             ),
           ),
         );
@@ -3292,6 +3302,82 @@ class _CoachProgressPageState extends State<CoachProgressPage>
       print('❌ COACH PROGRESSIVE OVERLOAD: Error fetching client progress data: $e');
       return {};
     }
+  }
+
+  Widget _buildWeeklyMuscleAnalyticsSection() {
+    return GestureDetector(
+      onTap: () async {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => WeeklyMuscleAnalyticsPage(
+              selectedMember: currentMember,
+            ),
+          ),
+        );
+      },
+      child: Container(
+        padding: EdgeInsets.all(28),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFF2A2A2A), Color(0xFF1B1B1B)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Color(0xFF3A3A3A), width: 1),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 4,
+              offset: Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Color(0xFF8E44AD).withOpacity(0.3), Color(0xFF8E44AD).withOpacity(0.1)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Color(0xFF8E44AD).withOpacity(0.3), width: 1),
+              ),
+              child: Center(
+                child: Icon(Icons.analytics, color: Colors.white, size: 28),
+              ),
+            ),
+            SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Weekly Muscle Analytics',
+                    style: GoogleFonts.poppins(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    'View ${currentMember?.fullName}\'s trained muscles, frequency and intensity',
+                    style: GoogleFonts.poppins(color: Colors.white70, fontSize: 13),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, color: Colors.white70),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildEnhancedOverloadStatCard(String title, String value, IconData icon, Color color) {
