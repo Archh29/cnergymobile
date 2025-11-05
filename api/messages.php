@@ -279,9 +279,16 @@ function getConversations() {
         }
         
         $formattedConversations = [];
+        $seenUserIds = []; // Track unique user IDs to prevent duplicates
         
         foreach ($relationships as $relationship) {
             $otherUserId = $relationship['other_user_id'];
+            
+            // Skip if we've already seen this user
+            if (isset($seenUserIds[$otherUserId])) {
+                continue;
+            }
+            $seenUserIds[$otherUserId] = true;
             
             // Check if conversation exists
             $conversationSql = "
@@ -632,20 +639,3 @@ function updateOnlineStatus() {
     echo json_encode(['success' => true, 'message' => 'updateOnlineStatus function called']);
 }
 ?>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

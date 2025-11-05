@@ -280,23 +280,49 @@ class TargetMuscle {
 
   factory TargetMuscle.fromJson(Map<String, dynamic> json) {
     try {
+      print('🔍 Parsing TargetMuscle from JSON: $json');
+      
       // Handle ID conversion (might be String or int)
       final dynamic idValue = json['id'];
       final int id = idValue is String ? int.tryParse(idValue) ?? 0 : (idValue ?? 0);
       
+      // Get name, handling various possible keys
+      final String name = (json['name'] ?? json['muscle_name'] ?? '').toString();
+      
+      // Get image URL, handling various possible keys
+      final String imageUrl = (json['image_url'] ?? json['muscle_image'] ?? '').toString();
+      
+      // Get parent_id
+      final dynamic parentIdValue = json['parent_id'];
+      final int? parentId = parentIdValue == null ? null : (parentIdValue is String ? int.tryParse(parentIdValue) : parentIdValue);
+      
+      // Get parent_name
+      final String? parentName = json['parent_name']?.toString();
+      
+      // Get role
+      final String role = json['role']?.toString() ?? 'primary';
+      
+      print('🔍 Parsed muscle: id=$id, name=$name, role=$role');
+      
+      if (name.isEmpty) {
+        throw Exception('Muscle name is empty');
+      }
+      
       return TargetMuscle(
         id: id,
-        name: json['name'] ?? '',
-        imageUrl: json['image_url'] ?? '',
-        parentId: json['parent_id'],
-        parentName: json['parent_name'],
-        role: json['role'] ?? 'primary',
+        name: name,
+        imageUrl: imageUrl,
+        parentId: parentId,
+        parentName: parentName,
+        role: role,
       );
-    } catch (e) {
+    } catch (e, stackTrace) {
       print('💥 Error parsing TargetMuscle: $e');
+      print('💥 Stack trace: $stackTrace');
+      print('💥 JSON data: $json');
       return TargetMuscle(
         id: 0,
-        name: 'Error',
+        name: 'Unknown Muscle',
         imageUrl: '',
         role: 'primary',
       );

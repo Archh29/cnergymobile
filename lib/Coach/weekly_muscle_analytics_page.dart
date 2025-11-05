@@ -369,15 +369,26 @@ class _WeeklyMuscleAnalyticsPageState extends State<WeeklyMuscleAnalyticsPage> {
       appBar: AppBar(
         backgroundColor: const Color(0xFF181818),
         elevation: 0,
-        title: Text('Weekly Muscle Analytics', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Color(0xFF00D4AA)),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: Text(
+          'Weekly Muscle Analytics',
+          style: GoogleFonts.poppins(
+            fontWeight: FontWeight.w600,
+            fontSize: 18,
+            color: Colors.white,
+          ),
+        ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.tune),
+            icon: const Icon(Icons.tune, color: Color(0xFF00D4AA)),
             onPressed: _openTrainingFocusSettings,
             tooltip: 'Training Focus Settings',
           ),
           IconButton(
-            icon: const Icon(Icons.filter_alt_outlined),
+            icon: const Icon(Icons.filter_alt_outlined, color: Color(0xFF00D4AA)),
             onPressed: _openFilterSheet,
             tooltip: 'Filter week',
           ),
@@ -662,7 +673,7 @@ class _WeeklyMuscleAnalyticsPageState extends State<WeeklyMuscleAnalyticsPage> {
             crossAxisCount: 2,
             mainAxisSpacing: 12,
             crossAxisSpacing: 12,
-            childAspectRatio: 1.2, // Further increased to 1.2 for better fit
+            childAspectRatio: 0.75, // Taller cards to prevent overflow
           ),
           itemBuilder: (context, i) {
             final g = displayGroups[i];
@@ -746,60 +757,53 @@ class _WeeklyMuscleAnalyticsPageState extends State<WeeklyMuscleAnalyticsPage> {
               ),
             ],
           ),
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Image with responsive height
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: SizedBox(
-                    width: double.infinity,
-                    height: constraints.maxWidth * 0.5, // Increased back to 0.5 for better visibility
-                    child: _thumbnail(imageUrl),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Image with responsive height
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: SizedBox(
+                  width: double.infinity,
+                  height: constraints.maxWidth * 0.4, // Reduced to fit more content
+                  child: _thumbnail(imageUrl),
+                ),
+              ),
+              const SizedBox(height: 3),
+              // Muscle name
+              Text(
+                name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.poppins(
+                  color: Colors.white, 
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                ),
+              ),
+              const SizedBox(height: 3),
+              // Compact metrics row
+              Row(
+                children: [
+                  Expanded(
+                    child: _compactMetric('Sets', sets.toString()),
                   ),
-                ),
-                const SizedBox(height: 4),
-                // Muscle name
-                Text(
-                  name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.poppins(
-                    color: Colors.white, 
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
+                  const SizedBox(width: 3),
+                  Expanded(
+                    child: _compactMetric('Reps', reps.toString()),
                   ),
-                ),
-                const SizedBox(height: 3),
-                // Compact metrics row
-                Row(
-                  children: [
-                    Expanded(
-                      child: _compactMetric('Sets', sets.toString()),
-                    ),
-                    const SizedBox(width: 3),
-                    Expanded(
-                      child: _compactMetric('Reps', reps.toString()),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 3),
-                // EV and Status row
-                Row(
-                  children: [
-                    Expanded(
-                      child: _compactMetric('EV', _compactNum(ev)),
-                    ),
-                    const SizedBox(width: 3),
-                    Expanded(
-                      child: _statusPill(status),
-                    ),
-                  ],
-                ),
-              ],
-            ),
+                ],
+              ),
+              const SizedBox(height: 3),
+              // Status row
+              Row(
+                children: [
+                  Expanded(
+                    child: _statusPill(status),
+                  ),
+                ],
+              ),
+            ],
           ),
         );
       },
@@ -1470,7 +1474,19 @@ class _GroupDetailScreen extends StatelessWidget {
       backgroundColor: const Color(0xFF101010),
       appBar: AppBar(
         backgroundColor: const Color(0xFF181818),
-        title: Text(groupName, style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Color(0xFF00D4AA)),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: Text(
+          groupName,
+          style: GoogleFonts.poppins(
+            fontWeight: FontWeight.w600,
+            fontSize: 18,
+            color: Colors.white,
+          ),
+        ),
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
@@ -1593,7 +1609,19 @@ class _MuscleDetailScreen extends StatelessWidget {
       backgroundColor: const Color(0xFF101010),
       appBar: AppBar(
         backgroundColor: const Color(0xFF181818),
-        title: Text(muscle.muscleName, style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Color(0xFF00D4AA)),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: Text(
+          muscle.muscleName,
+          style: GoogleFonts.poppins(
+            fontWeight: FontWeight.w600,
+            fontSize: 18,
+            color: Colors.white,
+          ),
+        ),
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),

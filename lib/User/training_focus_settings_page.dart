@@ -148,10 +148,10 @@ class _TrainingFocusSettingsPageState extends State<TrainingFocusSettingsPage> {
       appBar: AppBar(
         backgroundColor: const Color(0xFF1A1A1A),
         elevation: 0,
-        title: Text('Training Focus', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+        title: Text('Training Focus', style: GoogleFonts.poppins(fontWeight: FontWeight.w600, color: Colors.white)),
         actions: [
           IconButton(
-            icon: Icon(Icons.check),
+            icon: Icon(Icons.check, color: Colors.white),
             onPressed: _savePreferences,
             tooltip: 'Save',
           ),

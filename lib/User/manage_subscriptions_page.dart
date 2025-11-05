@@ -611,38 +611,51 @@ class _ManageSubscriptionsPageState extends State<ManageSubscriptionsPage> {
                           ),
                         ],
                         SizedBox(height: 12),
-                        GestureDetector(
-                          onTap: () => _showPlansAvailedDetails(),
-                          child: Container(
-                            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.2),
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(
-                                color: Colors.white.withOpacity(0.3),
-                                width: 1,
-                              ),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  Icons.list_alt,
-                                  color: Colors.white,
-                                  size: 16,
+                        LayoutBuilder(
+                          builder: (context, constraints) {
+                            final screenWidth = MediaQuery.of(context).size.width;
+                            final isSmallScreen = screenWidth < 360;
+                            
+                            return GestureDetector(
+                              onTap: () => _showPlansAvailedDetails(),
+                              child: Container(
+                                padding: EdgeInsets.symmetric(
+                                  horizontal: isSmallScreen ? 12 : 16, 
+                                  vertical: isSmallScreen ? 10 : 8
                                 ),
-                                SizedBox(width: 8),
-                                Text(
-                                  'View Plans Availed Details',
-                                  style: GoogleFonts.poppins(
-                                    color: Colors.white,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.2),
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(
+                                    color: Colors.white.withOpacity(0.3),
+                                    width: 1,
                                   ),
                                 ),
-                              ],
-                            ),
-                          ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.list_alt,
+                                      color: Colors.white,
+                                      size: isSmallScreen ? 14 : 16,
+                                    ),
+                                    SizedBox(width: isSmallScreen ? 6 : 8),
+                                    Flexible(
+                                      child: Text(
+                                        'View Plans Availed Details',
+                                        style: GoogleFonts.poppins(
+                                          color: Colors.white,
+                                          fontSize: isSmallScreen ? 10 : 12,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
                         ),
                         if (isUserMember)
                           Container(

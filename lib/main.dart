@@ -59,10 +59,16 @@ Future<void> _fixUserIdStorage() async {
     
     // Check if user_id exists and fix its type
     if (prefs.containsKey('user_id')) {
-      // Try to get as int first
-      int? userId = prefs.getInt('user_id');
+      int? userId;
       
-      // If null, it might be stored as string
+      // Try to get as int first
+      try {
+        userId = prefs.getInt('user_id');
+      } catch (e) {
+        print('user_id is not an int, trying as string: $e');
+      }
+      
+      // If null or failed, it might be stored as string
       if (userId == null) {
         String? userIdString = prefs.getString('user_id');
         if (userIdString != null && userIdString.isNotEmpty) {
@@ -260,11 +266,8 @@ class _AuthWrapperState extends State<AuthWrapper> {
     print('✅ User logged in - ID: $userId, Type: ${AuthService.getUserType()}');
     print('🔍 User type checks - isCustomer: ${AuthService.isCustomer()}, isCoach: ${AuthService.isCoach()}, isAdmin: ${AuthService.isAdmin()}, isStaff: ${AuthService.isStaff()}');
 
-    // SECURITY FIX: Check if user needs account verification
-    if (AuthService.needsAccountVerification()) {
-      print('🔐 User needs account verification, showing AccountVerificationScreen');
-      return const AccountVerificationScreen();
-    }
+    // NOTE: Account verification is now handled on login screen
+    // No need to redirect to verification page
 
     // TEMPORARY FIX: Force show first-time setup if profile is not completed
     print('🔧 TEMPORARY FIX: Checking profile completion for all users...');
@@ -313,24 +316,30 @@ class _AuthWrapperState extends State<AuthWrapper> {
                   ),
                 ],
               ),
-              child: Image.asset(
-                'assets/images/gym.logo.png',
-                height: 80,
-                errorBuilder: (context, error, stackTrace) {
-                  return Container(
-                    height: 80,
-                    width: 80,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFF6B35),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.fitness_center,
-                      size: 40,
-                      color: Colors.white,
-                    ),
-                  );
-                },
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(80),
+                child: Image.asset(
+                  'assets/images/ORANGE BLACK.png',
+                  height: 80,
+                  width: 80,
+                  fit: BoxFit.contain,
+                  errorBuilder: (context, error, stackTrace) {
+                    print('⚠️ Logo error: $error');
+                    return Container(
+                      height: 80,
+                      width: 80,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFF6B35),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.fitness_center,
+                        size: 40,
+                        color: Colors.white,
+                      ),
+                    );
+                  },
+                ),
               ),
             ),
             const SizedBox(height: 32),

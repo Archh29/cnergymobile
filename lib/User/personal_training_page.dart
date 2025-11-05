@@ -34,6 +34,7 @@ class _PersonalTrainingPageState extends State<PersonalTrainingPage>
   Map<String, dynamic>? _remoteCoachRequest; // latest from API
   bool _loadingCoachRequest = false;
   bool _isCoachRelationshipExpired = false;
+  bool _paymentModalShown = false;
 
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
@@ -210,6 +211,7 @@ class _PersonalTrainingPageState extends State<PersonalTrainingPage>
       
       setState(() {
         _remoteCoachRequest = data?['request'];
+        _paymentModalShown = false; // Reset modal flag on data reload
         print('🔍 Set _remoteCoachRequest to: $_remoteCoachRequest');
         
         if (_remoteCoachRequest != null) {
@@ -467,8 +469,8 @@ class _PersonalTrainingPageState extends State<PersonalTrainingPage>
         ));
       }
 
-      // Add rating section if user has an expired coach relationship
-      if (selectedCoachId != null && selectedCoachName != null && _isCoachRelationshipExpired) {
+      // Add rating section if user has an expired coach relationship AND it was fully approved
+      if (selectedCoachId != null && selectedCoachName != null && _isCoachRelationshipExpired && _wasCoachConnectionApproved()) {
         try {
           slivers.add(_buildCoachRatingSection());
           print('✅ _buildCoachRatingSection() completed');
@@ -477,8 +479,8 @@ class _PersonalTrainingPageState extends State<PersonalTrainingPage>
         }
       }
 
-      // Add expired coach status section if relationship is expired
-      if (selectedCoachId != null && selectedCoachName != null && _isCoachRelationshipExpired) {
+      // Add expired coach status section if relationship is expired AND it was fully approved
+      if (selectedCoachId != null && selectedCoachName != null && _isCoachRelationshipExpired && _wasCoachConnectionApproved()) {
         try {
           slivers.add(_buildExpiredCoachStatusSection());
           print('✅ _buildExpiredCoachStatusSection() completed');
@@ -795,12 +797,15 @@ class _PersonalTrainingPageState extends State<PersonalTrainingPage>
     Color color;
     IconData icon;
 
+    // Check if connection was ever fully approved
+    final bool wasFullyApproved = coachApproval == 'approved' && staffApproval == 'approved';
+    
     if (status == 'rejected' || coachApproval == 'rejected') {
       title = 'Request Rejected';
       subtitle = 'Your request with $coachName was rejected.';
       color = Colors.red;
       icon = Icons.cancel;
-    } else if (status == 'expired' || status == 'ended' || status == 'completed') {
+    } else if ((status == 'expired' || status == 'ended' || status == 'completed') && wasFullyApproved) {
       title = 'Training Session Ended';
       subtitle = 'Your training with $coachName has concluded.';
       color = Colors.orange;
@@ -823,6 +828,12 @@ class _PersonalTrainingPageState extends State<PersonalTrainingPage>
       subtitle = 'Coach approved. Please wait for staff confirmation.';
       color = Color(0xFFFFD700);
       icon = Icons.hourglass_top;
+      
+      // Show payment modal if coach approved but not staff approved
+      // This means payment is required
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _showPaymentRequiredModal();
+      });
     } else {
       title = 'Awaiting Coach Approval';
       subtitle = 'Request sent to $coachName on ${requestedAt.isNotEmpty ? requestedAt : '—'}';
@@ -2203,6 +2214,22 @@ class _PersonalTrainingPageState extends State<PersonalTrainingPage>
     );
   }
 
+  bool _wasCoachConnectionApproved() {
+    if (_remoteCoachRequest == null) {
+      return false;
+    }
+    
+    final coachApproval = _remoteCoachRequest?['coach_approval']?.toString() ?? 'none';
+    final staffApproval = _remoteCoachRequest?['staff_approval']?.toString() ?? 'none';
+    
+    // Check if both coach and staff have approved the connection
+    final wasApproved = coachApproval == 'approved' && staffApproval == 'approved';
+    
+    print('🔍 Checking if coach connection was approved - Coach: $coachApproval, Staff: $staffApproval, Was approved: $wasApproved');
+    
+    return wasApproved;
+  }
+
   void _checkCoachRelationshipExpiration() {
     if (_remoteCoachRequest == null) {
       _isCoachRelationshipExpired = false;
@@ -2424,5 +2451,117 @@ class _PersonalTrainingPageState extends State<PersonalTrainingPage>
         ),
       ),
     );
+  }
+
+  void _showPaymentRequiredModal() {
+    // Check if we already showed this modal to avoid multiple dialogs
+    if (!_paymentModalShown) {
+      _paymentModalShown = true;
+      
+      Future.delayed(Duration(milliseconds: 500), () {
+        if (!mounted) return;
+        
+        showDialog(
+          context: context,
+          barrierDismissible: true,
+          builder: (context) => Dialog(
+            backgroundColor: Colors.transparent,
+            child: Container(
+              padding: EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: Color(0xFF2A2A2A),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Color(0xFFFFD700), width: 2),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [Color(0xFFFFD700), Color(0xFFFFA500)],
+                      ),
+                      borderRadius: BorderRadius.circular(50),
+                    ),
+                    child: Icon(Icons.payment, color: Colors.white, size: 48),
+                  ),
+                  SizedBox(height: 20),
+                  Text(
+                    'Payment Required',
+                    style: GoogleFonts.poppins(
+                      color: Colors.white,
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  SizedBox(height: 12),
+                  Text(
+                    'Your coach has approved your request!',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.poppins(
+                      color: Colors.grey[300],
+                      fontSize: 16,
+                    ),
+                  ),
+                  SizedBox(height: 20),
+                  Container(
+                    padding: EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Color(0xFF1A1A1A),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Column(
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.info_outline, color: Color(0xFFFFD700), size: 20),
+                            SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                'To complete your coach assignment, please visit the front desk to make your payment.',
+                                style: GoogleFonts.poppins(
+                                  color: Colors.grey[300],
+                                  fontSize: 14,
+                                  height: 1.5,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  SizedBox(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () {
+                        Navigator.pop(context);
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Color(0xFFFFD700),
+                        foregroundColor: Colors.black,
+                        padding: EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: Text(
+                        'Got it',
+                        style: GoogleFonts.poppins(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      });
+    }
   }
 }

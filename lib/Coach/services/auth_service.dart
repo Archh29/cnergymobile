@@ -8,7 +8,28 @@ class AuthService {
   static Future<int?> getCurrentUserId() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final userId = prefs.getInt(_userIdKey);
+      int? userId;
+      
+      // Try to get as int first - wrapped in try-catch because getInt throws if value is string
+      try {
+        userId = prefs.getInt(_userIdKey);
+      } catch (e) {
+        print('⚠️ user_id is not stored as int, trying as string: $e');
+        userId = null; // Ensure it's null to trigger string fallback
+      }
+      
+      // If not found or null, try to get as string and convert
+      if (userId == null) {
+        final userIdString = prefs.getString(_userIdKey);
+        if (userIdString != null) {
+          userId = int.tryParse(userIdString);
+          // Convert back to int for future consistency
+          if (userId != null) {
+            await prefs.setInt(_userIdKey, userId);
+          }
+        }
+      }
+      
       return userId;
     } catch (e) {
       print('Error getting user ID: $e');

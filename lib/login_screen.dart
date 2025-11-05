@@ -246,6 +246,8 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
               break;
             case 'pending':
             default:
+              // NOTE: This case should never happen now since pending accounts are blocked at login
+              // But keeping it as a safety fallback
               Get.snackbar(
                 "Account Pending",
                 "Your account is pending verification. Please visit our front desk.",
@@ -253,10 +255,10 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                 backgroundColor: Colors.orange,
                 colorText: Colors.white,
               );
-              Navigator.of(context).pushAndRemoveUntil(
-                MaterialPageRoute(builder: (context) => const AccountVerificationScreen()),
-                (Route<dynamic> route) => false,
-              );
+              // Don't navigate, just show error and stop loading
+              setState(() {
+                isLoading = false;
+              });
               break;
           }
         } else {
@@ -388,13 +390,70 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       }
 
       if (response.statusCode == 200) {
-        // Check for error first
-        if (data.containsKey("error")) {
-          String errorMessage = data["error"];
+        // Check for account status FIRST before processing login
+        if (data.containsKey("account_status")) {
+          String accountStatus = data["account_status"];
+          print('🔍 Account status: $accountStatus');
+          
+          // Check if account is pending verification
+          if (accountStatus == "pending") {
+            setState(() {
+              isLoading = false;
+            });
+            
+            // Calculate time remaining if deadline is provided
+            String deadlineMessage = "Please visit the front desk for verification to access the app.";
+            if (data.containsKey("verification_deadline") && data["verification_deadline"] != null) {
+              try {
+                final deadline = DateTime.parse(data["verification_deadline"]);
+                final now = DateTime.now();
+                final difference = deadline.difference(now);
+                
+                if (difference.isNegative) {
+                  deadlineMessage = "⚠️ Your verification period has expired. Please create a new account.";
+                } else {
+                  final daysLeft = difference.inDays;
+                  final hoursLeft = difference.inHours.remainder(24);
+                  final minutesLeft = difference.inMinutes.remainder(60);
+                  
+                  if (daysLeft > 0) {
+                    deadlineMessage = "⏰ $daysLeft day${daysLeft > 1 ? 's' : ''} left. Please visit the front desk for verification to access the app.";
+                  } else if (hoursLeft > 0) {
+                    deadlineMessage = "⏰ $hoursLeft hour${hoursLeft > 1 ? 's' : ''} left. Please visit the front desk for verification to access the app.";
+                  } else {
+                    deadlineMessage = "⏰ $minutesLeft minute${minutesLeft > 1 ? 's' : ''} left. Please visit the front desk for verification to access the app.";
+                  }
+                }
+              } catch (e) {
+                print('Error parsing deadline: $e');
+              }
+            }
+            
+            Get.snackbar(
+              "Account Pending Verification",
+              deadlineMessage,
+              snackPosition: SnackPosition.BOTTOM,
+              backgroundColor: Colors.orange,
+              colorText: Colors.white,
+              duration: const Duration(seconds: 8),
+            );
+            return;
+          }
+          
+          // Check if account is rejected
+          if (accountStatus == "rejected") {
+            setState(() {
+              isLoading = false;
+            });
+            _showRejectedAccountDialog(emailController.text.trim());
+            return;
+          }
           
           // Check if account is deactivated
-          if (data.containsKey("account_status") && data["account_status"] == "deactivated") {
-            // Navigate to deactivation page
+          if (accountStatus == "deactivated") {
+            setState(() {
+              isLoading = false;
+            });
             Navigator.pushReplacement(
               context,
               MaterialPageRoute(
@@ -403,6 +462,11 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
             );
             return;
           }
+        }
+        
+        // Check for error first
+        if (data.containsKey("error")) {
+          String errorMessage = data["error"];
           
           Get.snackbar(
             "Login Failed",
@@ -493,19 +557,76 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
           );
         }
       } else if (response.statusCode == 401) {
-        // Handle 401 Unauthorized - show the error message from response
-        String errorMessage = "Invalid email or password";
-        if (data.containsKey("error")) {
-          errorMessage = data["error"];
+        // Handle 401 Unauthorized - check for pending account status
+        if (data.containsKey("account_status")) {
+          if (data["account_status"] == "pending") {
+            String deadlineMessage = "Please visit the front desk for verification to access the app.";
+            if (data.containsKey("verification_deadline") && data["verification_deadline"] != null) {
+              try {
+                final deadline = DateTime.parse(data["verification_deadline"]);
+                final now = DateTime.now();
+                final difference = deadline.difference(now);
+                
+                if (difference.isNegative) {
+                  deadlineMessage = "⚠️ Your verification period has expired. Please create a new account.";
+                } else {
+                  final daysLeft = difference.inDays;
+                  final hoursLeft = difference.inHours.remainder(24);
+                  final minutesLeft = difference.inMinutes.remainder(60);
+                  
+                  if (daysLeft > 0) {
+                    deadlineMessage = "⏰ $daysLeft day${daysLeft > 1 ? 's' : ''} left. Please visit the front desk for verification to access the app.";
+                  } else if (hoursLeft > 0) {
+                    deadlineMessage = "⏰ $hoursLeft hour${hoursLeft > 1 ? 's' : ''} left. Please visit the front desk for verification to access the app.";
+                  } else {
+                    deadlineMessage = "⏰ $minutesLeft minute${minutesLeft > 1 ? 's' : ''} left. Please visit the front desk for verification to access the app.";
+                  }
+                }
+              } catch (e) {
+                print('Error parsing deadline: $e');
+              }
+            }
+            
+            Get.snackbar(
+              "Account Pending Verification",
+              deadlineMessage,
+              snackPosition: SnackPosition.BOTTOM,
+              backgroundColor: Colors.orange,
+              colorText: Colors.white,
+              duration: const Duration(seconds: 8),
+            );
+          } else if (data["account_status"] == "rejected") {
+            _showRejectedAccountDialog(emailController.text.trim());
+          } else {
+            // Handle 401 Unauthorized - show the error message from response
+            String errorMessage = "Invalid email or password";
+            if (data.containsKey("error")) {
+              errorMessage = data["error"];
+            }
+            print('❌ Login failed: $errorMessage');
+            Get.snackbar(
+              "Login Failed",
+              errorMessage,
+              snackPosition: SnackPosition.BOTTOM,
+              backgroundColor: Colors.red,
+              colorText: Colors.white,
+            );
+          }
+        } else {
+          // Handle 401 Unauthorized - show the error message from response
+          String errorMessage = "Invalid email or password";
+          if (data.containsKey("error")) {
+            errorMessage = data["error"];
+          }
+          print('❌ Login failed: $errorMessage');
+          Get.snackbar(
+            "Login Failed",
+            errorMessage,
+            snackPosition: SnackPosition.BOTTOM,
+            backgroundColor: Colors.red,
+            colorText: Colors.white,
+          );
         }
-        print('❌ Login failed: $errorMessage');
-        Get.snackbar(
-          "Login Failed",
-          errorMessage,
-          snackPosition: SnackPosition.BOTTOM,
-          backgroundColor: Colors.red,
-          colorText: Colors.white,
-        );
       } else {
         print('❌ Server error: ${response.statusCode}');
         Get.snackbar(
@@ -551,6 +672,203 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       MaterialPageRoute(
         builder: (context) => WalkInRegistrationScreen(),
       ),
+    );
+  }
+
+  // Show dialog for rejected accounts with contact support option
+  void _showRejectedAccountDialog(String email) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        final TextEditingController subjectController = TextEditingController(text: 'Account Verification Expired');
+        final TextEditingController messageController = TextEditingController();
+        bool isSending = false;
+
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              backgroundColor: const Color(0xFF1A1A1A),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              title: Row(
+                children: [
+                  Icon(Icons.error_outline, color: Colors.red, size: 28),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Account Verification Expired',
+                      style: GoogleFonts.poppins(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Your verification period has expired. If you believe this is an error or need assistance, please contact support.',
+                      style: GoogleFonts.poppins(
+                        color: Colors.grey[300],
+                        fontSize: 14,
+                        height: 1.5,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    TextField(
+                      controller: subjectController,
+                      style: GoogleFonts.poppins(color: Colors.white),
+                      decoration: InputDecoration(
+                        labelText: 'Subject',
+                        labelStyle: GoogleFonts.poppins(color: Colors.grey[400]),
+                        filled: true,
+                        fillColor: const Color(0xFF0F0F0F),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: Colors.grey[700]!),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: Colors.grey[700]!),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: Color(0xFFFF6B35)),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: messageController,
+                      maxLines: 5,
+                      style: GoogleFonts.poppins(color: Colors.white),
+                      decoration: InputDecoration(
+                        labelText: 'Message (Optional)',
+                        labelStyle: GoogleFonts.poppins(color: Colors.grey[400]),
+                        hintText: 'Explain your situation...',
+                        hintStyle: GoogleFonts.poppins(color: Colors.grey[600]),
+                        filled: true,
+                        fillColor: const Color(0xFF0F0F0F),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: Colors.grey[700]!),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: Colors.grey[700]!),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: Color(0xFFFF6B35)),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: isSending ? null : () => Navigator.pop(context),
+                  child: Text(
+                    'Cancel',
+                    style: GoogleFonts.poppins(color: Colors.grey[400]),
+                  ),
+                ),
+                ElevatedButton(
+                  onPressed: isSending ? null : () async {
+                    setDialogState(() => isSending = true);
+                    
+                    try {
+                      final response = await http.post(
+                        Uri.parse('https://api.cnergy.site/contact_support.php'),
+                        headers: {'Content-Type': 'application/json'},
+                        body: jsonEncode({
+                          'action': 'send_support_email',
+                          'email': email,
+                          'subject': subjectController.text.trim(),
+                          'message': messageController.text.trim().isEmpty 
+                            ? 'My account verification has expired. Please help reactivate my account.'
+                            : messageController.text.trim(),
+                        }),
+                      );
+
+                      // Check response status
+                      if (response.statusCode != 200) {
+                        throw Exception('Server returned status ${response.statusCode}: ${response.body}');
+                      }
+
+                      // Try to parse JSON response
+                      dynamic responseData;
+                      try {
+                        responseData = jsonDecode(response.body);
+                      } catch (e) {
+                        throw Exception('Invalid JSON response: ${response.body}');
+                      }
+                      
+                      if (mounted) {
+                        Navigator.pop(context);
+                        
+                        Get.snackbar(
+                          responseData['success'] == true ? 'Success' : 'Error',
+                          responseData['success'] == true 
+                            ? 'Support request sent! We will review your case.'
+                            : (responseData['message'] ?? 'Failed to send request. Please try again.'),
+                          snackPosition: SnackPosition.BOTTOM,
+                          backgroundColor: responseData['success'] == true 
+                            ? Colors.green 
+                            : Colors.red,
+                          colorText: Colors.white,
+                          duration: const Duration(seconds: 4),
+                        );
+                      }
+                    } catch (e) {
+                      if (mounted) {
+                        setDialogState(() => isSending = false);
+                        print('Support request error: $e'); // Debug print
+                        Get.snackbar(
+                          'Error',
+                          e.toString().contains('Invalid JSON') || e.toString().contains('Server returned')
+                            ? e.toString().split(':').last.trim()
+                            : 'Failed to send support request. Please check your connection and try again.',
+                          snackPosition: SnackPosition.BOTTOM,
+                          backgroundColor: Colors.red,
+                          colorText: Colors.white,
+                          duration: const Duration(seconds: 5),
+                        );
+                      }
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFFF6B35),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: isSending
+                    ? SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                        ),
+                      )
+                    : Text(
+                        'Contact Support',
+                        style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+                      ),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 

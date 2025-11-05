@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -32,6 +33,7 @@ class _UserDashboardState extends State<UserDashboard> with TickerProviderStateM
   bool _isLoadingNotifications = false;
   int _currentPage = 1;
   bool _hasMoreNotifications = true;
+  Timer? _notificationPollingTimer;
   
   // Message state
   int _messageUnreadCount = 0;
@@ -103,6 +105,56 @@ class _UserDashboardState extends State<UserDashboard> with TickerProviderStateM
       CurvedAnimation(parent: _fabAnimationController, curve: Curves.easeInOut),
     );
     _fabAnimationController.forward();
+    
+    // Start real-time notification polling every 3 seconds
+    _startNotificationPolling();
+  }
+
+  void _startNotificationPolling() {
+    _notificationPollingTimer = Timer.periodic(Duration(seconds: 3), (timer) {
+      if (mounted) {
+        _pollForNewNotifications();
+      } else {
+        timer.cancel();
+      }
+    });
+  }
+
+  void _stopNotificationPolling() {
+    _notificationPollingTimer?.cancel();
+    _notificationPollingTimer = null;
+  }
+
+  Future<void> _pollForNewNotifications() async {
+    if (_isLoadingNotifications) return;
+    
+    try {
+      // Get latest notifications (first page only for polling)
+      final data = await NotificationService.getNotifications(page: 1);
+      final newNotifications = (data['notifications'] as List)
+          .map((json) => NotificationModel.fromJson(json))
+          .toList();
+      
+      // Check if we have new notifications (by comparing IDs)
+      final currentIds = Set<int>.from(_notifications.map((n) => n.id));
+      final newIds = Set<int>.from(newNotifications.map((n) => n.id));
+      final hasNewNotifications = !currentIds.containsAll(newIds);
+      
+      if (mounted) {
+        setState(() {
+          _notifications = newNotifications;
+          _unreadCount = data['unread_count'];
+          
+          // Show a subtle indicator if there are new notifications
+          if (hasNewNotifications) {
+            print('🆕 New notifications detected!');
+          }
+        });
+      }
+    } catch (e) {
+      // Silently handle polling errors
+      print('Polling error: $e');
+    }
   }
 
   Future<void> _initializeAuth() async {
@@ -130,6 +182,7 @@ class _UserDashboardState extends State<UserDashboard> with TickerProviderStateM
 
   @override
   void dispose() {
+    _stopNotificationPolling();
     _fabAnimationController.dispose();
     super.dispose();
   }
@@ -700,6 +753,7 @@ class _UserDashboardState extends State<UserDashboard> with TickerProviderStateM
             if (notification.isUnread) {
               await _markNotificationAsRead(notification.id);
             }
+            _showNotificationModal(notification);
           },
           child: Padding(
             padding: EdgeInsets.all(16),
@@ -747,35 +801,14 @@ class _UserDashboardState extends State<UserDashboard> with TickerProviderStateM
                         overflow: TextOverflow.ellipsis,
                       ),
                       SizedBox(height: 8),
-                      // Time and Type
-                      Row(
-                        children: [
-                          Container(
-                            padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: _getNotificationColor(notification.typeName).withOpacity(0.2),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Text(
-                              notification.typeName.toUpperCase(),
-                              style: GoogleFonts.poppins(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w600,
-                                color: _getNotificationColor(notification.typeName),
-                                letterSpacing: 0.5,
-                              ),
-                            ),
-                          ),
-                          SizedBox(width: 8),
-                          Text(
-                            notification.getFormattedTime(),
-                            style: GoogleFonts.poppins(
-                              fontSize: 12,
-                              color: Colors.grey[400],
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
+                      // Time
+                      Text(
+                        notification.getFormattedTime(),
+                        style: GoogleFonts.poppins(
+                          fontSize: 12,
+                          color: Colors.grey[400],
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                     ],
                   ),
@@ -1361,14 +1394,14 @@ class _UserDashboardState extends State<UserDashboard> with TickerProviderStateM
         height: isSmallScreen ? 48 : 56,
         decoration: BoxDecoration(
           gradient: const LinearGradient(
-            colors: [Color(0xFFFF6B35), Color(0xFFFF8E53)],
+            colors: [Color(0xFF4ECDC4), Color(0xFF44A08D)],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
           shape: BoxShape.circle,
           boxShadow: [
             BoxShadow(
-              color: const Color(0xFFFF6B35).withOpacity(0.4),
+              color: const Color(0xFF4ECDC4).withOpacity(0.4),
               blurRadius: 20,
               offset: const Offset(0, 8),
             ),
@@ -1410,6 +1443,108 @@ class _UserDashboardState extends State<UserDashboard> with TickerProviderStateM
                     ),
                   ),
                 ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showNotificationModal(NotificationModel notification) {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: Container(
+          decoration: BoxDecoration(
+            color: Color(0xFF1A1A1A),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: Color(0xFFFF6B35).withOpacity(0.3),
+              width: 1,
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Header
+              Container(
+                padding: EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      Color(0xFFFF6B35).withOpacity(0.2),
+                      Color(0xFFFF8A65).withOpacity(0.1),
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.only(
+                    topLeft: Radius.circular(24),
+                    topRight: Radius.circular(24),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            _getNotificationColor(notification.typeName).withOpacity(0.2),
+                            _getNotificationColor(notification.typeName).withOpacity(0.1),
+                          ],
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(
+                        _getNotificationIcon(notification.typeName),
+                        color: _getNotificationColor(notification.typeName),
+                        size: 24,
+                      ),
+                    ),
+                    SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Notification',
+                            style: GoogleFonts.poppins(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                            ),
+                          ),
+                          Text(
+                            notification.getFormattedTime(),
+                            style: GoogleFonts.poppins(
+                              fontSize: 12,
+                              color: Colors.grey[400],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: Icon(Icons.close, color: Colors.white),
+                    ),
+                  ],
+                ),
+              ),
+              // Content
+              Padding(
+                padding: EdgeInsets.all(20),
+                child: Text(
+                  notification.getDisplayMessage(),
+                  style: GoogleFonts.poppins(
+                    fontSize: 16,
+                    color: Colors.white,
+                    height: 1.5,
+                  ),
+                ),
+              ),
             ],
           ),
         ),

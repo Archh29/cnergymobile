@@ -92,8 +92,30 @@ class _CoachMessagesPageState extends State<CoachMessagesPage> {
 
   Future<void> _loadCurrentUser() async {
     final prefs = await SharedPreferences.getInstance();
+    int? userId;
+    
+    // Try to get as int first - wrapped in try-catch because getInt throws if value is string
+    try {
+      userId = prefs.getInt('user_id');
+    } catch (e) {
+      print('⚠️ user_id is not stored as int, trying as string: $e');
+      userId = null; // Ensure it's null to trigger string fallback
+    }
+    
+    // If not found or null, try to get as string and convert
+    if (userId == null) {
+      final userIdString = prefs.getString('user_id');
+      if (userIdString != null) {
+        userId = int.tryParse(userIdString);
+        // Convert back to int for future consistency
+        if (userId != null) {
+          await prefs.setInt('user_id', userId);
+        }
+      }
+    }
+    
     setState(() {
-      currentUserId = prefs.getInt('user_id');
+      currentUserId = userId;
     });
   }
 
@@ -106,32 +128,42 @@ class _CoachMessagesPageState extends State<CoachMessagesPage> {
 
     // If currentUserId is null, try to load it first
     if (currentUserId == null) {
+      print('🔍 Loading current user ID...');
       await _loadCurrentUser();
       if (currentUserId == null) {
         print('❌ No current user ID, cannot load messages');
         setState(() => isLoading = false);
         return;
       }
+      print('✅ Current user ID loaded: $currentUserId');
     }
 
     if (!isPolling) {
-      print('🔄 Loading messages for member: ${widget.selectedMember!.fullName}');
+      print('🔄 Loading messages for member: ${widget.selectedMember!.fullName} (ID: ${widget.selectedMember!.id})');
+      print('🔑 Current user ID: $currentUserId');
       setState(() => isLoading = true);
     }
 
     try {
+      print('📡 Calling MessageService.getMessages with:');
+      print('   - conversationId: 0');
+      print('   - userId: $currentUserId');
+      print('   - otherUserId: ${widget.selectedMember!.id}');
+      
       // Add timeout to prevent infinite loading
       final loadedMessages = await MessageService.getMessages(
         conversationId: 0, // Virtual conversation
         userId: currentUserId!,
         otherUserId: widget.selectedMember!.id,
       ).timeout(
-        Duration(seconds: 5), // 5 second timeout
+        Duration(seconds: 10), // 10 second timeout
         onTimeout: () {
           print('⏰ Message loading timed out, returning empty list');
           return <Message>[];
         },
       );
+
+      print('📨 Received ${loadedMessages.length} messages from server');
 
       // Always update messages to ensure real-time updates
       bool hasChanges = loadedMessages.length != messages.length;
@@ -147,8 +179,8 @@ class _CoachMessagesPageState extends State<CoachMessagesPage> {
         }
       }
 
-      if (hasChanges) {
-        print('✅ Loaded ${loadedMessages.length} messages (${isPolling ? 'polling' : 'initial'}) - Changes detected');
+      if (hasChanges || !isPolling) {
+        print('✅ Loaded ${loadedMessages.length} messages (${isPolling ? 'polling' : 'initial'}) - ${hasChanges ? 'Changes detected' : 'No changes'}');
         setState(() {
           messages = loadedMessages;
           isLoading = false;
@@ -159,15 +191,15 @@ class _CoachMessagesPageState extends State<CoachMessagesPage> {
       } else if (isPolling) {
         print('🔄 No message changes detected during polling');
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
       print('❌ Error loading messages: $e');
+      print('Stack trace: $stackTrace');
       if (!isPolling) {
         setState(() {
           messages = []; // Set empty messages instead of staying in loading state
           isLoading = false;
         });
-        // Don't show error snackbar, just load empty state
-        print('📭 Showing empty messages state');
+        print('📭 Showing empty messages state due to error');
       }
     }
   }
@@ -196,7 +228,6 @@ class _CoachMessagesPageState extends State<CoachMessagesPage> {
     // Add message immediately to UI
     setState(() {
       messages.add(tempMessage);
-      isSending = false;
     });
 
     _scrollToBottom();
@@ -215,6 +246,7 @@ class _CoachMessagesPageState extends State<CoachMessagesPage> {
         if (index != -1) {
           messages[index] = newMessage;
         }
+        isSending = false;
       });
 
       // Trigger immediate refresh to get any new messages
@@ -228,6 +260,7 @@ class _CoachMessagesPageState extends State<CoachMessagesPage> {
       // Remove the temporary message if sending failed
       setState(() {
         messages.removeWhere((m) => m.id == tempMessage.id);
+        isSending = false;
       });
       _showErrorSnackBar('Failed to send message');
       

@@ -115,106 +115,66 @@ class SmartSuggestionService {
     };
   }
 
-  // Smart suggestion logic considering both experience and rep range
+  // Smart suggestion logic based on rep ranges
   static Map<String, dynamic> _getSmartSuggestion(String experience, int reps) {
-    // Optimal rep range is 6-12 reps
-    const int optimalMinReps = 6;
-    const int optimalMaxReps = 12;
+    // Rep range logic:
+    // 1-3 reps: Reduce weight by 5-10%
+    // 4-8 reps: Maintain or slightly increase (if good form)
+    // 9-12 reps: Increase weight by 2.5-5%
+    // 12+ reps: Strongly increase weight
     
-    // Determine if reps are in optimal range
-    bool isOptimalRange = reps >= optimalMinReps && reps <= optimalMaxReps;
-    bool isTooFewReps = reps < optimalMinReps;
-    bool isTooManyReps = reps > optimalMaxReps;
-
-    switch (experience.toLowerCase()) {
-      case 'easy':
-        if (isTooManyReps) {
-          // Easy + Too many reps = Definitely increase weight
-          return {
-            'message': getRandomSuggestion('easy'),
-            'type': 'weight_increase',
-            'icon': Icons.lightbulb_outline,
-            'color': Color(0xFF4ECDC4), // Teal
-          };
-        } else if (isOptimalRange) {
-          // Easy + Optimal reps = Increase weight
-          return {
-            'message': getRandomSuggestion('easy'),
-            'type': 'weight_increase',
-            'icon': Icons.lightbulb_outline,
-            'color': Color(0xFF4ECDC4), // Teal
-          };
-        } else {
-          // Easy + Too few reps = Increase weight (but mention form)
-          return {
-            'message': "Easy set but only $reps reps - increase weight and focus on form",
-            'type': 'weight_increase',
-            'icon': Icons.lightbulb_outline,
-            'color': Color(0xFF4ECDC4), // Teal
-          };
-        }
-
-      case 'moderate':
-        if (isTooManyReps) {
-          // Moderate + Too many reps = Increase weight
-          return {
-            'message': "Good intensity but $reps reps is too many - increase weight",
-            'type': 'weight_increase',
-            'icon': Icons.trending_up,
-            'color': Color(0xFF4ECDC4), // Teal
-          };
-        } else if (isOptimalRange) {
-          // Moderate + Optimal reps = Perfect, maintain weight
-          return {
-            'message': getRandomSuggestion('moderate'),
-            'type': 'maintain_weight',
-            'icon': Icons.check_circle_outline,
-            'color': Color(0xFF2ECC71), // Green
-          };
-        } else {
-          // Moderate + Too few reps = Decrease weight
-          return {
-            'message': "Moderate difficulty but only $reps reps - decrease weight for better form",
-            'type': 'weight_decrease',
-            'icon': Icons.warning_amber_rounded,
-            'color': Color(0xFFE74C3C), // Red
-          };
-        }
-
-      case 'hard':
-        if (isTooManyReps) {
-          // Hard + Too many reps = This shouldn't happen, but maintain weight
-          return {
-            'message': "Hard set with $reps reps - keep this weight for now",
-            'type': 'maintain_weight',
-            'icon': Icons.check_circle_outline,
-            'color': Color(0xFF2ECC71), // Green
-          };
-        } else if (isOptimalRange) {
-          // Hard + Optimal reps = Perfect challenge, maintain weight
-          return {
-            'message': "Perfect challenge! Hard set with $reps reps - keep this weight",
-            'type': 'maintain_weight',
-            'icon': Icons.check_circle_outline,
-            'color': Color(0xFF2ECC71), // Green
-          };
-        } else {
-          // Hard + Too few reps = Definitely decrease weight
-          return {
-            'message': getRandomSuggestion('hard'),
-            'type': 'weight_decrease',
-            'icon': Icons.warning_amber_rounded,
-            'color': Color(0xFFE74C3C), // Red
-          };
-        }
-
-      default:
+    // Adjust based on experience (experience modifies the message, but rep range is primary)
+    bool isGoodForm = experience == 'easy' || experience == 'moderate';
+    
+    if (reps >= 1 && reps <= 3) {
+      // Very few reps - weight is too heavy
+      return {
+        'message': "Only $reps reps completed. Reduce weight by 5-10% for better form and progress.",
+        'type': 'weight_decrease',
+        'icon': Icons.warning_amber_rounded,
+        'color': Color(0xFFE74C3C), // Red
+      };
+    } else if (reps >= 4 && reps <= 8) {
+      // Moderate rep range - maintain or slightly increase
+      if (isGoodForm) {
         return {
-          'message': "Keep up the great work!",
+          'message': "Good work with $reps reps and solid form. Maintain or slightly increase weight next session.",
+          'type': 'maintain_weight',
+          'icon': Icons.check_circle_outline,
+          'color': Color(0xFF2ECC71), // Green
+        };
+      } else {
+        return {
+          'message': "Completed $reps reps. If form was good, maintain or slightly increase weight next session.",
           'type': 'maintain_weight',
           'icon': Icons.info_outline,
           'color': Color(0xFF4ECDC4), // Teal
         };
+      }
+    } else if (reps >= 9 && reps <= 12) {
+      // Optimal range - increase weight
+      return {
+        'message': "Excellent $reps reps! Increase weight next session by 2.5-5% for continued progress.",
+        'type': 'weight_increase',
+        'icon': Icons.lightbulb_outline,
+        'color': Color(0xFF4ECDC4), // Teal
+      };
+    } else if (reps > 12) {
+      // Too many reps - strongly increase weight
+      return {
+        'message': "Strong performance with $reps reps! Strongly suggest increasing weight for optimal muscle growth.",
+        'type': 'weight_increase',
+        'icon': Icons.trending_up,
+        'color': Color(0xFF4ECDC4), // Teal
+      };
+    } else {
+      // Fallback for 0 reps or unexpected values
+      return {
+        'message': "Keep working and focus on completing your sets with good form.",
+        'type': 'maintain_weight',
+        'icon': Icons.info_outline,
+        'color': Color(0xFF4ECDC4), // Teal
+      };
     }
   }
 

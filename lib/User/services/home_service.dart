@@ -11,18 +11,27 @@ class HomeService {
   static Future<int?> getCurrentUserId() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      int? userId;
       
-      String? userIdString = prefs.getString('user_id');
+      // Try to get as string first (preferred order)
+      final userIdString = prefs.getString('user_id');
       if (userIdString != null && userIdString.isNotEmpty) {
-        return int.parse(userIdString);
+        userId = int.tryParse(userIdString);
+        if (userId != null) {
+          // Convert to int for consistency
+          await prefs.setInt('user_id', userId);
+          return userId;
+        }
       }
       
-      int? userIdInt = prefs.getInt('user_id');
-      if (userIdInt != null) {
-        return userIdInt;
+      // Try as int - wrapped in try-catch because getInt throws if value is string
+      try {
+        userId = prefs.getInt('user_id');
+      } catch (e) {
+        print('⚠️ user_id is not stored as int: $e');
       }
       
-      return null;
+      return userId;
     } catch (e) {
       print('Error getting user ID: $e');
       return null;

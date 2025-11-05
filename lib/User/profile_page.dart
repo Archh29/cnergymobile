@@ -8,7 +8,6 @@ import './services/membership_service.dart';
 import 'achievements_page.dart';
 import 'manage_profile_page.dart';
 import 'manage_subscriptions_page.dart';
-import 'message_support_page.dart';
 import 'privacy_policy_page.dart';
 import 'terms_conditions_page.dart';
 import 'personal_training_page.dart';
@@ -650,9 +649,6 @@ class _ProfilePageState extends State<ProfilePage> with TickerProviderStateMixin
             [
               _buildMenuItem(Icons.subscriptions, 'Subscriptions', Color(0xFF96CEB4), () {
                 Navigator.push(context, MaterialPageRoute(builder: (_) => ManageSubscriptionsPage()));
-              }),
-              _buildMenuItem(Icons.support_agent, 'Support', Color(0xFF45B7D1), () {
-                Navigator.push(context, MaterialPageRoute(builder: (_) => MessageSupportPage()));
               }),
             ],
           ),

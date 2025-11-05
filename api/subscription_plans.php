@@ -648,38 +648,144 @@ function createManualSubscription($pdo, $data) {
         }
 
         // Check for existing active subscriptions to prevent duplicates
-        $existingStmt = $pdo->prepare("
-            SELECT s.id, s.plan_id, s.end_date, ss.status_name, p.plan_name
-            FROM subscription s 
-            JOIN subscription_status ss ON s.status_id = ss.id 
-            JOIN member_subscription_plan p ON s.plan_id = p.id
-            WHERE s.user_id = ? 
-            AND s.plan_id = ?
-            AND ss.status_name = 'approved' 
-            AND s.end_date >= CURDATE()
-        ");
-        $existingStmt->execute([$user_id, $plan_id]);
-        $existingSubscription = $existingStmt->fetch();
-        
-        if ($existingSubscription) {
-            throw new Exception("User already has an active subscription to this plan: {$existingSubscription['plan_name']} (expires: {$existingSubscription['end_date']})");
+        if ($plan_id == 5) {
+            // For combination package, check for existing plan_id 1, 2, or 5
+            $existingStmt = $pdo->prepare("
+                SELECT s.id, s.plan_id, s.end_date, ss.status_name, p.plan_name
+                FROM subscription s 
+                JOIN subscription_status ss ON s.status_id = ss.id 
+                JOIN member_subscription_plan p ON s.plan_id = p.id
+                WHERE s.user_id = ? 
+                AND s.plan_id IN (1, 2, 5)
+                AND ss.status_name = 'approved' 
+                AND s.end_date >= CURDATE()
+            ");
+            $existingStmt->execute([$user_id]);
+            $existingSubscriptions = $existingStmt->fetchAll();
+            
+            if (!empty($existingSubscriptions)) {
+                $planNames = array_column($existingSubscriptions, 'plan_name');
+                throw new Exception("User already has active subscriptions: " . implode(', ', $planNames) . ". Combination package is only for new users.");
+            }
+        } else {
+            $existingStmt = $pdo->prepare("
+                SELECT s.id, s.plan_id, s.end_date, ss.status_name, p.plan_name
+                FROM subscription s 
+                JOIN subscription_status ss ON s.status_id = ss.id 
+                JOIN member_subscription_plan p ON s.plan_id = p.id
+                WHERE s.user_id = ? 
+                AND s.plan_id = ?
+                AND ss.status_name = 'approved' 
+                AND s.end_date >= CURDATE()
+            ");
+            $existingStmt->execute([$user_id, $plan_id]);
+            $existingSubscription = $existingStmt->fetch();
+            
+            if ($existingSubscription) {
+                throw new Exception("User already has an active subscription to this plan: {$existingSubscription['plan_name']} (expires: {$existingSubscription['end_date']})");
+            }
         }
 
-        // Create subscription
-        $subscriptionStmt = $pdo->prepare("
-            INSERT INTO subscription (user_id, plan_id, status_id, start_date, end_date, discounted_price, discount_type, amount_paid) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ");
-        $subscriptionStmt->execute([$user_id, $plan_id, $status['id'], $start_date, $end_date, $payment_amount, $discount_type, $payment_amount]);
-        $subscription_id = $pdo->lastInsertId();
+        // Handle plan_id 5 (Combination Package) - creates subscriptions for both plan_id 1 and plan_id 2
+        if ($plan_id == 5) {
+            // Get plan details for plan_id 1 and plan_id 2
+            $plan1Stmt = $pdo->prepare("SELECT id, plan_name, price, duration_months, duration_days FROM member_subscription_plan WHERE id = 1");
+            $plan1Stmt->execute();
+            $plan1 = $plan1Stmt->fetch();
+            
+            $plan2Stmt = $pdo->prepare("SELECT id, plan_name, price, duration_months, duration_days FROM member_subscription_plan WHERE id = 2");
+            $plan2Stmt->execute();
+            $plan2 = $plan2Stmt->fetch();
+            
+            if (!$plan1 || !$plan2) {
+                throw new Exception("Combination package plans (1 and 2) not found");
+            }
+            
+            // Calculate end dates for both plans with FIXED durations (not using database values)
+            // plan_id 1 (Gym Membership): ALWAYS 365 days (1 year)
+            $plan1_end_date = new DateTime($start_date);
+            $plan1_end_date->add(new DateInterval('P365D'));
+            
+            // plan_id 2 (Monthly Access): ALWAYS 30 days (1 month)
+            $plan2_end_date = new DateTime($start_date);
+            $plan2_end_date->add(new DateInterval('P30D'));
+            
+            // Debug: Log ALL plan details to see what we're getting from database
+            error_log("DEBUG MANUAL CREATE: start_date=$start_date");
+            error_log("DEBUG MANUAL CREATE: plan1 data from DB: " . json_encode($plan1));
+            error_log("DEBUG MANUAL CREATE: plan2 data from DB: " . json_encode($plan2));
+            error_log("DEBUG MANUAL CREATE: plan_id 1 calculated end_date: " . $plan1_end_date->format('Y-m-d') . " (365 days from $start_date)");
+            error_log("DEBUG MANUAL CREATE: plan_id 2 calculated end_date: " . $plan2_end_date->format('Y-m-d') . " (30 days from $start_date)");
+            
+            // Create subscription for plan_id 1 (Gym Membership)
+            $subscription1Stmt = $pdo->prepare("
+                INSERT INTO subscription (user_id, plan_id, status_id, start_date, end_date, discounted_price, discount_type, amount_paid) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ");
+            $subscription1Stmt->execute([$user_id, 1, $status['id'], $start_date, $plan1_end_date->format('Y-m-d'), $plan1['price'], $discount_type, $plan1['price']]);
+            $subscription_id_1 = $pdo->lastInsertId();
+            
+            // Create subscription for plan_id 2 (Member Monthly)
+            // Debug: Verify plan2_end_date is 30 days
+            $plan2_end_date_formatted = $plan2_end_date->format('Y-m-d');
+            error_log("DEBUG: plan_id 2 end_date should be: " . $plan2_end_date_formatted . " (30 days from " . $start_date . ")");
+            
+            $subscription2Stmt = $pdo->prepare("
+                INSERT INTO subscription (user_id, plan_id, status_id, start_date, end_date, discounted_price, discount_type, amount_paid) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ");
+            $subscription2Stmt->execute([$user_id, 2, $status['id'], $start_date, $plan2_end_date_formatted, $plan2['price'], $discount_type, $plan2['price']]);
+            $subscription_id_2 = $pdo->lastInsertId();
+            
+            // Also create the package subscription record (plan_id 5)
+            // Use plan_id 2's end_date as the package end_date
+            $package_end_date = $plan2_end_date->format('Y-m-d');
+            
+            $subscriptionPkgStmt = $pdo->prepare("
+                INSERT INTO subscription (user_id, plan_id, status_id, start_date, end_date, discounted_price, discount_type, amount_paid) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ");
+            $subscriptionPkgStmt->execute([$user_id, 5, $status['id'], $start_date, $package_end_date, $payment_amount, $discount_type, $payment_amount]);
+            $subscription_id = $pdo->lastInsertId();
+            
+            // FORCE FIX: Update plan_id 1 to have correct 365-day duration
+            error_log("DEBUG MANUAL CREATE: Fixing plan_id 1 (ID=$subscription_id_1) end_date to 365 days from $start_date");
+            $fixPlan1Stmt = $pdo->prepare("
+                UPDATE subscription 
+                SET end_date = DATE_ADD(?, INTERVAL 365 DAY) 
+                WHERE id = ?
+            ");
+            $fixPlan1Stmt->execute([$start_date, $subscription_id_1]);
+            $updatedRows = $fixPlan1Stmt->rowCount();
+            error_log("DEBUG MANUAL CREATE: UPDATE executed, rows affected: $updatedRows. New end_date should be: " . $plan1_end_date->format('Y-m-d'));
+            
+        } else {
+            // Create single subscription for other plans
+            $subscriptionStmt = $pdo->prepare("
+                INSERT INTO subscription (user_id, plan_id, status_id, start_date, end_date, discounted_price, discount_type, amount_paid) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ");
+            $subscriptionStmt->execute([$user_id, $plan_id, $status['id'], $start_date, $end_date, $payment_amount, $discount_type, $payment_amount]);
+            $subscription_id = $pdo->lastInsertId();
+        }
 
         // Create payment record
-        $paymentStmt = $pdo->prepare("
-            INSERT INTO payment (subscription_id, amount, payment_date) 
-            VALUES (?, ?, NOW())
-        ");
-        $paymentStmt->execute([$subscription_id, $payment_amount]);
-        $payment_id = $pdo->lastInsertId();
+        if ($plan_id == 5) {
+            // For combination package, create payment record for the package subscription
+            $paymentStmt = $pdo->prepare("
+                INSERT INTO payment (subscription_id, amount, payment_date) 
+                VALUES (?, ?, NOW())
+            ");
+            $paymentStmt->execute([$subscription_id, $payment_amount]);
+            $payment_id = $pdo->lastInsertId();
+        } else {
+            $paymentStmt = $pdo->prepare("
+                INSERT INTO payment (subscription_id, amount, payment_date) 
+                VALUES (?, ?, NOW())
+            ");
+            $paymentStmt->execute([$subscription_id, $payment_amount]);
+            $payment_id = $pdo->lastInsertId();
+        }
 
         // Create sales record
         $salesStmt = $pdo->prepare("
@@ -690,11 +796,20 @@ function createManualSubscription($pdo, $data) {
         $sale_id = $pdo->lastInsertId();
 
         // Create sales details
-        $salesDetailStmt = $pdo->prepare("
-            INSERT INTO sales_details (sale_id, subscription_id, quantity, price) 
-            VALUES (?, ?, 1, ?)
-        ");
-        $salesDetailStmt->execute([$sale_id, $subscription_id, $payment_amount]);
+        if ($plan_id == 5) {
+            // For combination package, link sales details to the package subscription
+            $salesDetailStmt = $pdo->prepare("
+                INSERT INTO sales_details (sale_id, subscription_id, quantity, price) 
+                VALUES (?, ?, 1, ?)
+            ");
+            $salesDetailStmt->execute([$sale_id, $subscription_id, $payment_amount]);
+        } else {
+            $salesDetailStmt = $pdo->prepare("
+                INSERT INTO sales_details (sale_id, subscription_id, quantity, price) 
+                VALUES (?, ?, 1, ?)
+            ");
+            $salesDetailStmt->execute([$sale_id, $subscription_id, $payment_amount]);
+        }
 
         // Log activity (optional - if activity_log table exists)
         try {
@@ -710,22 +825,38 @@ function createManualSubscription($pdo, $data) {
 
         $pdo->commit();
 
+        $response_data = [
+            "subscription_id" => $subscription_id,
+            "payment_id" => $payment_id,
+            "sale_id" => $sale_id,
+            "user_name" => $user['fname'] . ' ' . $user['lname'],
+            "user_email" => $user['email'],
+            "plan_name" => $plan['plan_name'],
+            "start_date" => $start_date,
+            "end_date" => $end_date,
+            "amount_paid" => $payment_amount,
+            "discount_type" => $discount_type
+        ];
+        
+        if ($plan_id != 5 && isset($existingSubscription) && $existingSubscription) {
+            $response_data["existing_subscription_warning"] = "User had an active subscription ending on " . $existingSubscription['end_date'];
+        }
+        
+        if ($plan_id == 5) {
+            // Add combination package details
+            $response_data['combination_package'] = true;
+            $response_data['membership_subscription_id'] = $subscription_id_1;
+            $response_data['monthly_subscription_id'] = $subscription_id_2;
+            $response_data['membership_end_date'] = $plan1_end_date->format('Y-m-d');
+            $response_data['monthly_end_date'] = $plan2_end_date->format('Y-m-d');
+            $response_data['message'] = "Combination package subscriptions created successfully (Membership: 365 days, Monthly Access: 30 days)";
+        } else {
+            $response_data['message'] = "Manual subscription created successfully";
+        }
+        
         echo json_encode([
             "success" => true,
-            "message" => "Manual subscription created successfully",
-            "data" => [
-                "subscription_id" => $subscription_id,
-                "payment_id" => $payment_id,
-                "sale_id" => $sale_id,
-                "user_name" => $user['fname'] . ' ' . $user['lname'],
-                "user_email" => $user['email'],
-                "plan_name" => $plan['plan_name'],
-                "start_date" => $start_date,
-                "end_date" => $end_date,
-                "amount_paid" => $payment_amount,
-                "discount_type" => $discount_type,
-                "existing_subscription_warning" => $existingSubscription ? "User had an active subscription ending on " . $existingSubscription['end_date'] : null
-            ]
+            "data" => $response_data
         ]);
 
     } catch (Exception $e) {
@@ -753,9 +884,9 @@ function approveSubscription($pdo, $data) {
     
     try {
         $checkStmt = $pdo->prepare("
-            SELECT s.id, s.user_id, s.plan_id, st.status_name,
+            SELECT s.id, s.user_id, s.plan_id, st.status_name, s.start_date, s.end_date,
                    u.fname, u.lname, u.email,
-                   p.plan_name, p.price
+                   p.plan_name, p.price, p.duration_months, p.duration_days
             FROM subscription s
             JOIN subscription_status st ON s.status_id = st.id
             JOIN user u ON s.user_id = u.id
@@ -774,26 +905,150 @@ function approveSubscription($pdo, $data) {
         
         if (!$approvedStatus) throw new Exception("Approved status not found in database.");
         
-        $updateStmt = $pdo->prepare("UPDATE subscription SET status_id = ? WHERE id = ?");
-        $updateStmt->execute([$approvedStatus['id'], $subscriptionId]);
-        
-        $pdo->commit();
-        
-        echo json_encode([
-            "success" => true,
-            "subscription_id" => $subscriptionId,
-            "status" => "approved",
-            "message" => "Subscription approved successfully",
-            "data" => [
-                "subscription_id" => $subscriptionId,
-                "user_name" => trim($subscription['fname'] . ' ' . $subscription['lname']),
-                "user_email" => $subscription['email'],
-                "plan_name" => $subscription['plan_name'],
+        // Check if this is plan_id 5 (Combination Package) that needs to be split
+        if ($subscription['plan_id'] == 5) {
+            // Delete the pending plan_id 5 subscription
+            $deleteStmt = $pdo->prepare("DELETE FROM subscription WHERE id = ?");
+            $deleteStmt->execute([$subscriptionId]);
+            
+            $user_id = $subscription['user_id'];
+            $start_date = $subscription['start_date'];
+            $amount_paid = $subscription['price'];
+            $discount_type = 'none';
+            
+            error_log("DEBUG APPROVE: Got user_id=$user_id, start_date=$start_date, amount_paid=$amount_paid from pending subscription");
+            
+            // Get plan details for plan_id 1 and plan_id 2
+            $plan1Stmt = $pdo->prepare("SELECT id, plan_name, price, duration_months, duration_days FROM member_subscription_plan WHERE id = 1");
+            $plan1Stmt->execute();
+            $plan1 = $plan1Stmt->fetch();
+            
+            $plan2Stmt = $pdo->prepare("SELECT id, plan_name, price, duration_months, duration_days FROM member_subscription_plan WHERE id = 2");
+            $plan2Stmt->execute();
+            $plan2 = $plan2Stmt->fetch();
+            
+            if (!$plan1 || !$plan2) {
+                throw new Exception("Combination package plans (1 and 2) not found");
+            }
+            
+            // Calculate end dates for both plans with FIXED durations (not using database values)
+            // plan_id 1 (Gym Membership): ALWAYS 365 days (1 year)
+            $plan1_end_date = new DateTime($start_date);
+            $plan1_end_date->add(new DateInterval('P365D'));
+            
+            // plan_id 2 (Monthly Access): ALWAYS 30 days (1 month)
+            $plan2_end_date = new DateTime($start_date);
+            $plan2_end_date->add(new DateInterval('P30D'));
+            
+            // Debug logging for approval
+            error_log("DEBUG APPROVE: plan_id=5, subscription_id=$subscriptionId, start_date=$start_date");
+            error_log("DEBUG APPROVE: plan_id 1 calculated end_date = " . $plan1_end_date->format('Y-m-d') . " (365 days from $start_date)");
+            error_log("DEBUG APPROVE: plan_id 2 calculated end_date = " . $plan2_end_date->format('Y-m-d') . " (30 days from $start_date)");
+            
+            // Create subscription for plan_id 1 (Gym Membership)
+            $plan1_end_formatted = $plan1_end_date->format('Y-m-d');
+            error_log("DEBUG APPROVE: Inserting plan_id 1 with end_date = $plan1_end_formatted");
+            
+            $subscription1Stmt = $pdo->prepare("
+                INSERT INTO subscription (user_id, plan_id, status_id, start_date, end_date, discounted_price, discount_type, amount_paid) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ");
+            $subscription1Stmt->execute([$user_id, 1, $approvedStatus['id'], $start_date, $plan1_end_date->format('Y-m-d'), $plan1['price'], $discount_type, $plan1['price']]);
+            $subscription_id_1 = $pdo->lastInsertId();
+            
+            // Create subscription for plan_id 2 (Member Monthly)
+            $subscription2Stmt = $pdo->prepare("
+                INSERT INTO subscription (user_id, plan_id, status_id, start_date, end_date, discounted_price, discount_type, amount_paid) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ");
+            $subscription2Stmt->execute([$user_id, 2, $approvedStatus['id'], $start_date, $plan2_end_date->format('Y-m-d'), $plan2['price'], $discount_type, $plan2['price']]);
+            $subscription_id_2 = $pdo->lastInsertId();
+            
+            // Calculate end_date for the package record (use plan_id 2's end_date as the package end_date)
+            $package_end_date = $plan2_end_date->format('Y-m-d');
+            
+            // Also create the package subscription record (plan_id 5)
+            $subscriptionPkgStmt = $pdo->prepare("
+                INSERT INTO subscription (user_id, plan_id, status_id, start_date, end_date, discounted_price, discount_type, amount_paid) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ");
+            $subscriptionPkgStmt->execute([$user_id, 5, $approvedStatus['id'], $start_date, $package_end_date, $amount_paid, $discount_type, $amount_paid]);
+            $subscription_id = $pdo->lastInsertId();
+            
+            // Create payment records for all subscriptions
+            $payment1Stmt = $pdo->prepare("INSERT INTO payment (subscription_id, amount, payment_date) VALUES (?, ?, NOW())");
+            $payment1Stmt->execute([$subscription_id_1, $plan1['price']]);
+            
+            $payment2Stmt = $pdo->prepare("INSERT INTO payment (subscription_id, amount, payment_date) VALUES (?, ?, NOW())");
+            $payment2Stmt->execute([$subscription_id_2, $plan2['price']]);
+            
+            $paymentPkgStmt = $pdo->prepare("INSERT INTO payment (subscription_id, amount, payment_date) VALUES (?, ?, NOW())");
+            $paymentPkgStmt->execute([$subscription_id, $amount_paid]);
+            
+            // Create sales record
+            $salesStmt = $pdo->prepare("INSERT INTO sales (user_id, total_amount, sale_date, sale_type) VALUES (?, ?, NOW(), 'Subscription')");
+            $salesStmt->execute([$user_id, $amount_paid]);
+            $sale_id = $pdo->lastInsertId();
+            
+            // Create sales detail for the package
+            $salesDetailStmt = $pdo->prepare("INSERT INTO sales_details (sale_id, subscription_id, quantity, price) VALUES (?, ?, 1, ?)");
+            $salesDetailStmt->execute([$sale_id, $subscription_id, $amount_paid]);
+            
+            // FORCE FIX: Update plan_id 1 to have correct 365-day duration
+            error_log("DEBUG APPROVE: Fixing plan_id 1 (ID=$subscription_id_1) end_date to 365 days from $start_date");
+            $fixPlan1Stmt = $pdo->prepare("
+                UPDATE subscription 
+                SET end_date = DATE_ADD(?, INTERVAL 365 DAY) 
+                WHERE id = ?
+            ");
+            $fixPlan1Stmt->execute([$start_date, $subscription_id_1]);
+            $updatedRows = $fixPlan1Stmt->rowCount();
+            error_log("DEBUG APPROVE: UPDATE executed, rows affected: $updatedRows. New end_date should be: " . $plan1_end_date->format('Y-m-d'));
+            
+            $pdo->commit();
+            
+            echo json_encode([
+                "success" => true,
+                "subscription_id" => $subscription_id,
                 "status" => "approved",
-                "approved_at" => date('Y-m-d H:i:s'),
-                "approved_by" => $approvedBy
-            ]
-        ]);
+                "message" => "Combination package approved - Created 3 subscriptions with correct durations",
+                "data" => [
+                    "subscription_id" => $subscription_id,
+                    "membership_subscription_id" => $subscription_id_1,
+                    "monthly_subscription_id" => $subscription_id_2,
+                    "user_name" => trim($subscription['fname'] . ' ' . $subscription['lname']),
+                    "user_email" => $subscription['email'],
+                    "plan_name" => "Membership + 1 Month Access (Combination Package)",
+                    "membership_end_date" => $plan1_end_date->format('Y-m-d'),
+                    "monthly_end_date" => $plan2_end_date->format('Y-m-d'),
+                    "status" => "approved",
+                    "approved_at" => date('Y-m-d H:i:s'),
+                    "approved_by" => $approvedBy
+                ]
+            ]);
+        } else {
+            // For non-plan_id 5 subscriptions, just update the status
+            $updateStmt = $pdo->prepare("UPDATE subscription SET status_id = ? WHERE id = ?");
+            $updateStmt->execute([$approvedStatus['id'], $subscriptionId]);
+            
+            $pdo->commit();
+            
+            echo json_encode([
+                "success" => true,
+                "subscription_id" => $subscriptionId,
+                "status" => "approved",
+                "message" => "Subscription approved successfully",
+                "data" => [
+                    "subscription_id" => $subscriptionId,
+                    "user_name" => trim($subscription['fname'] . ' ' . $subscription['lname']),
+                    "user_email" => $subscription['email'],
+                    "plan_name" => $subscription['plan_name'],
+                    "status" => "approved",
+                    "approved_at" => date('Y-m-d H:i:s'),
+                    "approved_by" => $approvedBy
+                ]
+            ]);
+        }
         
     } catch (Exception $e) {
         $pdo->rollBack();

@@ -38,7 +38,7 @@ class _CoachDashboardState extends State<CoachDashboard> with TickerProviderStat
     NavigationItem(
       icon: Icons.fitness_center_outlined,
       activeIcon: Icons.fitness_center,
-      label: 'Routines',
+      label: 'Programs',
       color: Color(0xFFFF6B35),
     ),
     NavigationItem(
@@ -226,6 +226,24 @@ class _CoachDashboardState extends State<CoachDashboard> with TickerProviderStat
   }
 
   List<Widget> _getPages() {
+    // If no members assigned yet, show "No Members Assigned" message
+    if (assignedMembers.isEmpty && !isLoadingMembers) {
+      return [
+        _buildNoMembersAssignedPrompt('routines'),
+        _buildNoMembersAssignedPrompt('progress'),
+        _buildNoMembersAssignedPrompt('schedule'),
+        CoachMemberSelector(
+          assignedMembers: assignedMembers,
+          selectedMember: selectedMember,
+          onMemberSelected: _onMemberSelected,
+          isLoading: isLoadingMembers,
+        ),
+        _buildNoMembersAssignedPrompt('sessions'),
+        CoachProfilePage(),
+      ];
+    }
+    
+    // If members exist but none selected, show "Select a Member" message
     if (selectedMember == null) {
       return [
         _buildSelectMemberPrompt(),
@@ -242,6 +260,7 @@ class _CoachDashboardState extends State<CoachDashboard> with TickerProviderStat
       ];
     }
 
+    // Member is selected, show actual pages
     return [
       CoachRoutinePage(selectedMember: selectedMember!),
       CoachProgressPage(selectedMember: selectedMember!),
@@ -592,6 +611,138 @@ class _CoachDashboardState extends State<CoachDashboard> with TickerProviderStat
             color: Colors.white,
             size: isSmallScreen ? 20 : 24, // Smaller icon
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNoMembersAssignedPrompt(String pageType) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final screenHeight = MediaQuery.of(context).size.height;
+    final isSmallScreen = screenHeight < 700 || screenWidth < 350;
+    
+    // Get the appropriate icon, title, and message based on page type
+    IconData icon;
+    Color iconColor;
+    String title;
+    String message;
+    
+    switch (pageType) {
+      case 'routines':
+        icon = Icons.fitness_center_outlined;
+        iconColor = Color(0xFFFF6B35);
+        title = 'No Programs Available';
+        message = 'You don\'t have any members assigned yet. Once members are assigned to you, you\'ll be able to manage their programs here.';
+        break;
+      case 'progress':
+        icon = Icons.analytics_outlined;
+        iconColor = Color(0xFF96CEB4);
+        title = 'No Progress Data Available';
+        message = 'You don\'t have any members assigned yet. Once members are assigned to you, you\'ll be able to track their progress here.';
+        break;
+      case 'schedule':
+        icon = Icons.calendar_today_outlined;
+        iconColor = Color(0xFF9B59B6);
+        title = 'No Schedule Available';
+        message = 'You don\'t have any members assigned yet. Once members are assigned to you, you\'ll be able to manage their schedule here.';
+        break;
+      case 'sessions':
+        icon = Icons.timer_outlined;
+        iconColor = Color(0xFF4ECDC4);
+        title = 'No Sessions Available';
+        message = 'You don\'t have any members assigned yet. Once members are assigned to you, you\'ll be able to track their workout sessions here.';
+        break;
+      default:
+        icon = Icons.people_outline;
+        iconColor = Color(0xFF45B7D1);
+        title = 'No Members Assigned';
+        message = 'You don\'t have any members assigned yet. Contact your administrator to get members assigned to you.';
+    }
+    
+    return Center(
+      child: Container(
+        margin: EdgeInsets.all(isSmallScreen ? 12 : 20),
+        padding: EdgeInsets.all(isSmallScreen ? 16 : 24),
+        decoration: BoxDecoration(
+          color: Color(0xFF1A1A1A),
+          borderRadius: BorderRadius.circular(isSmallScreen ? 16 : 20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.2),
+              blurRadius: 8,
+              offset: Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: EdgeInsets.all(isSmallScreen ? 12 : 16),
+              decoration: BoxDecoration(
+                color: iconColor.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                icon,
+                color: iconColor,
+                size: isSmallScreen ? 36 : 48,
+              ),
+            ),
+            SizedBox(height: isSmallScreen ? 12 : 16),
+            Text(
+              title,
+              style: GoogleFonts.poppins(
+                fontSize: isSmallScreen ? 16 : 20,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            SizedBox(height: isSmallScreen ? 6 : 8),
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: isSmallScreen ? 8 : 0),
+              child: Text(
+                message,
+                style: GoogleFonts.poppins(
+                  fontSize: isSmallScreen ? 12 : 14,
+                  color: Colors.grey[400],
+                ),
+                textAlign: TextAlign.center,
+                maxLines: 4,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            SizedBox(height: isSmallScreen ? 16 : 20),
+            ElevatedButton.icon(
+              onPressed: () {
+                setState(() => _selectedIndex = 3); // Go to Members tab
+                _saveSelectedIndex(3);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Color(0xFF45B7D1),
+                foregroundColor: Colors.white,
+                padding: EdgeInsets.symmetric(
+                  horizontal: isSmallScreen ? 16 : 24,
+                  vertical: isSmallScreen ? 8 : 12,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(isSmallScreen ? 8 : 12),
+                ),
+              ),
+              icon: Icon(
+                Icons.people,
+                size: isSmallScreen ? 14 : 16,
+              ),
+              label: Text(
+                'Go to Members',
+                style: GoogleFonts.poppins(
+                  fontSize: isSmallScreen ? 10 : 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );

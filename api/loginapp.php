@@ -223,7 +223,7 @@ if ($method === 'GET' && $action === 'get_genders') {
             
             // FIXED: Simplified query to avoid table name issues
             $stmt = $pdo->prepare("
-                SELECT u.*, u.user_type_id
+                SELECT u.*, u.user_type_id, u.verification_deadline
                 FROM user u 
                 WHERE u.email = ?
             ");
@@ -231,6 +231,62 @@ if ($method === 'GET' && $action === 'get_genders') {
             $user = $stmt->fetch(PDO::FETCH_ASSOC);
             
             if ($user && password_verify($input['password'], $user['password'])) {
+                // Check if account is pending
+                if ($user['account_status'] === 'pending') {
+                    // AUTO-CHECK: If verification deadline has passed, automatically mark as rejected
+                    // Use MySQL NOW() for accurate datetime comparison
+                    $checkStmt = $pdo->prepare("
+                        SELECT id, verification_deadline,
+                               CASE WHEN verification_deadline < NOW() THEN 1 ELSE 0 END as is_expired
+                        FROM user 
+                        WHERE id = ? AND account_status = 'pending'
+                    ");
+                    $checkStmt->execute([$user['id']]);
+                    $deadlineCheck = $checkStmt->fetch(PDO::FETCH_ASSOC);
+                    
+                    if ($deadlineCheck && $deadlineCheck['is_expired'] == 1) {
+                        error_log("Deadline passed - Auto-rejecting account for user: " . $user['id'] . ", Deadline: {$deadlineCheck['verification_deadline']}");
+                        $updateStmt = $pdo->prepare("
+                            UPDATE user 
+                            SET account_status = 'rejected'
+                            WHERE id = ? AND account_status = 'pending'
+                        ");
+                        $updateStmt->execute([$user['id']]);
+                        
+                        // Return rejected status
+                        error_log("Login blocked - account auto-rejected for user: " . $user['id']);
+                        http_response_code(401);
+                        echo json_encode([
+                            'success' => false,
+                            'error' => 'Account verification rejected. Please contact support or create a new account.',
+                            'account_status' => 'rejected'
+                        ]);
+                        exit();
+                    }
+                    
+                    error_log("Login blocked - account pending for user: " . $user['id']);
+                    http_response_code(401);
+                    echo json_encode([
+                        'success' => false,
+                        'error' => 'Account pending verification',
+                        'account_status' => 'pending',
+                        'verification_deadline' => $user['verification_deadline'] ?? null
+                    ]);
+                    exit();
+                }
+                
+                // Check if account is rejected
+                if ($user['account_status'] === 'rejected') {
+                    error_log("Login blocked - account rejected for user: " . $user['id']);
+                    http_response_code(401);
+                    echo json_encode([
+                        'success' => false,
+                        'error' => 'Account verification rejected. Please contact support or create a new account.',
+                        'account_status' => 'rejected'
+                    ]);
+                    exit();
+                }
+                
                 // Check if account is deactivated
                 if ($user['account_status'] === 'deactivated') {
                     error_log("Login blocked - account deactivated for user: " . $user['id']);
@@ -357,7 +413,7 @@ if ($method === 'GET' && $action === 'get_genders') {
                 exit();
             }
             
-            // FIXED: Check if email already exists in 'user' table
+            // Check if email already exists in 'user' table
             $stmt = $pdo->prepare("SELECT id FROM user WHERE email = ?");
             $stmt->execute([$input['email']]);
             if ($stmt->rowCount() > 0) {
@@ -367,13 +423,72 @@ if ($method === 'GET' && $action === 'get_genders') {
                 exit();
             }
             
+            // IMPORTANT: Cross-check to prevent duplicate accounts from same person
+            // Check if a user with the same first name and last name already exists
+            // This prevents one person from creating multiple accounts with different emails
+            // BUT: Allow re-registration if the existing account is rejected and past 17 days
+            $stmt = $pdo->prepare("
+                SELECT id, email, account_status, created_at
+                FROM user 
+                WHERE LOWER(TRIM(fname)) = LOWER(TRIM(?)) 
+                AND LOWER(TRIM(lname)) = LOWER(TRIM(?))
+                AND user_type_id = 4
+            ");
+            $stmt->execute([$input['fname'], $input['lname']]);
+            $existingUser = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            if ($existingUser) {
+                // Check if existing account is approved or pending - block registration
+                if ($existingUser['account_status'] == 'approved' || $existingUser['account_status'] == 'pending') {
+                    error_log("User with same name already exists - ID: {$existingUser['id']}, Email: {$existingUser['email']}, Status: {$existingUser['account_status']}");
+                    http_response_code(400);
+                    echo json_encode([
+                        'success' => false, 
+                        'error' => 'An account with this name already exists. Please contact support if you need assistance with your existing account.',
+                        'existing_email' => $existingUser['email'],
+                        'existing_status' => $existingUser['account_status']
+                    ]);
+                    exit();
+                }
+                
+                // If existing account is rejected and older than 17 days, allow re-registration
+                if ($existingUser['account_status'] == 'rejected') {
+                    $createdAt = strtotime($existingUser['created_at']);
+                    $daysSinceCreation = (time() - $createdAt) / (60 * 60 * 24);
+                    
+                    if ($daysSinceCreation <= 17) {
+                        // Account still in grace period - block registration
+                        error_log("User with same name is rejected but still in grace period - ID: {$existingUser['id']}");
+                        http_response_code(400);
+                        echo json_encode([
+                            'success' => false, 
+                            'error' => 'Your previous account verification was rejected. Please wait for the account to be fully removed or contact support.',
+                            'existing_email' => $existingUser['email'],
+                            'existing_status' => $existingUser['account_status']
+                        ]);
+                        exit();
+                    } else {
+                        // Account is rejected and older than 17 days, should have been deleted
+                        // Allow registration to proceed
+                        error_log("Old rejected account found - ID: {$existingUser['id']}, will proceed with new registration");
+                    }
+                }
+            }
+            
             // Hash password
             $hashedPassword = password_hash($input['password'], PASSWORD_DEFAULT);
             
-            // FIXED: Insert into 'user' table with correct column names
+            // NOTE: This is customer registration only (user_type_id = 4)
+            // Add registration_date and set verification deadline to 3 days from now
+            // This 3-day deadline only applies to customers who need front desk verification
+            $registrationDate = date('Y-m-d H:i:s');
+            $verificationDeadline = date('Y-m-d H:i:s', strtotime('+3 days'));
+            
+            // Insert into 'user' table with correct column names
+            // user_type_id = 4 (Customer) - only customers need front desk verification
             $stmt = $pdo->prepare("
-                INSERT INTO user (email, password, fname, mname, lname, bday, gender_id, user_type_id, account_status, created_at) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, 4, 'pending', NOW())
+                INSERT INTO user (email, password, fname, mname, lname, bday, gender_id, user_type_id, account_status, created_at, registration_date, verification_deadline) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, 4, 'pending', NOW(), ?, ?)
             ");
             
             $stmt->execute([
@@ -383,7 +498,9 @@ if ($method === 'GET' && $action === 'get_genders') {
                 $input['mname'] ?? '',
                 $input['lname'],
                 $input['bday'],
-                $input['gender_id']
+                $input['gender_id'],
+                $registrationDate,
+                $verificationDeadline
             ]);
             
             $userId = $pdo->lastInsertId();
@@ -441,7 +558,7 @@ if ($method === 'GET' && $action === 'get_genders') {
                 $emailResult = ['success' => false, 'message' => 'Email service error: ' . $e->getMessage()];
             }
             
-            // Return success response
+            // Return success response with verification deadline info
             $response = [
                 'success' => true, 
                 'message' => $emailResult['success'] 
@@ -449,7 +566,10 @@ if ($method === 'GET' && $action === 'get_genders') {
                     : 'Account created successfully! (Email could not be sent: ' . $emailResult['message'] . ')',
                 'user_id' => $userId,
                 'email_sent' => $emailResult['success'] ?? false,
-                'email_error' => $emailResult['success'] ? null : $emailResult['message']
+                'email_error' => $emailResult['success'] ? null : $emailResult['message'],
+                'registration_date' => $registrationDate,
+                'verification_deadline' => $verificationDeadline,
+                'verification_days' => 3
             ];
             
             error_log("Final response: " . json_encode($response));

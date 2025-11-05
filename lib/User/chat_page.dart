@@ -411,7 +411,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                                   ),
                                   onSubmitted: (_) => _sendMessage(),
                                   maxLines: null,
-                                  cursorColor: Colors.orange,
+                                  cursorColor: Color(0xFF4ECDC4),
                                 ),
                               ),
                               SizedBox(width: 12),
@@ -421,7 +421,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                                   width: 48,
                                   height: 48,
                                   decoration: BoxDecoration(
-                                    color: Color(0xFFFF6B35),
+                                    color: Color(0xFF4ECDC4),
                                     shape: BoxShape.circle,
                                   ),
                                   child: isSending 

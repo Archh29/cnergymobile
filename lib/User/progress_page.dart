@@ -25,6 +25,7 @@ import './muscle_analytics_page.dart';
 import './weekly_muscle_analytics_page.dart';
 import './widgets/progress_tracker_widget.dart';
 import './widgets/progressive_overload_tracker.dart';
+import './body_measurements_page.dart';
 
 class ComprehensiveDashboard extends StatefulWidget {
   @override
@@ -52,7 +53,7 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
   double? userWeight;
   List<ProgressModel> bodyMeasurements = [];
   List<Map<String, dynamic>> _bodyMeasurementsData = [];
-  String _selectedMeasurementPeriod = '30d';
+  String _selectedMeasurementPeriod = 'all';
   bool _hasAnnualMembership = false;
     
   late AnimationController _animationController;
@@ -135,20 +136,16 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
           
           isLoading = false;
         });
-        
-        // Get latest measurements from progress data AFTER all data is loaded and setState is complete
-        latestMeasurements = await _getLatestMeasurementsFromProgress();
-        
-        // Force refresh measurements to ensure data persistence
-        if (latestMeasurements.isEmpty || latestMeasurements['weight'] == 0.0) {
-          // Attempting to refresh measurements
-          await Future.delayed(Duration(milliseconds: 500));
-          latestMeasurements = await _getLatestMeasurementsFromProgress();
-        }
-        
-        if (mounted) {
-          setState(() {}); // Trigger rebuild to show updated measurements
-        }
+      }
+      
+      // Get latest measurements from body measurements data AFTER setState
+      final measurements = await _getLatestMeasurementsFromProgress();
+      print('🔍 Latest measurements fetched: weight=${measurements['weight']}, bmi=${measurements['bmi']}');
+      
+      if (mounted) {
+        setState(() {
+          latestMeasurements = measurements;
+        });
         
         _animationController.forward();
       }
@@ -303,12 +300,15 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
   }
 
   Future<Map<String, double>> _getLatestMeasurementsFromProgress() async {
+    print('🔍 Getting latest measurements. bodyMeasurements count: ${bodyMeasurements.length}');
     
     // First try to get the latest body measurements from the API
     if (bodyMeasurements.isNotEmpty) {
+      print('🔍 Found ${bodyMeasurements.length} body measurements');
       // Sort by date to get latest and oldest
       bodyMeasurements.sort((a, b) => b.dateRecorded.compareTo(a.dateRecorded));
       final latest = bodyMeasurements.first;
+      print('🔍 Latest measurement: weight=${latest.weight}, bmi=${latest.bmi}, date=${latest.dateRecorded}');
       
       // Find starting weight (entry with "starting" or "profile" in notes)
       ProgressModel? startingWeight;
@@ -328,6 +328,7 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
       
       // Always recalculate BMI to ensure it's up-to-date with latest height
       double? calculatedBMI = latest.bmi;
+      print('🔍 Initial BMI from latest: $calculatedBMI');
       
       // Always fetch latest height and recalculate BMI to ensure accuracy
       if (latest.weight != null && latest.weight! > 0) {
@@ -362,11 +363,14 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
         'thighs': 0.0, // ProgressModel doesn't have thighsCm
       };
       
+      print('🔍 Returning result: weight=${result['weight']}, bmi=${result['bmi']}');
       return result;
     }
     
     // Fallback to progress data if no body measurements
+    print('🔍 No body measurements found, checking progressData...');
     if (progressData.isEmpty) {
+      print('🔍 Progress data is also empty, returning zeros');
       return {
         'weight': 0.0,
         'starting_weight': 0.0,
@@ -2192,133 +2196,108 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
   }
 
   Widget _buildBodyMeasurementsSection() {
-    return Container(
-      padding: EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Color(0xFF2A2A2A), Color(0xFF1F1F1F)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Color(0xFF3A3A3A), width: 1),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 4,
-            offset: Offset(0, 2),
+    // Get latest measurement to show preview
+    Map<String, dynamic>? latestMeasurement;
+    if (_bodyMeasurementsData.isNotEmpty) {
+      latestMeasurement = _bodyMeasurementsData.first;
+    }
+    
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => BodyMeasurementsPage(),
           ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header with Add Button
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Flexible(
-                child: Row(
-                  children: [
-                    Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [Color(0xFF6C5CE7), Color(0xFF5A4FCF)],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Icon(
-                        Icons.straighten_rounded,
-                        color: Colors.white,
-                        size: 20,
-                      ),
-                    ),
-                    SizedBox(width: 12),
-                    Flexible(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Body Measurements',
-                            style: GoogleFonts.poppins(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.white,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          Text(
-                            'Track your body composition',
-                            style: GoogleFonts.poppins(
-                              fontSize: 14,
-                              color: Colors.grey[400],
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              SizedBox(width: 8),
-              GestureDetector(
-                onTap: _showAddBodyMeasurementsDialog,
-                child: Container(
-                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [Color(0xFF6C5CE7), Color(0xFF5A4FCF)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Color(0xFF6C5CE7).withOpacity(0.3),
-                        blurRadius: 8,
-                        offset: Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.add_rounded,
-                        color: Colors.white,
-                        size: 16,
-                      ),
-                      SizedBox(width: 6),
-                      Text(
-                        'Add',
-                        style: GoogleFonts.poppins(
-                          color: Colors.white,
-                    fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
+        ).then((_) => _loadBodyMeasurementsData()); // Refresh on return
+      },
+      child: Container(
+        padding: EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFF1A1A1A), Color(0xFF0F0F0F)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Color(0xFF4ECDC4).withOpacity(0.2), width: 1),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.3),
+              blurRadius: 8,
+              offset: Offset(0, 4),
             ),
-          ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Color(0xFF4ECDC4), Color(0xFF44A08D)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Color(0xFF4ECDC4).withOpacity(0.4),
+                    blurRadius: 8,
+                    offset: Offset(0, 4),
+                  ),
+                ],
               ),
-            ],
-          ),
-          SizedBox(height: 20),
-          
-          // Filter Options
-          _buildMeasurementFilter(),
-          SizedBox(height: 16),
-          
-          // Body Measurements Display
-          _buildBodyMeasurementsDisplay(),
-        ],
+              child: Icon(
+                Icons.straighten_rounded,
+                color: Colors.white,
+                size: 28,
+              ),
+            ),
+            SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Body Measurements',
+                    style: GoogleFonts.poppins(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                    ),
+                  ),
+                  SizedBox(height: 6),
+                  Text(
+                    latestMeasurement != null 
+                      ? '${_countMeasurements(latestMeasurement)} measurements'
+                      : 'Track your body composition',
+                    style: GoogleFonts.poppins(
+                      fontSize: 13,
+                      color: Colors.grey[400],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.arrow_forward_ios, color: Colors.grey[500], size: 18),
+          ],
+        ),
       ),
     );
+  }
+
+  int _countMeasurements(Map<String, dynamic> measurement) {
+    int count = 0;
+    if (measurement['weight'] != null && measurement['weight'] != 0.0) count++;
+    if (measurement['chest'] != null && measurement['chest'] != 0.0) count++;
+    if (measurement['waist'] != null && measurement['waist'] != 0.0) count++;
+    if (measurement['shoulders'] != null && measurement['shoulders'] != 0.0) count++;
+    if (measurement['biceps_left'] != null && measurement['biceps_left'] != 0.0) count++;
+    if (measurement['biceps_right'] != null && measurement['biceps_right'] != 0.0) count++;
+    if (measurement['thighs'] != null && measurement['thighs'] != 0.0) count++;
+    return count;
   }
 
   Widget _buildMeasurementFilter() {
@@ -2334,6 +2313,7 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
         spacing: 8,
         runSpacing: 8,
         children: [
+          _buildFilterChip('all', 'All'),
           _buildFilterChip('14d', '14 Days'),
           _buildFilterChip('30d', '30 Days'),
           _buildFilterChip('3m', '3 Months'),
@@ -2480,8 +2460,8 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
       return [];
     }
 
-    // Get the latest measurement entry
-    final latestEntry = _bodyMeasurementsData.last;
+    // Get the latest measurement entry (newest first after sorting)
+    final latestEntry = _bodyMeasurementsData.first;
     
     // Define body parts with their data keys
     final bodyParts = [
@@ -2497,16 +2477,17 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
       final key = part['key'] as String;
       final value = latestEntry[key] as double?;
       
-      if (value == null) {
-        return SizedBox.shrink(); // Don't show if no data
+      // Don't show if no data or value is 0 (invalid measurement)
+      if (value == null || value == 0.0) {
+        return SizedBox.shrink();
       }
       
       // Calculate change from previous entry if available
       double change = 0.0;
       if (_bodyMeasurementsData.length > 1) {
-        final previousEntry = _bodyMeasurementsData[_bodyMeasurementsData.length - 2];
+        final previousEntry = _bodyMeasurementsData[1]; // Second newest (index 1)
         final previousValue = previousEntry[key] as double?;
-        if (previousValue != null) {
+        if (previousValue != null && previousValue != 0.0) {
           change = value - previousValue;
         }
       }
@@ -3673,23 +3654,86 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
 
   Future<void> _loadBodyMeasurementsData() async {
     try {
-      final userId = await AuthService.getCurrentUserId();
-      if (userId != null) {
-        final prefs = await SharedPreferences.getInstance();
-        final data = prefs.getString('body_measurements_$userId') ?? '[]';
-        final List<dynamic> measurementsList = json.decode(data);
-        
-        // Convert to the format expected by the UI
-        _bodyMeasurementsData = measurementsList.cast<Map<String, dynamic>>();
-        
-        // Check if we have local data that needs to be migrated to database
-        if (_bodyMeasurementsData.isNotEmpty) {
-          await _migrateLocalDataToDatabase();
+      // Fetch from database
+      final dbMeasurements = await BodyMeasurementsService.getBodyMeasurements();
+      
+      if (dbMeasurements.isEmpty) {
+        // If no DB data, try local storage for backward compatibility
+        final userId = await AuthService.getCurrentUserId();
+        if (userId != null) {
+          final prefs = await SharedPreferences.getInstance();
+          final data = prefs.getString('body_measurements_$userId') ?? '[]';
+          final List<dynamic> measurementsList = json.decode(data);
+          
+          // Convert to the format expected by the UI
+          _bodyMeasurementsData = measurementsList.cast<Map<String, dynamic>>();
+          
+          // Check if we have local data that needs to be migrated to database
+          if (_bodyMeasurementsData.isNotEmpty) {
+            await _migrateLocalDataToDatabase();
+          }
+          
+          if (mounted) {
+            setState(() {});
+          }
         }
-        
-        if (mounted) {
-          setState(() {});
-        }
+        return;
+      }
+      
+      // Convert ProgressModel to Map format expected by UI
+      _bodyMeasurementsData = dbMeasurements.map((m) => {
+        'date_recorded': m.dateRecorded.toIso8601String(),
+        'weight': m.weight,
+        'chest': m.chestCm,
+        'shoulders': m.armsCm, // Using armsCm as shoulders mapping
+        'biceps_left': m.armsCm,
+        'biceps_right': m.armsCm,
+        'waist': m.waistCm,
+        'thighs': m.thighsCm ?? m.hipsCm,
+      }).toList();
+      
+      // Apply date filter based on selected period
+      final now = DateTime.now();
+      DateTime cutoffDate;
+      
+      switch (_selectedMeasurementPeriod) {
+        case 'all':
+          cutoffDate = DateTime(1970, 1, 1); // All time
+          break;
+        case '14d':
+          cutoffDate = now.subtract(Duration(days: 14));
+          break;
+        case '30d':
+          cutoffDate = now.subtract(Duration(days: 30));
+          break;
+        case '3m':
+          cutoffDate = now.subtract(Duration(days: 90));
+          break;
+        case '6m':
+          cutoffDate = now.subtract(Duration(days: 180));
+          break;
+        case '1y':
+          cutoffDate = now.subtract(Duration(days: 365));
+          break;
+        default:
+          cutoffDate = DateTime(1970, 1, 1); // All time
+      }
+      
+      // Filter measurements within the selected period
+      _bodyMeasurementsData = _bodyMeasurementsData.where((m) {
+        final measurementDate = DateTime.parse(m['date_recorded']);
+        return measurementDate.isAfter(cutoffDate) || measurementDate.isAtSameMomentAs(cutoffDate);
+      }).toList();
+      
+      // Sort by date (newest first)
+      _bodyMeasurementsData.sort((a, b) {
+        final dateA = DateTime.parse(a['date_recorded']);
+        final dateB = DateTime.parse(b['date_recorded']);
+        return dateB.compareTo(dateA);
+      });
+      
+      if (mounted) {
+        setState(() {});
       }
     } catch (e) {
       print('Error loading body measurements: $e');

@@ -269,3 +269,12 @@ function logSupportRequest($pdo, $userEmail, $subject, $message) {
 
 
 
+
+
+
+
+
+
+
+
+

@@ -113,34 +113,6 @@ class _AccountDeactivatedPageState extends State<AccountDeactivatedPage> {
               
               SizedBox(height: 32),
               
-              // Contact Support Button
-              SizedBox(
-                width: double.infinity,
-                height: 56,
-                child: ElevatedButton(
-                  onPressed: () {
-                    _showContactSupportDialog();
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Color(0xFF4ECDC4),
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    elevation: 0,
-                  ),
-                  child: Text(
-                    'Contact Support',
-                    style: GoogleFonts.poppins(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ),
-              
-              SizedBox(height: 16),
-              
               // Logout Button
               SizedBox(
                 width: double.infinity,

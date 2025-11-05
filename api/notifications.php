@@ -109,13 +109,21 @@ try {
             break;
 
         case 'mark_as_read':
-            // Read JSON data from request body
-            $input = json_decode(file_get_contents('php://input'), true);
-            $notification_id = $input['notification_id'] ?? $_POST['notification_id'] ?? '';
+            // Get notification_id from POST body (JSON) or GET parameter
+            $notification_id = '';
+            if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+                $input = json_decode(file_get_contents('php://input'), true);
+                $notification_id = $input['notification_id'] ?? $_POST['notification_id'] ?? '';
+            } else {
+                $notification_id = $_GET['notification_id'] ?? '';
+            }
             
             if (!$notification_id) {
                 sendError('Notification ID is required', 400);
             }
+            
+            // Cast to integer
+            $notification_id = (int)$notification_id;
 
             // Get the read status ID (use the first available Read status)
             $statusStmt = $pdo->prepare("SELECT id FROM notification_status WHERE status_name = 'Read' ORDER BY id LIMIT 1");
@@ -157,13 +165,21 @@ try {
             break;
 
         case 'delete_notification':
-            // Read JSON data from request body
-            $input = json_decode(file_get_contents('php://input'), true);
-            $notification_id = $input['notification_id'] ?? $_POST['notification_id'] ?? '';
+            // Get notification_id from POST body (JSON) or GET parameter
+            $notification_id = '';
+            if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+                $input = json_decode(file_get_contents('php://input'), true);
+                $notification_id = $input['notification_id'] ?? $_POST['notification_id'] ?? '';
+            } else {
+                $notification_id = $_GET['notification_id'] ?? '';
+            }
             
             if (!$notification_id) {
                 sendError('Notification ID is required', 400);
             }
+            
+            // Cast to integer
+            $notification_id = (int)$notification_id;
 
             $deleteStmt = $pdo->prepare("DELETE FROM notification WHERE id = ? AND user_id = ?");
             $deleteStmt->execute([$notification_id, $user_id]);
@@ -206,10 +222,8 @@ try {
 
         case 'create_notification':
             // For testing or manual notification creation
-            // Read JSON data from request body
-            $input = json_decode(file_get_contents('php://input'), true);
-            $message = $input['message'] ?? $_POST['message'] ?? '';
-            $type_id = $input['type_id'] ?? $_POST['type_id'] ?? 1; // Default to info type
+            $message = $_POST['message'] ?? '';
+            $type_id = $_POST['type_id'] ?? 1; // Default to info type
             
             if (!$message) {
                 sendError('Message is required', 400);

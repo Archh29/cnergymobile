@@ -475,7 +475,7 @@ switch ($action) {
         break;
 
     default:
-        http_response_code(400);
+        http_response_code(400);image.png
         echo json_encode(["error" => "Invalid action"]);
         break;
 }

@@ -98,7 +98,7 @@ class _CoachClientSelectionPageState extends State<CoachClientSelectionPage> {
               ),
             ),
             Text(
-              'Choose who to create routine for',
+              'Choose who to create program for',
               style: GoogleFonts.poppins(
                 fontSize: 12,
                 color: Colors.grey[400],

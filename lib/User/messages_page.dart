@@ -27,11 +27,11 @@ class _MessagesPageState extends State<MessagesPage> with TickerProviderStateMix
 
   // Color palette for avatars
   final List<Color> avatarColors = [
-    Color(0xFFFF6B35),
     Color(0xFF4ECDC4),
+    Color(0xFF44A08D),
     Color(0xFF96CEB4),
-    Color(0xFFE74C3C),
     Color(0xFF45B7D1),
+    Color(0xFFE74C3C),
     Color(0xFF9B59B6),
     Color(0xFFF39C12),
     Color(0xFF2ECC71),
@@ -178,12 +178,19 @@ class _MessagesPageState extends State<MessagesPage> with TickerProviderStateMix
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isSmallScreen = screenWidth < 360;
+    final isMediumScreen = screenWidth < 400;
+    
     return Scaffold(
       backgroundColor: Color(0xFF0F0F0F),
       appBar: AppBar(
         title: Text(
           'Messages',
-          style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+          style: GoogleFonts.poppins(
+            fontWeight: FontWeight.w600,
+            fontSize: isSmallScreen ? 16 : 18,
+          ),
         ),
         backgroundColor: Color(0xFF0F0F0F),
         elevation: 0,
@@ -216,13 +223,13 @@ class _MessagesPageState extends State<MessagesPage> with TickerProviderStateMix
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.error_outline, color: Colors.red, size: 64),
+                      Icon(Icons.error_outline, color: Colors.red, size: isSmallScreen ? 48 : 64),
                       SizedBox(height: 16),
                       Text(
                         'Error loading messages',
                         style: GoogleFonts.poppins(
                           color: Colors.white,
-                          fontSize: 18,
+                          fontSize: isSmallScreen ? 16 : 18,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -231,7 +238,7 @@ class _MessagesPageState extends State<MessagesPage> with TickerProviderStateMix
                         errorMessage,
                         style: GoogleFonts.poppins(
                           color: Colors.grey[400],
-                          fontSize: 14,
+                          fontSize: isSmallScreen ? 12 : 14,
                         ),
                         textAlign: TextAlign.center,
                       ),
@@ -245,18 +252,18 @@ class _MessagesPageState extends State<MessagesPage> with TickerProviderStateMix
                     children: [
                       // Header
                       Container(
-                        margin: EdgeInsets.all(20),
-                        padding: EdgeInsets.all(28),
+                        margin: EdgeInsets.all(isSmallScreen ? 12 : 20),
+                        padding: EdgeInsets.all(isSmallScreen ? 16 : 28),
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
-                            colors: [Color(0xFFFF6B35), Color(0xFFFF8E53)],
+                            colors: [Color(0xFF4ECDC4), Color(0xFF44A08D)],
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
                           ),
                           borderRadius: BorderRadius.circular(24),
                           boxShadow: [
                             BoxShadow(
-                              color: Color(0xFFFF6B35).withOpacity(0.4),
+                              color: Color(0xFF4ECDC4).withOpacity(0.4),
                               blurRadius: 25,
                               offset: Offset(0, 10),
                             ),
@@ -265,7 +272,7 @@ class _MessagesPageState extends State<MessagesPage> with TickerProviderStateMix
                         child: Row(
                           children: [
                             Container(
-                              padding: EdgeInsets.all(14),
+                              padding: EdgeInsets.all(isSmallScreen ? 10 : 14),
                               decoration: BoxDecoration(
                                 color: Colors.white.withOpacity(0.25),
                                 borderRadius: BorderRadius.circular(18),
@@ -277,10 +284,10 @@ class _MessagesPageState extends State<MessagesPage> with TickerProviderStateMix
                               child: Icon(
                                 Icons.chat_bubble_outline_rounded,
                                 color: Colors.white,
-                                size: 30,
+                                size: isSmallScreen ? 20 : 30,
                               ),
                             ),
-                            SizedBox(width: 20),
+                            SizedBox(width: isSmallScreen ? 12 : 20),
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -288,13 +295,13 @@ class _MessagesPageState extends State<MessagesPage> with TickerProviderStateMix
                                   Text(
                                     'Your Conversations',
                                     style: GoogleFonts.poppins(
-                                      fontSize: 26,
+                                      fontSize: isSmallScreen ? 16 : isMediumScreen ? 20 : 26,
                                       color: Colors.white,
                                       fontWeight: FontWeight.bold,
                                       letterSpacing: 0.5,
                                     ),
                                   ),
-                                  SizedBox(height: 6),
+                                  SizedBox(height: isSmallScreen ? 4 : 6),
                                   Text(
                                     totalUnread > 0
                                         ? '$totalUnread unread messages'
@@ -303,7 +310,7 @@ class _MessagesPageState extends State<MessagesPage> with TickerProviderStateMix
                                             : 'All caught up!',
                                     style: GoogleFonts.poppins(
                                       color: Colors.white.withOpacity(0.9),
-                                      fontSize: 15,
+                                      fontSize: isSmallScreen ? 12 : 15,
                                       fontWeight: FontWeight.w500,
                                     ),
                                   ),
@@ -312,7 +319,7 @@ class _MessagesPageState extends State<MessagesPage> with TickerProviderStateMix
                             ),
                             if (totalUnread > 0)
                               Container(
-                                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                padding: EdgeInsets.symmetric(horizontal: isSmallScreen ? 8 : 12, vertical: isSmallScreen ? 6 : 8),
                                 decoration: BoxDecoration(
                                   color: Colors.red,
                                   borderRadius: BorderRadius.circular(18),
@@ -329,7 +336,7 @@ class _MessagesPageState extends State<MessagesPage> with TickerProviderStateMix
                                   style: GoogleFonts.poppins(
                                     color: Colors.white,
                                     fontWeight: FontWeight.bold,
-                                    fontSize: 16,
+                                    fontSize: isSmallScreen ? 12 : 16,
                                   ),
                                 ),
                               ),
@@ -346,14 +353,14 @@ class _MessagesPageState extends State<MessagesPage> with TickerProviderStateMix
                                     Icon(
                                       Icons.chat_bubble_outline,
                                       color: Colors.grey[600],
-                                      size: 64,
+                                      size: isSmallScreen ? 48 : 64,
                                     ),
                                     SizedBox(height: 16),
                                     Text(
                                       'No conversations yet',
                                       style: GoogleFonts.poppins(
                                         color: Colors.grey[400],
-                                        fontSize: 18,
+                                        fontSize: isSmallScreen ? 16 : 18,
                                         fontWeight: FontWeight.w600,
                                       ),
                                     ),
@@ -362,14 +369,14 @@ class _MessagesPageState extends State<MessagesPage> with TickerProviderStateMix
                                       'Start chatting with your coach!',
                                       style: GoogleFonts.poppins(
                                         color: Colors.grey[500],
-                                        fontSize: 14,
+                                        fontSize: isSmallScreen ? 12 : 14,
                                       ),
                                     ),
                                   ],
                                 ),
                               )
                             : ListView.builder(
-                                padding: EdgeInsets.symmetric(horizontal: 20),
+                                padding: EdgeInsets.symmetric(horizontal: isSmallScreen ? 12 : 20),
                                 itemCount: conversations.length,
                                 itemBuilder: (context, index) {
                                   final conversation = conversations[index];
@@ -377,7 +384,7 @@ class _MessagesPageState extends State<MessagesPage> with TickerProviderStateMix
                                   
                                   return Container(
                                     key: ValueKey('conversation_${conversation.id}_${conversation.unreadCount}'),
-                                    margin: EdgeInsets.only(bottom: 16),
+                                    margin: EdgeInsets.only(bottom: isSmallScreen ? 12 : 16),
                                     decoration: BoxDecoration(
                                       gradient: LinearGradient(
                                         colors: conversation.unreadCount > 0
@@ -401,12 +408,12 @@ class _MessagesPageState extends State<MessagesPage> with TickerProviderStateMix
                                       ],
                                     ),
                                     child: ListTile(
-                                      contentPadding: EdgeInsets.all(20),
+                                      contentPadding: EdgeInsets.all(isSmallScreen ? 12 : 20),
                                       leading: Stack(
                                         children: [
                                           Container(
-                                            width: 60,
-                                            height: 60,
+                                            width: isSmallScreen ? 45 : 60,
+                                            height: isSmallScreen ? 45 : 60,
                                             decoration: BoxDecoration(
                                               gradient: LinearGradient(
                                                 colors: [
@@ -429,7 +436,7 @@ class _MessagesPageState extends State<MessagesPage> with TickerProviderStateMix
                                               child: Text(
                                                 conversation.otherUser.initials,
                                                 style: GoogleFonts.poppins(
-                                                  fontSize: 22,
+                                                  fontSize: isSmallScreen ? 16 : 22,
                                                   fontWeight: FontWeight.bold,
                                                   color: Colors.white,
                                                   letterSpacing: 0.5,
@@ -442,8 +449,8 @@ class _MessagesPageState extends State<MessagesPage> with TickerProviderStateMix
                                               bottom: 2,
                                               right: 2,
                                               child: Container(
-                                                width: 18,
-                                                height: 18,
+                                                width: isSmallScreen ? 14 : 18,
+                                                height: isSmallScreen ? 14 : 18,
                                                 decoration: BoxDecoration(
                                                   color: Color(0xFF4ECDC4),
                                                   shape: BoxShape.circle,
@@ -467,7 +474,7 @@ class _MessagesPageState extends State<MessagesPage> with TickerProviderStateMix
                                               conversation.otherUser.fullName,
                                               style: GoogleFonts.poppins(
                                                 fontWeight: FontWeight.bold,
-                                                fontSize: 16,
+                                                fontSize: isSmallScreen ? 14 : 16,
                                                 color: Colors.white,
                                               ),
                                             ),
@@ -502,7 +509,7 @@ class _MessagesPageState extends State<MessagesPage> with TickerProviderStateMix
                                                 conversation.lastMessage ?? 'No messages yet',
                                                 style: GoogleFonts.poppins(
                                                   color: isUnread ? Colors.white : Colors.grey[500],
-                                                  fontSize: 14,
+                                                  fontSize: isSmallScreen ? 12 : 14,
                                                   fontWeight: isUnread ? FontWeight.w600 : FontWeight.w400,
                                                 ),
                                                 maxLines: 2,
@@ -516,29 +523,29 @@ class _MessagesPageState extends State<MessagesPage> with TickerProviderStateMix
                                               Icon(
                                                 Icons.access_time,
                                                 color: Colors.grey[500],
-                                                size: 14,
+                                                size: isSmallScreen ? 12 : 14,
                                               ),
                                               SizedBox(width: 4),
                                               Text(
                                                 _formatTime(conversation.lastMessageTime),
                                                 style: GoogleFonts.poppins(
                                                   color: Colors.grey[500],
-                                                  fontSize: 12,
+                                                  fontSize: isSmallScreen ? 10 : 12,
                                                 ),
                                               ),
                                               if (conversation.otherUser.isOnline) ...[
-                                                SizedBox(width: 12),
+                                                SizedBox(width: isSmallScreen ? 8 : 12),
                                                 Icon(
                                                   Icons.circle,
                                                   color: Color(0xFF4ECDC4),
-                                                  size: 8,
+                                                  size: isSmallScreen ? 6 : 8,
                                                 ),
                                                 SizedBox(width: 4),
                                                 Text(
                                                   'Online',
                                                   style: GoogleFonts.poppins(
                                                     color: Color(0xFF4ECDC4),
-                                                    fontSize: 12,
+                                                    fontSize: isSmallScreen ? 10 : 12,
                                                     fontWeight: FontWeight.w500,
                                                   ),
                                                 ),

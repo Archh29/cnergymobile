@@ -311,6 +311,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                         _buildRuleItem("10. NO LOITERING", isSmallScreen),
                         _buildRuleItem("11. Use provided SANITZER STATIONS.", isSmallScreen),
                         _buildRuleItem("12. Please be COURTEOUS AND RESPECTFUL of other gym users.", isSmallScreen),
+                        _buildRuleItem("13. NO SHARING OF QR CODE. If caught, account termination will be applied.", isSmallScreen),
                       ],
                     ),
                   ),

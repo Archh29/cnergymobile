@@ -124,31 +124,37 @@ class TermsConditionsPage extends StatelessWidget {
             ),
 
             _buildTermsSection(
-              title: '3. Modifications',
+              title: '3. QR Code Policy',
+              icon: Icons.qr_code_scanner,
+              content: 'Your QR code is personal and confidential. Sharing, distributing, or allowing others to use your QR code is strictly prohibited. If you are caught sharing your QR code with unauthorized individuals, your account will be immediately terminated. You are solely responsible for all activities performed using your QR code.',
+            ),
+
+            _buildTermsSection(
+              title: '4. Modifications',
               icon: Icons.update,
               content: 'We reserve the right to modify these terms at any time. Continued use of the app means you accept the changes. We will notify you of significant changes through the app or via email.',
             ),
 
             _buildTermsSection(
-              title: '4. Termination',
+              title: '5. Termination',
               icon: Icons.block,
               content: 'We may suspend or terminate your access to the app at our discretion, without prior notice. This may occur if you violate these terms or engage in activities that could harm other users or our services.',
             ),
 
             _buildTermsSection(
-              title: '5. Content Ownership',
+              title: '6. Content Ownership',
               icon: Icons.copyright,
               content: 'All content provided in the app, including but not limited to text, graphics, logos, and software, is owned by us or our licensors and is protected by copyright and other intellectual property laws.',
             ),
 
             _buildTermsSection(
-              title: '6. Limitation of Liability',
+              title: '7. Limitation of Liability',
               icon: Icons.gavel,
               content: 'We are not liable for any damages that may occur from using our app. This includes direct, indirect, incidental, punitive, and consequential damages. Use the app at your own risk.',
             ),
 
             _buildTermsSection(
-              title: '7. Governing Law',
+              title: '8. Governing Law',
               icon: Icons.balance,
               content: 'These terms shall be governed by and construed in accordance with the laws of the jurisdiction in which our company is registered, without regard to its conflict of law provisions.',
             ),
@@ -160,22 +166,6 @@ class TermsConditionsPage extends StatelessWidget {
                 style: GoogleFonts.poppins(
                   color: Colors.grey,
                   fontSize: 14,
-                ),
-              ),
-            ),
-            SizedBox(height: 16),
-            Center(
-              child: TextButton.icon(
-                onPressed: () {
-                  // Download or share terms
-                },
-                icon: Icon(Icons.download, color: Color(0xFF96CEB4)),
-                label: Text(
-                  'Download Full Terms',
-                  style: GoogleFonts.poppins(
-                    color: Color(0xFF96CEB4),
-                    fontWeight: FontWeight.w500,
-                  ),
                 ),
               ),
             ),

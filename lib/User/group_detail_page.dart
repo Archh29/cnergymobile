@@ -34,7 +34,18 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
       appBar: AppBar(
         backgroundColor: const Color(0xFF181818),
         elevation: 0,
-        title: Text('${widget.group.groupName} Analytics', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Color(0xFF00D4AA)),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: Text(
+          '${widget.group.groupName} Analytics',
+          style: GoogleFonts.poppins(
+            fontWeight: FontWeight.w600,
+            fontSize: 18,
+            color: Colors.white,
+          ),
+        ),
         actions: [
           IconButton(
             onPressed: _openFilterSheet,
@@ -179,7 +190,6 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
                   _kpi('Sets', widget.group.totalSets.toString()),
                   _kpi('Reps', (widget.group.totalReps ?? widget.group.totalSets * 9).toString()),
                   _kpi('Exercises', widget.group.totalExercises.toString()),
-                  _kpi('EV (kg)', _compactNum(_effectiveVolume(widget.group.totalLoad, widget.group.sessions))),
                   _kpi('Freq', widget.group.sessions.toString()+"/wk"),
                   _kpi('Target Sets', _targetSetsLabel(widget.group.totalSets)),
                   _kpi('Avg Weight (kg)', _avgWeight(widget.group.totalLoad, (widget.group.totalReps ?? widget.group.totalSets * 9))),
@@ -219,7 +229,7 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
                   crossAxisCount: 2,
                   mainAxisSpacing: 12,
                   crossAxisSpacing: 12,
-                  childAspectRatio: constraints.maxWidth / (constraints.maxWidth * 0.6 + 120), // Dynamic aspect ratio
+                  childAspectRatio: 0.75, // Taller cards to prevent overflow
                 ),
                 itemBuilder: (context, i) {
                   final m = widget.muscles[i];
@@ -256,7 +266,6 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
                           Wrap(spacing: 12, children: [
                             _kpi('Sets', e.sets.toString()),
                             _kpi('Reps', e.reps.toString()),
-                            _kpi('EV', e.load.toStringAsFixed(0)),
                           ]),
                         ],
                       ),
@@ -305,60 +314,53 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
               ),
             ],
           ),
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Image with responsive height
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: SizedBox(
-                    width: double.infinity,
-                    height: constraints.maxWidth * 0.5, // Optimized for visibility
-                    child: _thumbnail(imageUrl),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Image with responsive height
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: SizedBox(
+                  width: double.infinity,
+                  height: constraints.maxWidth * 0.4, // Reduced to fit more content
+                  child: _thumbnail(imageUrl),
+                ),
+              ),
+              const SizedBox(height: 4),
+              // Muscle name
+              Text(
+                name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.poppins(
+                  color: Colors.white, 
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                ),
+              ),
+              const SizedBox(height: 4),
+              // Compact metrics row
+              Row(
+                children: [
+                  Expanded(
+                    child: _compactMetric('Sets', sets.toString()),
                   ),
-                ),
-                const SizedBox(height: 6),
-                // Muscle name
-                Text(
-                  name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.poppins(
-                    color: Colors.white, 
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: _compactMetric('Reps', reps.toString()),
                   ),
-                ),
-                const SizedBox(height: 4),
-                // Compact metrics row
-                Row(
-                  children: [
-                    Expanded(
-                      child: _compactMetric('Sets', sets.toString()),
-                    ),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: _compactMetric('Reps', reps.toString()),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                // EV and Status row
-                Row(
-                  children: [
-                    Expanded(
-                      child: _compactMetric('EV', _compactNum(ev)),
-                    ),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: _statusPill(status),
-                    ),
-                  ],
-                ),
-              ],
-            ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              // Status row
+              Row(
+                children: [
+                  Expanded(
+                    child: _statusPill(status),
+                  ),
+                ],
+              ),
+            ],
           ),
         );
       },
@@ -1030,7 +1032,6 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
                   _kpi('Sets', muscle.totalSets.toString()),
                   _kpi('Reps', reps.toString()),
                   _kpi('Exercises', muscle.totalExercises.toString()),
-                  _kpi('EV (kg)', _compactNum(ev)),
                   _kpi('Freq', muscle.sessions.toString()+"/wk"),
                   _kpi('Avg Weight', _avgWeight(muscle.totalLoad, reps)),
                 ],
@@ -1167,7 +1168,18 @@ class MuscleDetailPage extends StatelessWidget {
       appBar: AppBar(
         backgroundColor: const Color(0xFF181818),
         elevation: 0,
-        title: Text('${muscle.muscleName} Analytics', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Color(0xFF00D4AA)),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: Text(
+          '${muscle.muscleName} Analytics',
+          style: GoogleFonts.poppins(
+            fontWeight: FontWeight.w600,
+            fontSize: 18,
+            color: Colors.white,
+          ),
+        ),
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),

@@ -157,22 +157,6 @@ class PrivacyPolicyPage extends StatelessWidget {
                 ),
               ),
             ),
-            SizedBox(height: 16),
-            Center(
-              child: TextButton.icon(
-                onPressed: () {
-                  // Download or share privacy policy
-                },
-                icon: Icon(Icons.download, color: Color(0xFF45B7D1)),
-                label: Text(
-                  'Download Full Policy',
-                  style: GoogleFonts.poppins(
-                    color: Color(0xFF45B7D1),
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ),
-            ),
             SizedBox(height: 40),
           ],
         ),

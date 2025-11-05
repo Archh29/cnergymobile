@@ -7,6 +7,7 @@ DROP TRIGGER IF EXISTS `notify_subscription_expiry_7days`;
 DROP TRIGGER IF EXISTS `notify_subscription_expiry_3days`;
 DROP TRIGGER IF EXISTS `notify_subscription_expiry_1day`;
 DROP TRIGGER IF EXISTS `notify_subscription_renewed`;
+DROP TRIGGER IF EXISTS `notify_subscription_expired`;
 DROP TRIGGER IF EXISTS `notify_workout_completed`;
 DROP TRIGGER IF EXISTS `notify_personal_record`;
 DROP TRIGGER IF EXISTS `notify_workout_streak`;
@@ -55,13 +56,18 @@ CREATE TRIGGER `notify_subscription_expiry_7days`
 AFTER UPDATE ON `subscription` 
 FOR EACH ROW 
 BEGIN
+    DECLARE plan_name VARCHAR(255);
+    
     IF NEW.end_date IS NOT NULL AND OLD.end_date IS NOT NULL THEN
         -- Check if subscription expires in 7 days
         IF DATEDIFF(NEW.end_date, CURDATE()) = 7 AND NEW.end_date > CURDATE() THEN
+            -- Get plan name
+            SELECT plan_name INTO plan_name FROM membership WHERE id = NEW.plan_id;
+            
             INSERT INTO `notification` (`user_id`, `message`, `status_id`, `type_id`, `timestamp`)
             VALUES (
                 NEW.user_id, 
-                '⚠️ Your membership expires in 7 days. Renew now to continue enjoying all premium features!',
+                CONCAT('⚠️ Your ', COALESCE(plan_name, 'membership'), ' expires in 7 days. Renew now to continue enjoying all premium features!'),
                 1, 
                 8, 
                 NOW()
@@ -77,13 +83,18 @@ CREATE TRIGGER `notify_subscription_expiry_3days`
 AFTER UPDATE ON `subscription` 
 FOR EACH ROW 
 BEGIN
+    DECLARE plan_name VARCHAR(255);
+    
     IF NEW.end_date IS NOT NULL AND OLD.end_date IS NOT NULL THEN
         -- Check if subscription expires in 3 days
         IF DATEDIFF(NEW.end_date, CURDATE()) = 3 AND NEW.end_date > CURDATE() THEN
+            -- Get plan name
+            SELECT plan_name INTO plan_name FROM membership WHERE id = NEW.plan_id;
+            
             INSERT INTO `notification` (`user_id`, `message`, `status_id`, `type_id`, `timestamp`)
             VALUES (
                 NEW.user_id, 
-                '🚨 URGENT: Your membership expires in 3 days! Renew immediately to avoid service interruption.',
+                CONCAT('🚨 URGENT: Your ', COALESCE(plan_name, 'membership'), ' expires in 3 days! Renew immediately to avoid service interruption.'),
                 1, 
                 2, 
                 NOW()
@@ -99,13 +110,45 @@ CREATE TRIGGER `notify_subscription_expiry_1day`
 AFTER UPDATE ON `subscription` 
 FOR EACH ROW 
 BEGIN
+    DECLARE plan_name VARCHAR(255);
+    
     IF NEW.end_date IS NOT NULL AND OLD.end_date IS NOT NULL THEN
         -- Check if subscription expires in 1 day
         IF DATEDIFF(NEW.end_date, CURDATE()) = 1 AND NEW.end_date > CURDATE() THEN
+            -- Get plan name
+            SELECT plan_name INTO plan_name FROM membership WHERE id = NEW.plan_id;
+            
             INSERT INTO `notification` (`user_id`, `message`, `status_id`, `type_id`, `timestamp`)
             VALUES (
                 NEW.user_id, 
-                '🔥 FINAL WARNING: Your membership expires TOMORROW! Renew now to keep your progress!',
+                CONCAT('🔥 FINAL WARNING: Your ', COALESCE(plan_name, 'membership'), ' expires TOMORROW! Renew now to keep your progress!'),
+                1, 
+                2, 
+                NOW()
+            );
+        END IF;
+    END IF;
+END$$
+DELIMITER ;
+
+-- Trigger for subscription expired
+DELIMITER $$
+CREATE TRIGGER `notify_subscription_expired` 
+AFTER UPDATE ON `subscription` 
+FOR EACH ROW 
+BEGIN
+    DECLARE plan_name VARCHAR(255);
+    
+    IF NEW.end_date IS NOT NULL THEN
+        -- Check if subscription has expired (end_date is before today)
+        IF NEW.end_date < CURDATE() AND (OLD.end_date IS NULL OR OLD.end_date >= CURDATE()) THEN
+            -- Get plan name
+            SELECT plan_name INTO plan_name FROM membership WHERE id = NEW.plan_id;
+            
+            INSERT INTO `notification` (`user_id`, `message`, `status_id`, `type_id`, `timestamp`)
+            VALUES (
+                NEW.user_id, 
+                CONCAT('❌ Your ', COALESCE(plan_name, 'membership'), ' has expired. Renew now to reactivate your premium features!'),
                 1, 
                 2, 
                 NOW()
@@ -121,10 +164,15 @@ CREATE TRIGGER `notify_subscription_renewed`
 AFTER INSERT ON `subscription` 
 FOR EACH ROW 
 BEGIN
+    DECLARE plan_name VARCHAR(255);
+    
+    -- Get plan name
+    SELECT plan_name INTO plan_name FROM membership WHERE id = NEW.plan_id;
+    
     INSERT INTO `notification` (`user_id`, `message`, `status_id`, `type_id`, `timestamp`)
     VALUES (
         NEW.user_id, 
-        CONCAT('✅ Payment successful! Your membership is active until ', DATE_FORMAT(NEW.end_date, '%M %d, %Y')),
+        CONCAT('✅ Payment successful! Your ', COALESCE(plan_name, 'membership'), ' is active until ', DATE_FORMAT(NEW.end_date, '%M %d, %Y')),
         1, 
         3, 
         NOW()

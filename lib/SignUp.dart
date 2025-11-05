@@ -390,7 +390,7 @@ class _SignUpPageState extends State<SignUpPage> with SingleTickerProviderStateM
                         ),
                       ],
                     ),
-                    const SizedBox(height: 8),
+              const SizedBox(height: 8),
                     Text(
                       '1. Check your email for welcome instructions\n'
                       '2. Visit our front desk for account verification\n'
@@ -401,6 +401,39 @@ class _SignUpPageState extends State<SignUpPage> with SingleTickerProviderStateM
                         color: Colors.blue.shade700,
                         height: 1.4,
                       ),
+                    ),
+                  ],
+                ),
+              ),
+              
+              const SizedBox(height: 16),
+              
+              // 3-Day Deadline Warning
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.orange.shade200),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.access_time,
+                      color: Colors.orange.shade700,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                child: Text(
+                  '⚠️ IMPORTANT: You have 3 days to verify your account at our front desk. After 3 days, your account will be rejected and removed after an additional grace period.',
+                  style: GoogleFonts.poppins(
+                    fontSize: 12,
+                    color: Colors.orange.shade700,
+                    height: 1.4,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
                     ),
                   ],
                 ),

@@ -1,14 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'achievements_page.dart';
 import 'manage_profile_page.dart';
-import 'manage_notification_page.dart';
-import 'manage_subscriptions_page.dart';
-import 'message_support_page.dart';
-import 'privacy_policy_page.dart';
-import 'terms_conditions_page.dart';
-import 'social_accounts_page.dart';
+import '../User/privacy_policy_page.dart';
+import '../User/terms_conditions_page.dart';
 
 class ProfilePage extends StatefulWidget {
   @override
@@ -216,45 +211,23 @@ class _ProfilePageState extends State<ProfilePage> with TickerProviderStateMixin
 
                   // Menu sections
                   _buildMenuSection(
-                    'Personal',
-                    [
-                      _buildMenuItem(Icons.emoji_events, 'Achievements', Color(0xFFFFD700), () {
-                        Navigator.push(context, MaterialPageRoute(builder: (_) => AchievementsPage()));
-                      }),
-                      _buildMenuItem(Icons.person, 'Manage Profile', Color(0xFF4ECDC4), () {
-                        Navigator.push(context, MaterialPageRoute(builder: (_) => ManageProfilePage()));
-                      }),
-                      _buildMenuItem(Icons.notifications, 'Notifications', Color(0xFFFF6B35), () {
-                        Navigator.push(context, MaterialPageRoute(builder: (_) => ManageNotificationPage()));
-                      }),
-                    ],
-                  ),
-                  SizedBox(height: 16),
-
-                  _buildMenuSection(
                     'Account',
                     [
-                      _buildMenuItem(Icons.subscriptions, 'Subscriptions', Color(0xFF96CEB4), () {
-                        Navigator.push(context, MaterialPageRoute(builder: (_) => ManageSubscriptionsPage()));
-                      }),
-                      _buildMenuItem(Icons.share, 'Social Accounts', Color(0xFFE74C3C), () {
-                        Navigator.push(context, MaterialPageRoute(builder: (_) => SocialAccountsPage()));
-                      }),
-                      _buildMenuItem(Icons.support_agent, 'Support', Color(0xFF45B7D1), () {
-                        Navigator.push(context, MaterialPageRoute(builder: (_) => MessageSupportPage()));
+                      _buildMenuItem(Icons.person, 'Edit Profile', Color(0xFF4ECDC4), () {
+                        Navigator.push(context, MaterialPageRoute(builder: (_) => ManageProfilePage()));
                       }),
                     ],
                   ),
                   SizedBox(height: 16),
 
                   _buildMenuSection(
-                    'Legal',
+                    'Support',
                     [
-                      _buildMenuItem(Icons.privacy_tip, 'Privacy Policy', Color(0xFF9B59B6), () {
-                        Navigator.push(context, MaterialPageRoute(builder: (_) => PrivacyPolicyPage()));
-                      }),
                       _buildMenuItem(Icons.article, 'Terms & Conditions', Color(0xFF34495E), () {
                         Navigator.push(context, MaterialPageRoute(builder: (_) => TermsConditionsPage()));
+                      }),
+                      _buildMenuItem(Icons.privacy_tip, 'Privacy Policy', Color(0xFF9B59B6), () {
+                        Navigator.push(context, MaterialPageRoute(builder: (_) => PrivacyPolicyPage()));
                       }),
                     ],
                   ),

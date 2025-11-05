@@ -7,6 +7,10 @@ import 'models/user_model.dart';
 import 'services/user_service.dart';
 import '../User/services/auth_service.dart';
 import '../login_screen.dart';
+import 'manage_profile_page.dart';
+import '../User/message_support_page.dart';
+import '../User/privacy_policy_page.dart';
+import '../User/terms_conditions_page.dart';
 
 class CoachProfilePage extends StatefulWidget {
   @override
@@ -638,14 +642,11 @@ class _CoachProfilePageState extends State<CoachProfilePage>
           _buildMenuSection(
             'Account',
             [
-              _buildMenuItem(Icons.person, 'Edit Profile', Color(0xFF45B7D1), () {
-                _showEditProfileDialog();
-              }),
-              _buildMenuItem(Icons.notifications, 'Notifications', Color(0xFFE74C3C), () {
-                // Navigate to notifications
-              }),
-              _buildMenuItem(Icons.settings, 'Settings', Color(0xFF9B59B6), () {
-                // Navigate to settings
+              _buildMenuItem(Icons.person, 'Edit Profile', Color(0xFF4ECDC4), () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => ManageProfilePage()),
+                );
               }),
             ],
           ),
@@ -653,11 +654,23 @@ class _CoachProfilePageState extends State<CoachProfilePage>
           _buildMenuSection(
             'Support',
             [
-              _buildMenuItem(Icons.help, 'Help Center', Color(0xFF34495E), () {
-                // Navigate to help
+              _buildMenuItem(Icons.article, 'Terms & Conditions', Color(0xFF34495E), () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => TermsConditionsPage()),
+                );
               }),
-              _buildMenuItem(Icons.feedback, 'Send Feedback', Color(0xFF96CEB4), () {
-                // Navigate to feedback
+              _buildMenuItem(Icons.privacy_tip, 'Privacy Policy', Color(0xFF9B59B6), () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => PrivacyPolicyPage()),
+                );
+              }),
+              _buildMenuItem(Icons.support_agent, 'Message Support', Color(0xFF45B7D1), () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => MessageSupportPage()),
+                );
               }),
             ],
           ),
@@ -1065,96 +1078,249 @@ class _CoachProfilePageState extends State<CoachProfilePage>
       builder: (context) => Dialog(
         backgroundColor: Colors.transparent,
         child: Container(
-          padding: EdgeInsets.all(24),
+          padding: EdgeInsets.zero,
           decoration: BoxDecoration(
-            color: Color(0xFF1A1A1A),
-            borderRadius: BorderRadius.circular(20),
+            gradient: LinearGradient(
+              colors: [Color(0xFF2A2A2A), Color(0xFF1F1F1F)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.5),
+                blurRadius: 30,
+                offset: Offset(0, 15),
+              ),
+            ],
           ),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'Edit Coach Profile',
-                  style: GoogleFonts.poppins(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Header with gradient
+              Container(
+                padding: EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Color(0xFF4ECDC4), Color(0xFF44A08D)],
+                  ),
+                  borderRadius: BorderRadius.only(
+                    topLeft: Radius.circular(24),
+                    topRight: Radius.circular(24),
                   ),
                 ),
-                SizedBox(height: 20),
-                _buildTextField(fnameController, 'First Name'),
-                SizedBox(height: 16),
-                _buildTextField(mnameController, 'Middle Name'),
-                SizedBox(height: 16),
-                _buildTextField(lnameController, 'Last Name'),
-                SizedBox(height: 16),
-                _buildTextField(emailController, 'Email'),
-                SizedBox(height: 24),
-                Row(
+                child: Row(
+                  children: [
+                    Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Icon(
+                        Icons.edit,
+                        color: Colors.white,
+                        size: 24,
+                      ),
+                    ),
+                    SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Edit Coach Profile',
+                            style: GoogleFonts.poppins(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                          SizedBox(height: 4),
+                          Text(
+                            'Update your personal information',
+                            style: GoogleFonts.poppins(
+                              color: Colors.white.withOpacity(0.9),
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: Icon(Icons.close, color: Colors.white, size: 20),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+              ),
+              
+              // Content
+              Padding(
+                padding: EdgeInsets.all(24),
+                child: Column(
+                  children: [
+                    _buildTextField(fnameController, 'First Name', Icons.person_outline),
+                    SizedBox(height: 16),
+                    _buildTextField(mnameController, 'Middle Name', Icons.person_outline),
+                    SizedBox(height: 16),
+                    _buildTextField(lnameController, 'Last Name', Icons.person_outline),
+                    SizedBox(height: 16),
+                    _buildTextField(emailController, 'Email Address', Icons.email_outlined),
+                  ],
+                ),
+              ),
+              
+              // Buttons
+              Container(
+                padding: EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  border: Border(
+                    top: BorderSide(color: Colors.grey[800]!, width: 1),
+                  ),
+                ),
+                child: Row(
                   children: [
                     Expanded(
                       child: OutlinedButton(
                         onPressed: () => Navigator.pop(context),
                         style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.white54,
-                          side: BorderSide(color: Colors.grey[700]!),
+                          side: BorderSide(color: Colors.grey[700]!, width: 1),
+                          padding: EdgeInsets.symmetric(vertical: 14),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
                         ),
-                        child: Text('Cancel', style: GoogleFonts.poppins()),
+                        child: Text(
+                          'Cancel',
+                          style: GoogleFonts.poppins(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
                       ),
                     ),
-                    SizedBox(width: 16),
+                    SizedBox(width: 12),
                     Expanded(
                       child: ElevatedButton(
-                        onPressed: () {
-                          // Update coach profile
-                          Navigator.pop(context);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('Profile updated successfully!'),
-                              backgroundColor: Color(0xFF4ECDC4),
-                            ),
-                          );
+                        onPressed: () async {
+                          try {
+                            // Update coach profile
+                            await UserService.updateUser(
+                              currentCoach!.id,
+                              {
+                                'fname': fnameController.text,
+                                'mname': mnameController.text,
+                                'lname': lnameController.text,
+                                'email': emailController.text,
+                              },
+                            );
+                            
+                            Navigator.pop(context);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Profile updated successfully!'),
+                                backgroundColor: Color(0xFF4ECDC4),
+                              ),
+                            );
+                            _loadCoachData(); // Refresh data
+                          } catch (e) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Error updating profile: $e'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          }
                         },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Color(0xFF4ECDC4),
+                          padding: EdgeInsets.symmetric(vertical: 14),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
                         ),
                         child: Text(
                           'Save',
-                          style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+                          style: GoogleFonts.poppins(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
                     ),
                   ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
     );
   }
 
-  Widget _buildTextField(TextEditingController controller, String label) {
-    return TextField(
-      controller: controller,
-      style: GoogleFonts.poppins(color: Colors.white),
-      decoration: InputDecoration(
-        labelText: label,
-        labelStyle: GoogleFonts.poppins(color: Colors.grey[400]),
-        enabledBorder: OutlineInputBorder(
-          borderSide: BorderSide(color: Colors.grey[700]!),
-          borderRadius: BorderRadius.circular(12),
+  Widget _buildTextField(TextEditingController controller, String label, IconData icon) {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            Color(0xFF2A2A2A),
+            Color(0xFF1F1F1F),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
         ),
-        focusedBorder: OutlineInputBorder(
-          borderSide: BorderSide(color: Color(0xFF4ECDC4)),
-          borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: Color(0xFF4ECDC4).withOpacity(0.3),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 8,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: TextField(
+        controller: controller,
+        style: GoogleFonts.poppins(
+          color: Colors.white,
+          fontSize: 16,
+          fontWeight: FontWeight.w500,
+        ),
+        decoration: InputDecoration(
+          prefixIcon: Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  Color(0xFF4ECDC4).withOpacity(0.3),
+                  Color(0xFF4ECDC4).withOpacity(0.1),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              icon,
+              color: Color(0xFF4ECDC4),
+              size: 20,
+            ),
+          ),
+          border: InputBorder.none,
+          contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          hintText: 'Enter $label',
+          hintStyle: GoogleFonts.poppins(
+            color: Colors.grey[500],
+            fontSize: 16,
+          ),
+          filled: true,
+          fillColor: Colors.transparent,
         ),
       ),
     );

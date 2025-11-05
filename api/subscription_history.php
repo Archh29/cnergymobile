@@ -229,8 +229,8 @@
                  msp.duration_days,
                  ss.status_name,
                  CASE 
-                     WHEN ss.status_name = 'approved' AND s.end_date >= CURDATE() THEN 'Active'
-                     WHEN ss.status_name = 'approved' AND s.end_date < CURDATE() THEN 'Expired'
+                     WHEN ss.status_name = 'approved' AND s.end_date > CURDATE() THEN 'Active'
+                     WHEN ss.status_name = 'approved' AND s.end_date <= CURDATE() THEN 'Expired'
                      WHEN ss.status_name = 'pending_approval' THEN 'Pending Staff Approval'
                      WHEN ss.status_name = 'rejected' THEN 'Rejected by Staff'
                      WHEN ss.status_name = 'cancelled' THEN 'Cancelled'
@@ -262,18 +262,25 @@
              $subscriptionHistoryStmt->execute([$userId]);
              $allSubscriptions = $subscriptionHistoryStmt->fetchAll(PDO::FETCH_ASSOC);
              
-             // Get current subscription (most recent approved one with latest end date)
-             $currentSubscription = null;
-             $latestEndDate = null;
-             foreach ($allSubscriptions as $sub) {
-                 if ($sub['status_name'] === 'approved' && $sub['end_date'] >= date('Y-m-d')) {
-                     // Select the subscription with the latest end date (most recent/active)
-                     if ($latestEndDate === null || $sub['end_date'] > $latestEndDate) {
-                         $currentSubscription = $sub;
-                         $latestEndDate = $sub['end_date'];
-                     }
-                 }
-             }
+            // Get current subscription (most recent approved one with latest end date)
+            $currentSubscription = null;
+            $latestEndDate = null;
+            foreach ($allSubscriptions as $sub) {
+                // Only get active subscriptions (approved status AND end_date >= today)
+                if ($sub['status_name'] === 'approved' && $sub['end_date'] > date('Y-m-d')) {
+                    // Additional check: ensure subscription hasn't expired
+                    $endDateTime = new DateTime($sub['end_date']);
+                    $now = new DateTime();
+                    
+                    if ($endDateTime > $now) {
+                        // Select the subscription with the latest end date (most recent/active)
+                        if ($latestEndDate === null || $sub['end_date'] > $latestEndDate) {
+                            $currentSubscription = $sub;
+                            $latestEndDate = $sub['end_date'];
+                        }
+                    }
+                }
+            }
              
              error_log("Subscription history query executed successfully, found " . count($allSubscriptions) . " subscription requests");
             
@@ -408,8 +415,8 @@
                 msp.duration_days,
                 ss.status_name,
                 CASE 
-                    WHEN ss.status_name = 'approved' AND s.end_date >= CURDATE() THEN 'Active'
-                    WHEN ss.status_name = 'approved' AND s.end_date < CURDATE() THEN 'Expired'
+                    WHEN ss.status_name = 'approved' AND s.end_date > CURDATE() THEN 'Active'
+                    WHEN ss.status_name = 'approved' AND s.end_date <= CURDATE() THEN 'Expired'
                     WHEN ss.status_name = 'pending_approval' THEN 'Pending Staff Approval'
                     WHEN ss.status_name = 'rejected' THEN 'Rejected by Staff'
                     WHEN ss.status_name = 'cancelled' THEN 'Cancelled'
@@ -433,32 +440,25 @@
             $subscriptionStmt->execute([$userId]);
             $allSubscriptions = $subscriptionStmt->fetchAll(PDO::FETCH_ASSOC);
             
-            // Filter out individual plans if user has combination package
-            $hasCombinationPackage = false;
-            foreach ($allSubscriptions as $sub) {
-                if ($sub['plan_id'] == 5) { // Membership + 1 Month Access package
-                    $hasCombinationPackage = true;
-                    break;
-                }
-            }
-            
-            if ($hasCombinationPackage) {
-                // Remove individual plans (Gym Membership Fee and Monthly Access) when combination package exists
-                $allSubscriptions = array_filter($allSubscriptions, function($sub) {
-                    return !($sub['plan_id'] == 1 || $sub['plan_id'] == 2); // Keep only combination package and other plans
-                });
-                error_log("Filtered out individual plans due to combination package");
-            }
+            // Note: plan_id 5 (combination package) now creates separate subscriptions for plan_id 1 and 2
+            // So we show all active subscriptions together
             
             // Get current subscription (most recent approved one with latest end date)
             $subscription = null;
             $latestEndDate = null;
             foreach ($allSubscriptions as $sub) {
-                if ($sub['status_name'] === 'approved' && $sub['end_date'] >= date('Y-m-d')) {
-                    // Select the subscription with the latest end date (most recent/active)
-                    if ($latestEndDate === null || $sub['end_date'] > $latestEndDate) {
-                        $subscription = $sub;
-                        $latestEndDate = $sub['end_date'];
+                // Only get active subscriptions (approved status AND end_date >= today)
+                if ($sub['status_name'] === 'approved' && $sub['end_date'] > date('Y-m-d')) {
+                    // Additional check: ensure subscription hasn't expired
+                    $endDateTime = new DateTime($sub['end_date']);
+                    $now = new DateTime();
+                    
+                    if ($endDateTime > $now) {
+                        // Select the subscription with the latest end date (most recent/active)
+                        if ($latestEndDate === null || $sub['end_date'] > $latestEndDate) {
+                            $subscription = $sub;
+                            $latestEndDate = $sub['end_date'];
+                        }
                     }
                 }
             }

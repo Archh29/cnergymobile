@@ -91,7 +91,7 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
       body: _isLoading
           ? const Center(
               child: CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF4CAF50)),
+                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFFF9800)),
               ),
             )
           : _buildContent(),
@@ -105,7 +105,7 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
 
     return RefreshIndicator(
       onRefresh: _loadSubscriptionData,
-      color: const Color(0xFF4CAF50),
+      color: const Color(0xFFFF9800),
       backgroundColor: const Color(0xFF2D2D2D),
       child: SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
@@ -130,16 +130,111 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
     }
 
      final activeCoachData = _currentSubscription!['active_coach'];
-     final activeCoach = (activeCoachData is Map<String, dynamic>) ? activeCoachData : null;
-     // Get the Monthly Access subscription from subscription history
-     final subscriptionHistory = _subscriptionData?['subscription_history'] as List<dynamic>? ?? [];
-     Map<String, dynamic>? subscription;
-     for (final sub in subscriptionHistory) {
-       if (sub['plan_name']?.toString().toLowerCase().contains('monthly access') == true) {
-         subscription = sub;
-         break;
+     Map<String, dynamic>? activeCoach;
+     
+     // Check if coach is not expired before displaying
+     if (activeCoachData is Map<String, dynamic>) {
+       final expiresAt = activeCoachData['expires_at'];
+       if (expiresAt != null) {
+         try {
+           final expireDate = DateTime.parse(expiresAt);
+           final now = DateTime.now();
+           if (expireDate.isAfter(now)) {
+             activeCoach = activeCoachData;
+           }
+         } catch (e) {
+           // If parsing fails, set to null
+           activeCoach = null;
+         }
+       } else {
+         // If no expiration date, show the coach
+         activeCoach = activeCoachData;
        }
      }
+     // Get the Gym Membership Fee subscription (plan id 1) and Monthly Access (plan id 2) from subscription history (only active ones)
+     final subscriptionHistory = _subscriptionData?['subscription_history'] as List<dynamic>? ?? [];
+     Map<String, dynamic>? membershipSubscription;
+     Map<String, dynamic>? subscription;
+     Map<String, dynamic>? combinationPackage;
+     
+     for (final sub in subscriptionHistory) {
+       final planId = sub['plan_id']?.toString() ?? '';
+       final planName = sub['plan_name']?.toString().toLowerCase() ?? '';
+       final endDateStr = sub['end_date'];
+       
+       if (endDateStr != null) {
+         try {
+           final endDate = DateTime.parse(endDateStr);
+           final now = DateTime.now();
+           if (endDate.isAfter(now)) {
+             // Check for plan_id 5 (Combination Package)
+             if (planId == '5' || planName.contains('combination') || planName.contains('membership + 1 month')) {
+               combinationPackage = sub;
+             }
+             // Check for plan_id 1 (Gym Membership) or names containing 'gym membership'
+             if (planId == '1' || planName.contains('gym membership') || planName.contains('membership fee')) {
+               membershipSubscription = sub;
+             }
+             // Check for plan_id 2 (Member Monthly) or names containing 'member' and 'monthly' or 'monthly access'
+             else if (planId == '2' || planName.contains('member monthly') || (planName.contains('member') && planName.contains('monthly')) || planName.contains('monthly access')) {
+               subscription = sub;
+             }
+           }
+         } catch (e) {
+           continue;
+         }
+       }
+     }
+     
+     // If combination package exists but individual plans don't, create virtual subscriptions
+     if (combinationPackage != null && (membershipSubscription == null || subscription == null)) {
+       // Check if we need to create virtual membership (plan_id 1)
+       if (membershipSubscription == null) {
+         try {
+           final startDateStr = combinationPackage['start_date'] as String;
+           final startDateObj = DateTime.parse(startDateStr);
+           // plan_id 1 should be 365 days (1 year)
+           final newEndDateObj = startDateObj.add(Duration(days: 365)); // 1 year from start
+           
+           membershipSubscription = {
+             'plan_id': 1,
+             'plan_name': 'Gym Membership Fee',
+             'start_date': startDateStr,
+             'end_date': newEndDateObj.toString().split(' ')[0],
+             'price': '500.00',
+             'status_name': 'approved',
+             'duration_months': 12,
+             'duration_days': 365,
+           };
+         } catch (e) {
+           print('Error creating virtual membership: $e');
+         }
+       }
+       
+       // Check if we need to create virtual monthly access (plan_id 2)
+       if (subscription == null) {
+         try {
+           final startDateStr = combinationPackage['start_date'] as String;
+           final startDateObj = DateTime.parse(startDateStr);
+           // plan_id 2 should be 30 days (1 month), NOT using the package end_date
+           final newEndDateObj = startDateObj.add(Duration(days: 30)); // 1 month from start
+           
+           subscription = {
+             'plan_id': 2,
+             'plan_name': 'Member Monthly Access',
+             'start_date': startDateStr,
+             'end_date': newEndDateObj.toString().split(' ')[0],
+             'price': '999.00',
+             'status_name': 'approved',
+             'duration_months': 1,
+             'duration_days': 30,
+           };
+         } catch (e) {
+           print('Error creating virtual monthly access: $e');
+         }
+       }
+     }
+     
      final subscriptionStatus = _currentSubscription!['subscription_status'] ?? 'Inactive';
      
      // Calculate days remaining for the Monthly Access subscription
@@ -155,45 +250,25 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
      }
      
      final isPremium = _currentSubscription!['is_premium'] ?? false;
-     final hasActiveSubscription = subscription != null && daysRemaining > 0;
      
-     // Determine the correct membership status based on plan type
+     // Determine the correct membership status based on Gym Membership (plan id 1)
      String membershipStatus = 'STANDARD';
-     if (hasActiveSubscription && subscription != null) {
-       final planName = subscription['plan_name']?.toString() ?? '';
-       final isMemberRate = (planName.toLowerCase().contains('member rate') && 
-                            !planName.toLowerCase().contains('non-member')) || 
-                           (planName.toLowerCase().contains('member monthly') && 
-                            !planName.toLowerCase().contains('non-member'));
-       final isNonMemberPlan = planName.toLowerCase().contains('non-member') || 
-                              planName.toLowerCase().contains('non member') ||
-                              planName.toLowerCase().contains('standard');
-       
-       if (isMemberRate) {
-         membershipStatus = 'PREMIUM';
-       } else if (isNonMemberPlan) {
-         membershipStatus = 'STANDARD';
-       } else {
-         // Default for other subscription types
-         membershipStatus = 'ACCESS';
-       }
+     if (membershipSubscription != null) {
+       // User has active Gym Membership Fee subscription - they are PREMIUM
+       membershipStatus = 'PREMIUM';
+     } else {
+       // User does not have Gym Membership - they are STANDARD
+       membershipStatus = 'STANDARD';
      }
 
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            const Color(0xFF4CAF50).withOpacity(0.1),
-            const Color(0xFF2E7D32).withOpacity(0.1),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        color: const Color(0xFF1A1A1A),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: const Color(0xFF4CAF50).withOpacity(0.3),
+          color: const Color(0xFFFF9800).withOpacity(0.3),
           width: 1,
         ),
       ),
@@ -208,7 +283,7 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
                   Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF4CAF50),
+                      color: const Color(0xFFFF9800),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: const Icon(
@@ -251,7 +326,7 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
                       color: membershipStatus == 'PREMIUM' 
-                          ? const Color(0xFF4CAF50)  // Green for premium
+                          ? const Color(0xFFFF9800)  // Orange for premium
                           : membershipStatus == 'STANDARD'
                               ? const Color(0xFF757575)  // Gray for standard
                               : const Color(0xFF2196F3),  // Blue for access
@@ -448,7 +523,7 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
     if (isMembership) {
       if (isMemberRate) {
         subscriptionType = 'Monthly Premium Access';
-        typeColor = const Color(0xFF4CAF50);
+        typeColor = const Color(0xFFFF9800);
         typeLabel = 'PREMIUM';
       } else if (isNonMemberPlan) {
         subscriptionType = 'Monthly Standard Access';
@@ -469,26 +544,12 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
      return Container(
        padding: const EdgeInsets.all(16),
        decoration: BoxDecoration(
-         gradient: LinearGradient(
-           colors: [
-             const Color(0xFF2D2D2D),
-             const Color(0xFF1E1E1E),
-           ],
-           begin: Alignment.topLeft,
-           end: Alignment.bottomRight,
-         ),
+         color: const Color(0xFF1A1A1A),
          borderRadius: BorderRadius.circular(16),
          border: Border.all(
            color: typeColor.withOpacity(0.3),
            width: 1.5,
          ),
-         boxShadow: [
-           BoxShadow(
-             color: typeColor.withOpacity(0.1),
-             blurRadius: 8,
-             offset: const Offset(0, 4),
-           ),
-         ],
        ),
        child: Column(
          crossAxisAlignment: CrossAxisAlignment.start,
@@ -738,26 +799,12 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
      return Container(
        padding: const EdgeInsets.all(16),
        decoration: BoxDecoration(
-         gradient: LinearGradient(
-           colors: [
-             const Color(0xFF2D2D2D),
-             const Color(0xFF1E1E1E),
-           ],
-           begin: Alignment.topLeft,
-           end: Alignment.bottomRight,
-         ),
+         color: const Color(0xFF1A1A1A),
          borderRadius: BorderRadius.circular(16),
          border: Border.all(
            color: const Color(0xFFFF9800).withOpacity(0.3),
            width: 1.5,
          ),
-         boxShadow: [
-           BoxShadow(
-             color: const Color(0xFFFF9800).withOpacity(0.1),
-             blurRadius: 8,
-             offset: const Offset(0, 4),
-           ),
-         ],
        ),
        child: Column(
          crossAxisAlignment: CrossAxisAlignment.start,
@@ -942,8 +989,21 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
     Map<String, dynamic>? membershipSub;
     for (final sub in subscriptionHistory) {
       if (sub['plan_name']?.toString().toLowerCase().contains('gym membership') == true) {
-        membershipSub = sub;
-        break;
+        // Check if subscription is not expired
+        final endDateStr = sub['end_date'];
+        if (endDateStr != null) {
+          try {
+            final endDate = DateTime.parse(endDateStr);
+            final now = DateTime.now();
+            if (endDate.isAfter(now)) {
+              membershipSub = sub;
+              break;
+            }
+          } catch (e) {
+            // If parsing fails, skip this subscription
+            continue;
+          }
+        }
       }
     }
     
@@ -977,26 +1037,12 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            const Color(0xFF2D2D2D),
-            const Color(0xFF1E1E1E),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        color: const Color(0xFF1A1A1A),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: const Color(0xFF9C27B0).withOpacity(0.3),
+          color: const Color(0xFF4CAF50).withOpacity(0.3),
           width: 1.5,
         ),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF9C27B0).withOpacity(0.1),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
-          ),
-        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1005,7 +1051,7 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
             children: [
               Icon(
                 Icons.card_membership,
-                color: const Color(0xFF9C27B0),
+                color: const Color(0xFF4CAF50),
                 size: 20,
               ),
               const SizedBox(width: 8),
@@ -1024,7 +1070,7 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF9C27B0),
+                  color: const Color(0xFF4CAF50),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
@@ -1043,10 +1089,10 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: const Color(0xFF9C27B0).withOpacity(0.1),
+              color: const Color(0xFF4CAF50).withOpacity(0.1),
               borderRadius: BorderRadius.circular(8),
               border: Border.all(
-                color: const Color(0xFF9C27B0).withOpacity(0.2),
+                color: const Color(0xFF4CAF50).withOpacity(0.2),
                 width: 1,
               ),
             ),
@@ -1054,7 +1100,7 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
               children: [
                 Icon(
                   Icons.star,
-                  color: const Color(0xFF9C27B0),
+                  color: const Color(0xFF4CAF50),
                   size: 20,
                 ),
                 const SizedBox(width: 12),
@@ -1073,7 +1119,7 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
                       Text(
                         '₱$price',
                         style: GoogleFonts.poppins(
-                          color: const Color(0xFF9C27B0),
+                          color: const Color(0xFF4CAF50),
                           fontSize: 14,
                           fontWeight: FontWeight.w500,
                         ),
@@ -1089,10 +1135,10 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: const Color(0xFF9C27B0).withOpacity(0.1),
+              color: const Color(0xFF4CAF50).withOpacity(0.1),
               borderRadius: BorderRadius.circular(8),
               border: Border.all(
-                color: const Color(0xFF9C27B0).withOpacity(0.2),
+                color: const Color(0xFF4CAF50).withOpacity(0.2),
                 width: 1,
               ),
             ),
@@ -1102,14 +1148,14 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
                   children: [
                     Icon(
                       Icons.schedule,
-                      color: const Color(0xFF9C27B0),
+                      color: const Color(0xFF4CAF50),
                       size: 16,
                     ),
                     const SizedBox(width: 8),
                     Text(
                       'Subscription Period',
                       style: GoogleFonts.poppins(
-                        color: const Color(0xFF9C27B0),
+                        color: const Color(0xFF4CAF50),
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
                       ),
@@ -1124,7 +1170,7 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
                         'Start Date',
                         SubscriptionService.formatDate(startDate),
                         Icons.play_circle_outline,
-                        const Color(0xFF9C27B0),
+                        const Color(0xFF4CAF50),
                       ),
                     ),
                     const SizedBox(width: 16),
@@ -1133,7 +1179,7 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
                         'End Date',
                         SubscriptionService.formatDate(endDate),
                         Icons.event_available,
-                        const Color(0xFF9C27B0),
+                        const Color(0xFF4CAF50),
                       ),
                     ),
                   ],
@@ -1146,7 +1192,7 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
                         'Duration',
                         planDuration,
                         Icons.timer,
-                        const Color(0xFF9C27B0),
+                        const Color(0xFF4CAF50),
                       ),
                     ),
                     const SizedBox(width: 16),
@@ -1155,7 +1201,7 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
                         'Days Remaining',
                         '$daysRemaining days',
                         Icons.hourglass_empty,
-                        daysRemaining > 7 ? const Color(0xFF9C27B0) : 
+                        daysRemaining > 7 ? const Color(0xFF4CAF50) : 
                         daysRemaining > 0 ? const Color(0xFFFF9800) : const Color(0xFFF44336),
                       ),
                     ),
@@ -1177,7 +1223,7 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
           children: [
             Icon(
               icon,
-              color: const Color(0xFF4CAF50),
+              color: const Color(0xFFFF9800),
               size: 16,
             ),
             const SizedBox(width: 6),
@@ -1307,7 +1353,7 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
     }
     
     // Determine status color
-    Color statusColor = const Color(0xFF4CAF50); // Green for active
+    Color statusColor = const Color(0xFFFF9800); // Orange for active
     if (status.toLowerCase().contains('expired')) {
       statusColor = const Color(0xFFF44336); // Red for expired
     } else if (status.toLowerCase().contains('pending')) {
@@ -1580,7 +1626,7 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
           ElevatedButton(
             onPressed: _loadSubscriptionData,
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF4CAF50),
+              backgroundColor: const Color(0xFFFF9800),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(8),
               ),

@@ -1758,6 +1758,28 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
                 children: [
                   Row(
                     children: [
+                      // Back button
+                      GestureDetector(
+                        onTap: () => Navigator.of(context).pop(),
+                        child: Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: Color(0xFF1A1A1A),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: Color(0xFF4ECDC4).withOpacity(0.3),
+                              width: 1,
+                            ),
+                          ),
+                          child: Icon(
+                            Icons.arrow_back,
+                            color: Color(0xFF4ECDC4),
+                            size: 20,
+                          ),
+                        ),
+                      ),
+                      SizedBox(width: 12),
                       Container(
                         width: 56,
                         height: 56,
@@ -1839,56 +1861,37 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    'Progressive Overload',
-                                    style: GoogleFonts.poppins(
-                                      fontSize: 30,
-                                      fontWeight: FontWeight.w900,
-                                      color: Colors.white,
-                                      letterSpacing: -0.5,
-                                    ),
+                            LayoutBuilder(
+                              builder: (context, constraints) {
+                                // Responsive font size based on available width
+                                double fontSize = constraints.maxWidth > 200 ? 30 : 24;
+                                return Text(
+                                  'Progressive Overload',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: fontSize,
+                                    fontWeight: FontWeight.w900,
+                                    color: Colors.white,
+                                    letterSpacing: -0.5,
                                   ),
-                                ),
-                                // Refresh button
-                                GestureDetector(
-                                  onTap: () {
-                                    print('🔄 Manual refresh triggered');
-                                    if (mounted) {
-                                      _loadData();
-                                    }
-                                  },
-                                  child: Container(
-                                    padding: EdgeInsets.all(8),
-                                    decoration: BoxDecoration(
-                                      color: Color(0xFF4ECDC4).withOpacity(0.1),
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(
-                                        color: Color(0xFF4ECDC4).withOpacity(0.3),
-                                        width: 1,
-                                      ),
-                                    ),
-                                    child: Icon(
-                                      Icons.refresh,
-                                      color: Color(0xFF4ECDC4),
-                                      size: 20,
-                                    ),
-                                  ),
-                                ),
-                              ],
+                                );
+                              },
                             ),
                             SizedBox(height: 8),
-                            Text(
-                              'Track your progress in your fitness journey across programs',
-                              style: GoogleFonts.poppins(
-                                fontSize: 16,
-                                color: Colors.grey[300],
-                                height: 1.4,
-                                fontWeight: FontWeight.w500,
-                                letterSpacing: 0.2,
-                              ),
+                            LayoutBuilder(
+                              builder: (context, constraints) {
+                                // Responsive font size based on available width
+                                double fontSize = constraints.maxWidth > 200 ? 16 : 14;
+                                return Text(
+                                  'Track your progress in your fitness journey across programs',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: fontSize,
+                                    color: Colors.grey[300],
+                                    height: 1.4,
+                                    fontWeight: FontWeight.w500,
+                                    letterSpacing: 0.2,
+                                  ),
+                                );
+                              },
                             ),
                           ],
                         ),
@@ -2710,38 +2713,55 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
           ),
           SizedBox(width: 12),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Text(
-                      exercise.exerciseName,
-                      style: GoogleFonts.poppins(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          exercise.exerciseName,
+                          style: GoogleFonts.poppins(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
+                        ),
                       ),
-                    ),
-                    SizedBox(width: 8),
-                    _getProgressIndicator(exercise.exerciseName, _selectedProgramId ?? ''),
-                  ],
-                ),
-                Text(
-                  '${exercise.weight}kg x ${exercise.reps} x ${exercise.sets}',
-                  style: GoogleFonts.poppins(
-                    fontSize: 12,
-                    color: Colors.grey[400],
+                      SizedBox(width: 6),
+                      _getProgressIndicator(exercise.exerciseName, _selectedProgramId ?? ''),
+                    ],
                   ),
-                ),
-              ],
+                  SizedBox(height: 4),
+                  Text(
+                    '${exercise.weight}kg x ${exercise.reps} x ${exercise.sets}',
+                    style: GoogleFonts.poppins(
+                      fontSize: 11,
+                      color: Colors.grey[400],
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-          Text(
-            '${exercise.date.day}/${exercise.date.month}',
-            style: GoogleFonts.poppins(
-              fontSize: 12,
-              color: Colors.grey[500],
+          SizedBox(width: 8),
+          Container(
+            padding: EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+            decoration: BoxDecoration(
+              color: Color(0xFF1A1A1A),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: Colors.grey[700]!,
+                width: 1,
+              ),
+            ),
+            child: Text(
+              '${exercise.date.day}/${exercise.date.month}',
+              style: GoogleFonts.poppins(
+                fontSize: 10,
+                color: Colors.grey[400],
+              ),
             ),
           ),
         ],
@@ -4230,73 +4250,173 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
           ),
           SizedBox(height: 16),
           
-          // Progress Box
-          _buildProgressBox(weightChangePercent),
-          SizedBox(height: 16),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              // Use single column layout for very small screens
-              if (constraints.maxWidth < 400) {
-                return Column(
-                  children: [
-                    _buildRecordCard(
-                      'Heaviest Weight',
-                      '${heaviestWeight.toInt()}kg',
-                      heaviestWeightDate,
-                      Icons.fitness_center,
-                      Color(0xFF4ECDC4),
-                      weightChange,
-                      weightChangePercent,
-                    ),
-                    SizedBox(height: 12),
-                    _buildRecordCard(
-                      'Best Set Volume',
-                      '${bestSetVolume.toInt()}kg',
-                      bestSetVolumeDate,
-                      Icons.bar_chart,
-                      Color(0xFF00B894),
-                      setVolumeChange,
-                      setVolumeChangePercent,
-                    ),
-                  ],
-                );
-              } else {
-                // Use row layout for larger screens
-                return Row(
-                  children: [
-                    Expanded(
-                      child: _buildRecordCard(
-                        'Heaviest Weight',
-                        '${heaviestWeight.toInt()}kg',
-                        heaviestWeightDate,
-                        Icons.fitness_center,
-                        Color(0xFF4ECDC4),
-                        weightChange,
-                        weightChangePercent,
-                      ),
-                    ),
-                    SizedBox(width: 8),
-                    Expanded(
-                      child: _buildRecordCard(
-                        'Best Set Volume',
-                        '${bestSetVolume.toInt()}kg',
-                        bestSetVolumeDate,
-                        Icons.bar_chart,
-                        Color(0xFF00B894),
-                        setVolumeChange,
-                        setVolumeChangePercent,
-                      ),
-                    ),
-                  ],
-                );
-              }
-            },
+          // All three cards in a row - always
+          Row(
+            children: [
+              Expanded(
+                child: _buildCompactProgressBox(weightChangePercent),
+              ),
+              SizedBox(width: 4),
+              Expanded(
+                child: _buildCompactRecordCard(
+                  'Heaviest',
+                  '${heaviestWeight.toInt()}kg',
+                  Color(0xFF4ECDC4),
+                  Icons.fitness_center,
+                ),
+              ),
+              SizedBox(width: 4),
+              Expanded(
+                child: _buildCompactRecordCard(
+                  'Volume',
+                  '${bestSetVolume.toInt()}kg',
+                  Color(0xFF00B894),
+                  Icons.bar_chart,
+                ),
+              ),
+            ],
           ),
           SizedBox(height: 24),
           
           // AI Insights Button - Only show for programs to analyze overall progressive overload strategy
           if (_selectedProgramId != null)
             _buildAIInsightsButton(progressToAnalyze, weightChangePercent, oneRMChangePercent, setVolumeChangePercent),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCompactRecordCard(String title, String value, Color color, IconData icon) {
+    return Container(
+      padding: EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            Color(0xFF2A2A2A),
+            Color(0xFF1E1E1E),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: color.withOpacity(0.4),
+          width: 1.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: color.withOpacity(0.1),
+            blurRadius: 8,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            icon,
+            color: color,
+            size: 24,
+          ),
+          SizedBox(height: 6),
+          Text(
+            title,
+            style: GoogleFonts.poppins(
+              fontSize: 10,
+              fontWeight: FontWeight.w500,
+              color: Colors.grey[400],
+            ),
+            textAlign: TextAlign.center,
+          ),
+          SizedBox(height: 2),
+          Text(
+            value,
+            style: GoogleFonts.poppins(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: color,
+            ),
+            textAlign: TextAlign.center,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCompactProgressBox(double progressPercent) {
+    // Determine progress color and icon
+    Color progressColor;
+    IconData progressIcon;
+    String progressText;
+    
+    if (progressPercent > 0) {
+      progressColor = Color(0xFF00B894); // Green for positive
+      progressIcon = Icons.trending_up;
+      progressText = 'Progressing';
+    } else if (progressPercent < 0) {
+      progressColor = Color(0xFFE17055); // Red for negative
+      progressIcon = Icons.trending_down;
+      progressText = 'Declining';
+    } else {
+      progressColor = Colors.grey[400]!; // Grey for no change
+      progressIcon = Icons.remove;
+      progressText = 'No Change';
+    }
+
+    return Container(
+      padding: EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            Color(0xFF2A2A2A),
+            Color(0xFF1E1E1E),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: progressColor.withOpacity(0.4),
+          width: 1.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: progressColor.withOpacity(0.1),
+            blurRadius: 8,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            progressIcon,
+            color: progressColor,
+            size: 24,
+          ),
+          SizedBox(height: 6),
+          Text(
+            'Progress',
+            style: GoogleFonts.poppins(
+              fontSize: 10,
+              fontWeight: FontWeight.w500,
+              color: Colors.grey[400],
+            ),
+            textAlign: TextAlign.center,
+          ),
+          SizedBox(height: 2),
+          Text(
+            '${progressPercent > 0 ? '+' : ''}${progressPercent.toStringAsFixed(1)}%',
+            style: GoogleFonts.poppins(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: progressColor,
+            ),
+            textAlign: TextAlign.center,
+          ),
         ],
       ),
     );
@@ -4395,19 +4515,22 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
                 SizedBox(height: 4),
                 Row(
                   children: [
-                    Text(
-                      progressText,
-                      style: GoogleFonts.poppins(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white,
+                    Flexible(
+                      child: Text(
+                        progressText,
+                        style: GoogleFonts.poppins(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                     SizedBox(width: 8),
                     Text(
                       '${progressPercent > 0 ? '+' : ''}${progressPercent.toStringAsFixed(1)}%',
                       style: GoogleFonts.poppins(
-                        fontSize: 18,
+                        fontSize: 16,
                         fontWeight: FontWeight.w700,
                         color: progressColor,
                       ),
@@ -4478,29 +4601,35 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
                   ),
                 ),
                 SizedBox(width: 16),
-                Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Get AI Insights',
-                      style: GoogleFonts.poppins(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white,
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Get Smart Summary',
+                        style: GoogleFonts.poppins(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
                       ),
-                    ),
-                    Text(
-                      'Program overload & muscle balance',
-                      style: GoogleFonts.poppins(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w400,
-                        color: Colors.white.withOpacity(0.8),
+                      Text(
+                        'Program overload & muscle balance',
+                        style: GoogleFonts.poppins(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w400,
+                          color: Colors.white.withOpacity(0.8),
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-                Spacer(),
+                SizedBox(width: 8),
                 Container(
                   padding: EdgeInsets.all(8),
                   decoration: BoxDecoration(
@@ -4552,6 +4681,16 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
           backgroundColor: Colors.transparent,
           elevation: 0,
           child: Container(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.85,
+              maxWidth: MediaQuery.of(context).size.width > 600 
+                ? MediaQuery.of(context).size.width * 0.6
+                : MediaQuery.of(context).size.width * 0.95,
+            ),
+            margin: EdgeInsets.symmetric(
+              horizontal: MediaQuery.of(context).size.width > 600 ? 20 : 10,
+              vertical: MediaQuery.of(context).size.width > 600 ? 20 : 10,
+            ),
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [
@@ -4584,7 +4723,9 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
               children: [
                 // Header with gradient background
                 Container(
-                  padding: EdgeInsets.all(24),
+                  padding: EdgeInsets.all(
+                    MediaQuery.of(context).size.width > 600 ? 24 : 16,
+                  ),
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       colors: [
@@ -4602,7 +4743,9 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
                   child: Row(
                     children: [
                       Container(
-                        padding: EdgeInsets.all(16),
+                        padding: EdgeInsets.all(
+                          MediaQuery.of(context).size.width > 600 ? 16 : 12,
+                        ),
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
                             colors: [
@@ -4624,18 +4767,18 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
                         child: Icon(
                           Icons.psychology,
                           color: Colors.white,
-                          size: 28,
+                          size: MediaQuery.of(context).size.width > 600 ? 28 : 24,
                         ),
                       ),
-                      SizedBox(width: 20),
+                      SizedBox(width: MediaQuery.of(context).size.width > 600 ? 20 : 12),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'AI Insights',
+                              'Smart Summary',
                               style: GoogleFonts.poppins(
-                                fontSize: 24,
+                                fontSize: MediaQuery.of(context).size.width > 600 ? 24 : 18,
                                 fontWeight: FontWeight.w800,
                                 color: Colors.white,
                               ),
@@ -4643,7 +4786,7 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
                             Text(
                               'Progressive overload analysis',
                               style: GoogleFonts.poppins(
-                                fontSize: 14,
+                                fontSize: MediaQuery.of(context).size.width > 600 ? 14 : 12,
                                 fontWeight: FontWeight.w500,
                                 color: Color(0xFF4ECDC4),
                               ),
@@ -4664,16 +4807,22 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
                     ],
                   ),
                 ),
-                // Content area
-                Padding(
-                  padding: EdgeInsets.fromLTRB(24, 0, 24, 24),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // AI Message
-                      Container(
+                // Content area with scroll
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: EdgeInsets.fromLTRB(
+                      MediaQuery.of(context).size.width > 600 ? 24 : 16,
+                      0,
+                      MediaQuery.of(context).size.width > 600 ? 24 : 16,
+                      MediaQuery.of(context).size.width > 600 ? 24 : 16,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // AI Message
+                        Container(
                         width: double.infinity,
-                        padding: EdgeInsets.all(20),
+                        padding: EdgeInsets.all(12),
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
                             colors: [
@@ -4700,7 +4849,7 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Container(
-                              padding: EdgeInsets.all(8),
+                              padding: EdgeInsets.all(6),
                               decoration: BoxDecoration(
                                 color: Color(0xFF4ECDC4).withOpacity(0.2),
                                 borderRadius: BorderRadius.circular(8),
@@ -4708,67 +4857,79 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
                               child: Icon(
                                 Icons.chat_bubble_outline,
                                 color: Color(0xFF4ECDC4),
-                                size: 20,
+                                size: 18,
                               ),
                             ),
-                            SizedBox(width: 16),
-                            Expanded(
-                              child: Text(
-                                aiMessage,
-                                style: GoogleFonts.poppins(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w500,
-                                  color: Colors.white,
-                                  height: 1.5,
-                                ),
+                            SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              aiMessage,
+                              style: GoogleFonts.poppins(
+                                fontSize: MediaQuery.of(context).size.width > 600 ? 15 : 13,
+                                fontWeight: FontWeight.w500,
+                                color: Colors.white,
+                                height: 1.5,
                               ),
                             ),
+                          ),
                           ],
                         ),
                       ),
-                      SizedBox(height: 24),
+                      SizedBox(height: 16),
                       
                       // Summary Stats
                       Text(
                         'Summary Stats',
                         style: GoogleFonts.poppins(
-                          fontSize: 18,
+                          fontSize: MediaQuery.of(context).size.width > 600 ? 18 : 16,
                           fontWeight: FontWeight.w700,
                           color: Colors.white,
                         ),
                       ),
                       SizedBox(height: 16),
-                      Row(
+                      // Summary Stats Layout: Weight and Volume in row, Sessions below
+                      Column(
                         children: [
-                          Expanded(
-                            child: _buildEnhancedSummaryStat(
-                              'Weight Progress',
-                              '${weightChangePercent > 0 ? '+' : ''}${weightChangePercent.toStringAsFixed(1)}%',
-                              weightChangePercent > 0 ? Color(0xFF00B894) : weightChangePercent < 0 ? Color(0xFFE17055) : Colors.grey[400]!,
-                              Icons.trending_up,
-                            ),
+                          // Weight and Volume row
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _buildEnhancedSummaryStat(
+                                  'Weight Progress',
+                                  '${weightChangePercent > 0 ? '+' : ''}${weightChangePercent.toStringAsFixed(1)}%',
+                                  weightChangePercent > 0 ? Color(0xFF00B894) : weightChangePercent < 0 ? Color(0xFFE17055) : Colors.grey[400]!,
+                                  Icons.trending_up,
+                                ),
+                              ),
+                              SizedBox(width: MediaQuery.of(context).size.width > 600 ? 12 : 8),
+                              Expanded(
+                                child: _buildEnhancedSummaryStat(
+                                  'Volume Change',
+                                  '${volumeChangePercent > 0 ? '+' : ''}${volumeChangePercent.toStringAsFixed(1)}%',
+                                  volumeChangePercent > 0 ? Color(0xFF00B894) : volumeChangePercent < 0 ? Color(0xFFE17055) : Colors.grey[400]!,
+                                  Icons.bar_chart,
+                                ),
+                              ),
+                            ],
                           ),
-                          SizedBox(width: 12),
-                          Expanded(
-                            child: _buildEnhancedSummaryStat(
-                              'Volume Change',
-                              '${volumeChangePercent > 0 ? '+' : ''}${volumeChangePercent.toStringAsFixed(1)}%',
-                              volumeChangePercent > 0 ? Color(0xFF00B894) : volumeChangePercent < 0 ? Color(0xFFE17055) : Colors.grey[400]!,
-                              Icons.bar_chart,
-                            ),
-                          ),
-                          SizedBox(width: 12),
-                          Expanded(
-                            child: _buildEnhancedSummaryStat(
-                              'Sessions',
-                              '$sessionCount this period',
-                              Color(0xFF4ECDC4),
-                              Icons.fitness_center,
-                            ),
+                          SizedBox(height: 12),
+                          // Sessions below - full width
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _buildEnhancedSummaryStat(
+                                  'Sessions',
+                                  '$sessionCount this period',
+                                  Color(0xFF4ECDC4),
+                                  Icons.fitness_center,
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ],
@@ -4824,7 +4985,9 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
 
   Widget _buildEnhancedSummaryStat(String label, String value, Color color, IconData icon) {
     return Container(
-      padding: EdgeInsets.all(16),
+      padding: EdgeInsets.all(
+        MediaQuery.of(context).size.width > 600 ? 16 : 12,
+      ),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
@@ -4861,21 +5024,21 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
               size: 18,
             ),
           ),
-          SizedBox(height: 8),
+          SizedBox(height: 6),
           Text(
             value,
             style: GoogleFonts.poppins(
-              fontSize: 14,
+              fontSize: MediaQuery.of(context).size.width > 600 ? 14 : 12,
               fontWeight: FontWeight.w800,
               color: color,
             ),
             textAlign: TextAlign.center,
           ),
-          SizedBox(height: 4),
+          SizedBox(height: 2),
           Text(
             label,
             style: GoogleFonts.poppins(
-              fontSize: 10,
+              fontSize: MediaQuery.of(context).size.width > 600 ? 10 : 9,
               fontWeight: FontWeight.w500,
               color: Colors.grey[300],
             ),
@@ -4889,42 +5052,34 @@ class _ProgressiveOverloadTrackerState extends State<ProgressiveOverloadTracker>
   String _generateAIInsight(String exerciseName, double weightChangePercent, double volumeChangePercent, int sessionCount, String frequency) {
     // Progressive overload analysis for the program
     String overloadStatus = '';
-    String muscleBalance = '';
     String recommendations = '';
     
     // Assess progressive overload implementation
     if (weightChangePercent > 5 && volumeChangePercent > 5) {
-      overloadStatus = "🎯 Excellent progressive overload! You're increasing both weight and volume, which is the gold standard for muscle growth and strength. ";
-      recommendations = "Continue this approach and ensure adequate recovery between sessions. ";
+      overloadStatus = "🎯 Excellent! Increasing weight and volume is ideal for muscle growth.";
+      recommendations = "Continue with adequate recovery. Target all muscle groups 2-3x weekly.";
     } else if (weightChangePercent > 5) {
-      overloadStatus = "💪 Strong weight progression! You're successfully applying progressive overload through intensity increases. ";
-      recommendations = "Consider adding volume (more sets or reps) to maximize hypertrophy alongside strength gains. ";
+      overloadStatus = "💪 Strong weight progression!";
+      recommendations = "Add more sets/reps to maximize results. Maintain proper form.";
     } else if (volumeChangePercent > 5) {
-      overloadStatus = "📈 Good volume progression! You're building endurance and work capacity. ";
-      recommendations = "Try gradually increasing weights on key exercises to develop maximum strength alongside endurance. ";
+      overloadStatus = "📈 Good volume gains!";
+      recommendations = "Gradually increase weights. Focus on progressive intensity.";
     } else if (weightChangePercent >= 0 && volumeChangePercent >= 0) {
-      overloadStatus = "✅ Maintaining progressive overload. Steady consistency is building a strong foundation. ";
-      recommendations = "Push for small incremental increases in either weight or reps each week to continue adaptation. ";
+      overloadStatus = "✅ Maintaining progress.";
+      recommendations = "Push small incremental increases weekly. Stay consistent.";
     } else {
-      overloadStatus = "⚠️ Progressive overload has plateaued or decreased. This may indicate overtraining or insufficient recovery. ";
-      recommendations = "Consider a deload week, review your nutrition and sleep, then restart with manageable progressive increases. ";
+      overloadStatus = "⚠️ Progress has plateaued.";
+      recommendations = "Consider a deload week. Review recovery and nutrition.";
     }
     
-    // Muscle balance analysis based on visualization
-    muscleBalance = "Check the muscle visualization above to ensure your program targets all major muscle groups evenly. ";
+    // Add session context
+    String sessionContext = sessionCount >= 10 
+      ? " Great consistency with $sessionCount sessions!"
+      : sessionCount >= 5 
+        ? " Good frequency with $sessionCount sessions."
+        : " Aim for 2-3 sessions per muscle group weekly.";
     
-    if (sessionCount >= 10) {
-      muscleBalance += "Your $sessionCount training sessions provide excellent frequency for balanced muscle development. ";
-    } else if (sessionCount >= 5) {
-      muscleBalance += "With $sessionCount sessions, you're building good training consistency. ";
-    } else {
-      muscleBalance += "Aim for at least 2-3 sessions per week per muscle group for optimal progressive overload. ";
-    }
-    
-    // Progressive overload principle reminder
-    String principle = "Remember: Progressive overload means gradually increasing stress on muscles over time through weight, reps, sets, or frequency. ";
-    
-    return "$overloadStatus$muscleBalance$recommendations$principle";
+    return "$overloadStatus$sessionContext $recommendations";
   }
 
   Widget _buildRecordCard(String title, String value, DateTime? date, IconData icon, Color color, double change, double changePercent) {

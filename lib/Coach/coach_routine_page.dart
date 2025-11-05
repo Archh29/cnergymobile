@@ -158,7 +158,7 @@ class _CoachRoutinePageState extends State<CoachRoutinePage> with SingleTickerPr
         backgroundColor: Color(0xFF0F0F0F),
         elevation: 0,
         title: Text(
-          'Routines & Templates',
+          'Programs & Templates',
           style: GoogleFonts.poppins(
             color: Colors.white,
             fontSize: 18,
@@ -526,7 +526,7 @@ class _CoachRoutinePageState extends State<CoachRoutinePage> with SingleTickerPr
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      routine.name.isNotEmpty ? routine.name : 'Unnamed Routine',
+                      routine.name.isNotEmpty ? routine.name : 'Unnamed Program',
                       style: GoogleFonts.poppins(
                         color: Colors.white,
                         fontSize: 16,
@@ -1338,7 +1338,7 @@ class _CoachRoutinePageState extends State<CoachRoutinePage> with SingleTickerPr
             ListTile(
               leading: Icon(Icons.delete, color: Colors.red),
               title: Text(
-                'Delete Routine',
+                'Delete Program',
                 style: GoogleFonts.poppins(color: Colors.white),
               ),
               onTap: () {
@@ -1445,7 +1445,7 @@ class _CoachRoutinePageState extends State<CoachRoutinePage> with SingleTickerPr
       builder: (context) => AlertDialog(
         backgroundColor: Color(0xFF1A1A1A),
         title: Text(
-          'Delete Routine',
+          'Delete Program',
           style: GoogleFonts.poppins(
             color: Colors.white,
             fontWeight: FontWeight.w600,
@@ -1498,7 +1498,7 @@ class _CoachRoutinePageState extends State<CoachRoutinePage> with SingleTickerPr
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to delete routine'),
+            content: Text('Failed to delete program'),
             backgroundColor: Colors.red,
           ),
         );

@@ -395,12 +395,6 @@ class CoachService {
           final membersList = data['members'] as List? ?? [];
           print('👥 DEBUG: Found ${membersList.length} assigned members in API response');
           
-          // If no members found, create a test member for development
-          if (membersList.isEmpty) {
-            print('⚠️ DEBUG: No members found in API response, creating test member for development');
-            return _createTestMember();
-          }
-          
           List<MemberModel> members = [];
           for (int i = 0; i < membersList.length; i++) {
             var memberData = membersList[i];
@@ -1070,40 +1064,4 @@ class CoachService {
     }
   }
 
-  // Create a test member for development when no members are found
-  static List<MemberModel> _createTestMember() {
-    print('🧪 DEBUG: Creating test member for development');
-    
-    final testMemberData = {
-      'id': '999',
-      'fname': 'Test',
-      'lname': 'Member',
-      'email': 'test.member@example.com',
-      'bday': '1990-01-01',
-      'created_at': DateTime.now().toIso8601String(),
-      'mname': '',
-      'gender_id': '1',
-      'coach_id': '61',
-      'request_id': '999',
-      'status': 'active',
-      'coach_approval': 'approved',
-      'staff_approval': 'approved',
-      'membership_type': 'Basic',
-      'rate_type': 'monthly',
-      'remaining_sessions': '999',
-      'expires_at': '',
-      'requested_at': DateTime.now().toIso8601String(),
-      'coach_approved_at': DateTime.now().toIso8601String(),
-      'staff_approved_at': DateTime.now().toIso8601String(),
-    };
-    
-    try {
-      final testMember = MemberModel.fromJson(testMemberData);
-      print('✅ DEBUG: Successfully created test member: ${testMember.fullName}');
-      return [testMember];
-    } catch (e) {
-      print('❌ DEBUG: Error creating test member: $e');
-      return [];
-    }
-  }
 }

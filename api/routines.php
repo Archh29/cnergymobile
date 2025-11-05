@@ -472,9 +472,9 @@ switch ($action) {
 
             error_log("User $userId is " . ($isPremium ? 'PREMIUM' : 'BASIC') . " - fetching USER routines only");
 
-            // Get ALL routines belonging to this user (both user-created AND cloned)
-            // Filter: only routines where user_id matches (regardless of created_by)
-            $stmt = $pdo->prepare("SELECT m.id, m.user_id, m.program_hdr_id, m.created_by, CONCAT(u.fname, ' ', u.mname, ' ', u.lname) AS createdByName, u.user_type_id AS createdByTypeId, m.color, m.tags, m.goal, m.notes, m.completion_rate AS completionRate, m.scheduled_days AS scheduledDays, m.difficulty, m.total_sessions AS totalSessions, m.created_at, m.updated_at FROM member_programhdr m LEFT JOIN user u ON u.id = m.created_by WHERE m.user_id = :user_id ORDER BY m.created_at DESC");
+            // Get ONLY user-created routines (where created_by is NULL or empty)
+            // Filter out coach-assigned and admin-created routines
+            $stmt = $pdo->prepare("SELECT m.id, m.user_id, m.program_hdr_id, m.created_by, CONCAT(u.fname, ' ', u.mname, ' ', u.lname) AS createdByName, u.user_type_id AS createdByTypeId, m.color, m.tags, m.goal, m.notes, m.completion_rate AS completionRate, m.scheduled_days AS scheduledDays, m.difficulty, m.total_sessions AS totalSessions, m.created_at, m.updated_at FROM member_programhdr m LEFT JOIN user u ON u.id = m.created_by WHERE m.user_id = :user_id AND (m.created_by IS NULL OR m.created_by = '') ORDER BY m.created_at DESC");
             $stmt->bindParam(':user_id', $userId, PDO::PARAM_INT);
             $stmt->execute();
             $userRoutines = $stmt->fetchAll(PDO::FETCH_ASSOC);

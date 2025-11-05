@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:qr_flutter/qr_flutter.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import 'dart:ui' as ui;
@@ -172,86 +171,6 @@ class _QRPageState extends State<QRPage> with TickerProviderStateMixin {
     setState(() => _isDownloading = false);
   }
 
-  Future<void> _shareQR() async {
-    if (qrData == null || userName == null) return;
-    
-    try {
-      if (kIsWeb) {
-        // Web implementation - try Web Share API first, fallback to clipboard
-        if (html.window.navigator.share != null) {
-          await html.window.navigator.share!({
-            'title': 'CNERGY Attendance QR Code',
-            'text': 'My CNERGY Attendance QR Code for $userName\nShow this to staff for gym check-in/check-out',
-            'url': html.window.location.href,
-          });
-        } else {
-          // Fallback to clipboard
-          await html.window.navigator.clipboard?.writeText(
-            'My CNERGY Attendance QR Code for $userName\nShow this to staff for gym check-in/check-out\n\nQR Data: $qrData'
-          );
-          
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'QR Code info copied to clipboard!',
-                style: GoogleFonts.poppins(),
-              ),
-              backgroundColor: Color(0xFFFF6B35),
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            ),
-          );
-        }
-      } else {
-        // Mobile implementation
-        await Share.share(
-          'My CNERGY Attendance QR Code for $userName\nShow this to staff for gym check-in/check-out\n\nQR Data: $qrData',
-          subject: 'CNERGY Attendance QR Code',
-        );
-      }
-    } catch (e) {
-      // Fallback for any errors
-      if (kIsWeb) {
-        // Copy to clipboard as fallback
-        try {
-          await html.window.navigator.clipboard?.writeText(
-            'My CNERGY Attendance QR Code for $userName\nShow this to staff for gym check-in/check-out\n\nQR Data: $qrData'
-          );
-          
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'QR Code info copied to clipboard!',
-                style: GoogleFonts.poppins(),
-              ),
-              backgroundColor: Color(0xFFFF6B35),
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            ),
-          );
-        } catch (clipboardError) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'Share not supported. QR Data: $qrData',
-                style: GoogleFonts.poppins(),
-              ),
-              backgroundColor: Colors.orange,
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
-        }
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to share QR Code: $e', style: GoogleFonts.poppins()),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -286,64 +205,70 @@ class _QRPageState extends State<QRPage> with TickerProviderStateMixin {
           opacity: _fadeAnimation,
           child: SingleChildScrollView(
             padding: EdgeInsets.all(20),
-            child: Column(
-              children: [
-                // Header
-                Container(
-                  padding: EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [Color(0xFF4ECDC4).withOpacity(0.8), Color(0xFF44A08D).withOpacity(0.8)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final screenWidth = MediaQuery.of(context).size.width;
+                final isSmallScreen = screenWidth < 360;
+                final isMediumScreen = screenWidth < 400;
+                
+                return Column(
+                  children: [
+                    // Header
+                    Container(
+                      padding: EdgeInsets.all(isSmallScreen ? 16 : 24),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [Color(0xFF4ECDC4).withOpacity(0.8), Color(0xFF44A08D).withOpacity(0.8)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Color(0xFF4ECDC4).withOpacity(0.3),
+                            blurRadius: 15,
+                            offset: Offset(0, 8),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: EdgeInsets.all(isSmallScreen ? 8 : 12),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: Icon(Icons.qr_code, color: Colors.white, size: isSmallScreen ? 20 : 28),
+                          ),
+                          SizedBox(width: isSmallScreen ? 12 : 16),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Your Attendance QR',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: isSmallScreen ? 16 : isMediumScreen ? 18 : 22,
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                SizedBox(height: isSmallScreen ? 2 : 4),
+                                Text(
+                                  'Show this to staff for check-in/out',
+                                  style: GoogleFonts.poppins(
+                                    color: Colors.white.withOpacity(0.9),
+                                    fontSize: isSmallScreen ? 11 : 14,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Color(0xFF4ECDC4).withOpacity(0.3),
-                        blurRadius: 15,
-                        offset: Offset(0, 8),
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: Icon(Icons.qr_code, color: Colors.white, size: 28),
-                      ),
-                      SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Your Attendance QR',
-                              style: GoogleFonts.poppins(
-                                fontSize: 22,
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            SizedBox(height: 4),
-                            Text(
-                              'Show this to staff for check-in/out',
-                              style: GoogleFonts.poppins(
-                                color: Colors.white.withOpacity(0.9),
-                                fontSize: 14,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                SizedBox(height: 40),
+                    SizedBox(height: isSmallScreen ? 24 : 40),
                 
                 // QR Code Section
                 ScaleTransition(
@@ -356,7 +281,7 @@ class _QRPageState extends State<QRPage> with TickerProviderStateMixin {
                         child: RepaintBoundary(
                           key: _qrKey,
                           child: Container(
-                            padding: EdgeInsets.all(24),
+                            padding: EdgeInsets.all(isSmallScreen ? 16 : 24),
                             decoration: BoxDecoration(
                               color: Colors.white,
                               borderRadius: BorderRadius.circular(24),
@@ -373,28 +298,28 @@ class _QRPageState extends State<QRPage> with TickerProviderStateMixin {
                                 QrImageView(
                                   data: qrData!,
                                   version: QrVersions.auto,
-                                  size: 200,
+                                  size: isSmallScreen ? 150 : 200,
                                   backgroundColor: Colors.white,
                                   foregroundColor: Colors.black,
                                   
                                   embeddedImageStyle: QrEmbeddedImageStyle(
-                                    size: Size(40, 40),
+                                    size: Size(isSmallScreen ? 30 : 40, isSmallScreen ? 30 : 40),
                                   ),
                                 ),
-                                SizedBox(height: 16),
+                                SizedBox(height: isSmallScreen ? 12 : 16),
                                 Text(
                                   'Attendance QR Code',
                                   style: GoogleFonts.poppins(
-                                    fontSize: 18,
+                                    fontSize: isSmallScreen ? 14 : 18,
                                     fontWeight: FontWeight.w600,
                                     color: Colors.black87,
                                   ),
                                 ),
-                                SizedBox(height: 8),
+                                SizedBox(height: isSmallScreen ? 6 : 8),
                                 Text(
                                   userName!,
                                   style: GoogleFonts.poppins(
-                                    fontSize: 14,
+                                    fontSize: isSmallScreen ? 12 : 14,
                                     color: Colors.grey[600],
                                   ),
                                 ),
@@ -406,94 +331,52 @@ class _QRPageState extends State<QRPage> with TickerProviderStateMixin {
                     },
                   ),
                 ),
-                SizedBox(height: 40),
+                SizedBox(height: isSmallScreen ? 24 : 40),
                 
                 // Action Buttons
-                Row(
-                  children: [
-                    Expanded(
-                      child: Container(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [Color(0xFF4ECDC4), Color(0xFF44A08D)],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
-                          borderRadius: BorderRadius.circular(16),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Color(0xFF4ECDC4).withOpacity(0.4),
-                              blurRadius: 15,
-                              offset: Offset(0, 8),
-                            ),
-                          ],
-                        ),
-                        child: ElevatedButton.icon(
-                          onPressed: _isDownloading ? null : _downloadQR,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.transparent,
-                            foregroundColor: Colors.white,
-                            elevation: 0,
-                            padding: EdgeInsets.symmetric(vertical: 16),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                          ),
-                          icon: _isDownloading
-                             ? SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                                ),
-                              )
-                            : Icon(Icons.download),
-                          label: Text(
-                            _isDownloading ? 'Saving...' : 'Download',
-                            style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
-                          ),
-                        ),
+                Container(
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [Color(0xFF4ECDC4), Color(0xFF44A08D)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Color(0xFF4ECDC4).withOpacity(0.4),
+                        blurRadius: 15,
+                        offset: Offset(0, 8),
+                      ),
+                    ],
+                  ),
+                  child: ElevatedButton.icon(
+                    onPressed: _isDownloading ? null : _downloadQR,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.transparent,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      padding: EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
                       ),
                     ),
-                    SizedBox(width: 16),
-                    Expanded(
-                      child: Container(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [Color(0xFFFF6B35), Color(0xFFFF8E53)],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
+                    icon: _isDownloading
+                       ? SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                           ),
-                          borderRadius: BorderRadius.circular(16),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Color(0xFFFF6B35).withOpacity(0.4),
-                              blurRadius: 15,
-                              offset: Offset(0, 8),
-                            ),
-                          ],
-                        ),
-                        child: ElevatedButton.icon(
-                          onPressed: _shareQR,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.transparent,
-                            foregroundColor: Colors.white,
-                            elevation: 0,
-                            padding: EdgeInsets.symmetric(vertical: 16),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                          ),
-                          icon: Icon(Icons.share),
-                          label: Text(
-                            'Share',
-                            style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
-                          ),
-                        ),
-                      ),
+                        )
+                      : Icon(Icons.download),
+                    label: Text(
+                      _isDownloading ? 'Saving...' : 'Download',
+                      style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
                     ),
-                  ],
+                  ),
                 ),
                 SizedBox(height: 24),
                 
@@ -578,10 +461,12 @@ class _QRPageState extends State<QRPage> with TickerProviderStateMixin {
                   ),
                 ),
               ],
-            ),
-          ),
+            );
+          },
         ),
       ),
+    ),
+    ),
     );
   }
 }

@@ -117,8 +117,14 @@ Future<void> _fixUserIdStorage() async {
     
     // Check if user_id exists and fix its type
     if (prefs.containsKey('user_id')) {
+      int? userId;
+      
       // Try to get as int first
-      int? userId = prefs.getInt('user_id');
+      try {
+        userId = prefs.getInt('user_id');
+      } catch (e) {
+        print('user_id is not an int, trying as string: $e');
+      }
       
       // If null, it might be stored as string
       if (userId == null) {
