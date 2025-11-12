@@ -237,13 +237,28 @@ function getSubscriptionPlans($pdo) {
     
     // Add features for each plan
     foreach ($plans as &$plan) {
-        $featuresStmt = $pdo->prepare("
-            SELECT feature_name, description 
-            FROM subscription_feature 
-            WHERE plan_id = ?
-        ");
-        $featuresStmt->execute([$plan['id']]);
-        $plan['features'] = $featuresStmt->fetchAll();
+        try {
+            $featuresStmt = $pdo->prepare("
+                SELECT feature_name, description 
+                FROM `subscription_feature` 
+                WHERE plan_id = ?
+            ");
+            $featuresStmt->execute([$plan['id']]);
+            $plan['features'] = $featuresStmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (PDOException $e) {
+            // Try alternative table name if first fails
+            try {
+                $featuresStmt = $pdo->prepare("
+                    SELECT feature_name, description 
+                    FROM `subscription_Feature` 
+                    WHERE plan_id = ?
+                ");
+                $featuresStmt->execute([$plan['id']]);
+                $plan['features'] = $featuresStmt->fetchAll(PDO::FETCH_ASSOC);
+            } catch (PDOException $e2) {
+                $plan['features'] = [];
+            }
+        }
     }
     
     echo json_encode([
@@ -288,6 +303,7 @@ function getUserSubscriptions($pdo, $user_id) {
             p.plan_name,
             p.price as original_price,
             p.duration_months,
+            p.duration_days,
             ss.status_name,
             CASE 
                 WHEN ss.status_name = 'approved' AND s.end_date >= CURDATE() THEN 'Active'
@@ -304,7 +320,7 @@ function getUserSubscriptions($pdo, $user_id) {
     $stmt->execute([$user_id]);
     $subscriptions = $stmt->fetchAll();
     
-    // Get payment information for each subscription
+    // Get payment information and calculate periods for each subscription
     foreach ($subscriptions as &$subscription) {
         $paymentStmt = $pdo->prepare("
             SELECT COUNT(*) as payment_count, SUM(amount) as total_paid
@@ -321,6 +337,18 @@ function getUserSubscriptions($pdo, $user_id) {
         if ($subscription['payment_count'] == 0) {
             $subscription['total_paid'] = $subscription['amount_paid'] ?? 0;
         }
+        
+        // Calculate periods from amount_paid and original_price
+        $periods = 1;
+        $originalPrice = floatval($subscription['original_price'] ?? 0);
+        $amountPaid = floatval($subscription['amount_paid'] ?? 0);
+        
+        if ($originalPrice > 0) {
+            $periods = round($amountPaid / $originalPrice);
+            if ($periods < 1) $periods = 1;
+        }
+        
+        $subscription['periods'] = $periods;
     }
     
     echo json_encode([
@@ -414,6 +442,44 @@ function getAvailablePlansForUser($pdo, $user_id) {
         $plan['lock_message'] = $availabilityStatus['message'];
         $plan['lock_icon'] = $availabilityStatus['icon'];
         
+        // Add features for each plan
+        try {
+            // Try with backticks to handle case sensitivity
+            $featuresStmt = $pdo->prepare("
+                SELECT feature_name, description 
+                FROM `subscription_feature` 
+                WHERE plan_id = ?
+            ");
+            $featuresStmt->execute([$planId]);
+            $features = $featuresStmt->fetchAll(PDO::FETCH_ASSOC);
+            $plan['features'] = $features;
+            
+            // Debug logging
+            error_log("DEBUG getAvailablePlansForUser: Plan ID $planId has " . count($features) . " features");
+            if (count($features) > 0) {
+                error_log("DEBUG getAvailablePlansForUser: Features for plan $planId: " . json_encode($features));
+            } else {
+                error_log("WARNING getAvailablePlansForUser: Plan ID $planId returned 0 features from database");
+            }
+        } catch (PDOException $e) {
+            error_log("ERROR getAvailablePlansForUser: Failed to fetch features for plan $planId: " . $e->getMessage());
+            // Try alternative table name if first fails
+            try {
+                $featuresStmt = $pdo->prepare("
+                    SELECT feature_name, description 
+                    FROM `subscription_Feature` 
+                    WHERE plan_id = ?
+                ");
+                $featuresStmt->execute([$planId]);
+                $features = $featuresStmt->fetchAll(PDO::FETCH_ASSOC);
+                $plan['features'] = $features;
+                error_log("DEBUG getAvailablePlansForUser: Successfully fetched features using subscription_Feature table");
+            } catch (PDOException $e2) {
+                error_log("ERROR getAvailablePlansForUser: Both table name variations failed: " . $e2->getMessage());
+                $plan['features'] = [];
+            }
+        }
+        
         $plansWithStatus[] = $plan;
     }
     
@@ -433,21 +499,22 @@ function getAvailablePlansForUser($pdo, $user_id) {
 // New function to get plan availability status
 function getPlanAvailabilityStatus($planId, $hasActiveMemberFee, $hasActiveMonthlyPlan, $hasActiveDayPass, $isPlanActive, $activeMonthlyPlan, $hasActiveCombinationPackage) {
     switch ($planId) {
-        case 1: // Membership Fee - always available
+        case 1: // Membership Fee - allow renewal if active
             return [
-                'available' => !$isPlanActive,
-                'reason' => $isPlanActive ? 'already_active' : 'available',
-                'message' => $isPlanActive ? 'You already have an active Membership Fee subscription.' : 'One-time fee for member benefits and discounts on monthly plans.',
-                'icon' => $isPlanActive ? '🔒' : '✅'
+                'available' => true, // Always available for renewal
+                'reason' => $isPlanActive ? 'renewal_available' : 'available',
+                'message' => $isPlanActive ? 'You can renew your Membership Fee subscription.' : 'One-time fee for member benefits and discounts on monthly plans.',
+                'icon' => '✅'
             ];
             
-        case 2: // Member Monthly Plan
+        case 2: // Member Monthly Plan - allow renewal if active
+            // If plan is active, allow renewal
             if ($isPlanActive) {
                 return [
-                    'available' => false,
-                    'reason' => 'already_active',
-                    'message' => 'You already have an active Member Monthly Plan.',
-                    'icon' => '🔒'
+                    'available' => true,
+                    'reason' => 'renewal_available',
+                    'message' => 'You can renew your Member Monthly Plan subscription.',
+                    'icon' => '✅'
                 ];
             }
             if ($hasActiveCombinationPackage) {
@@ -483,15 +550,17 @@ function getPlanAvailabilityStatus($planId, $hasActiveMemberFee, $hasActiveMonth
                 'icon' => '✅'
             ];
             
-        case 3: // Non-Member Monthly Plan
+        case 3: // Non-Member Monthly Plan - allow renewal if active, but lock if user has membership fee
+            // If plan is active, allow renewal
             if ($isPlanActive) {
                 return [
-                    'available' => false,
-                    'reason' => 'already_active',
-                    'message' => 'You already have an active Non-Member Monthly Plan.',
-                    'icon' => '🔒'
+                    'available' => true,
+                    'reason' => 'renewal_available',
+                    'message' => 'You can renew your Non-Member Monthly Plan subscription.',
+                    'icon' => '✅'
                 ];
             }
+            // Lock standard plan if user has membership fee active
             if ($hasActiveMemberFee) {
                 return [
                     'available' => false,
@@ -533,23 +602,16 @@ function getPlanAvailabilityStatus($planId, $hasActiveMemberFee, $hasActiveMonth
                 'icon' => '✅'
             ];
             
-        case 6: // Day Pass
+        case 6: // Day Pass - only available if no active monthly plans (premium or standard)
             if ($isPlanActive) {
                 return [
-                    'available' => false,
-                    'reason' => 'already_active',
-                    'message' => 'You already have an active Day Pass.',
-                    'icon' => '🔒'
+                    'available' => true,
+                    'reason' => 'renewal_available',
+                    'message' => 'You can renew your Day Pass subscription.',
+                    'icon' => '✅'
                 ];
             }
-            if (!$hasActiveMemberFee) {
-                return [
-                    'available' => false,
-                    'reason' => 'requires_membership_fee',
-                    'message' => 'You need to purchase a Membership Fee first to access member benefits and discounts.',
-                    'icon' => '🔒'
-                ];
-            }
+            // Check if user has any active monthly plans (2, 3, or 5)
             if ($hasActiveMonthlyPlan) {
                 $planName = $activeMonthlyPlan['plan_name'];
                 $endDate = date('M d, Y', strtotime($activeMonthlyPlan['end_date']));
@@ -557,6 +619,15 @@ function getPlanAvailabilityStatus($planId, $hasActiveMemberFee, $hasActiveMonth
                     'available' => false,
                     'reason' => 'active_monthly_plan',
                     'message' => "You currently have an active {$planName} until {$endDate}. Please wait for it to expire before purchasing a Day Pass.",
+                    'icon' => '🔒'
+                ];
+            }
+            // Check if user has combination package (which includes monthly access)
+            if ($hasActiveCombinationPackage) {
+                return [
+                    'available' => false,
+                    'reason' => 'has_combination_package',
+                    'message' => 'You have the Membership + 1 Month Access package which includes monthly access. Day Pass is not available while you have monthly access.',
                     'icon' => '🔒'
                 ];
             }
@@ -571,16 +642,16 @@ function getPlanAvailabilityStatus($planId, $hasActiveMemberFee, $hasActiveMonth
             return [
                 'available' => true,
                 'reason' => 'available',
-                'message' => '1-day gym access with member benefits. Perfect for trying out the gym!',
+                'message' => '1-day gym access. Perfect for trying out the gym! Valid until midnight.',
                 'icon' => '✅'
             ];
             
-        default: // Other plans
+        default: // Other plans - allow renewal if active
             return [
-                'available' => !$isPlanActive,
-                'reason' => $isPlanActive ? 'already_active' : 'available',
-                'message' => $isPlanActive ? 'You already have an active subscription to this plan.' : 'This plan is available for subscription.',
-                'icon' => $isPlanActive ? '🔒' : '✅'
+                'available' => true, // Always available for renewal or new subscription
+                'reason' => $isPlanActive ? 'renewal_available' : 'available',
+                'message' => $isPlanActive ? 'You can renew your subscription to this plan.' : 'This plan is available for subscription.',
+                'icon' => '✅'
             ];
     }
 }
@@ -629,14 +700,21 @@ function createManualSubscription($pdo, $data) {
         $start_date_obj = new DateTime($start_date);
         $end_date_obj = clone $start_date_obj;
         
-        if ($plan['duration_days'] && $plan['duration_days'] > 0) {
+        if ($plan_id == 6) {
+            // Day Pass: Expires at 12 AM (midnight) of the next day
+            // If start_date is Jan 15, end_date should be Jan 16 (expires at midnight of Jan 16, so valid until end of Jan 15)
+            $end_date_obj->modify('+1 day');
+            $end_date = $end_date_obj->format('Y-m-d');
+            error_log("DEBUG MANUAL CREATE: Day Pass (plan_id=6) - start_date=$start_date, end_date=$end_date (expires at midnight of next day)");
+        } elseif ($plan['duration_days'] && $plan['duration_days'] > 0) {
             // Use duration_days for day-based plans
             $end_date_obj->add(new DateInterval('P' . $plan['duration_days'] . 'D'));
+            $end_date = $end_date_obj->format('Y-m-d');
         } else {
             // Use duration_months for month-based plans
             $end_date_obj->add(new DateInterval('P' . $plan['duration_months'] . 'M'));
+            $end_date = $end_date_obj->format('Y-m-d');
         }
-        $end_date = $end_date_obj->format('Y-m-d');
 
         // Get approved status ID
         $statusStmt = $pdo->prepare("SELECT id FROM subscription_status WHERE status_name = 'approved'");
@@ -912,11 +990,60 @@ function approveSubscription($pdo, $data) {
             $deleteStmt->execute([$subscriptionId]);
             
             $user_id = $subscription['user_id'];
-            $start_date = $subscription['start_date'];
+            $end_date = $subscription['end_date'];
             $amount_paid = $subscription['price'];
             $discount_type = 'none';
             
-            error_log("DEBUG APPROVE: Got user_id=$user_id, start_date=$start_date, amount_paid=$amount_paid from pending subscription");
+            // Recalculate subscription start date from end_date and plan duration
+            // Check if this is a renewal or advance payment by checking active subscriptions
+            // If user has active subscriptions, check if end_date suggests renewal/advance payment
+            $activeStmt = $pdo->prepare("
+                SELECT s.end_date
+                FROM subscription s
+                JOIN subscription_status st ON s.status_id = st.id
+                WHERE s.user_id = ? 
+                AND st.status_name IN ('approved', 'active')
+                AND s.end_date >= CURDATE()
+                ORDER BY s.end_date DESC
+                LIMIT 1
+            ");
+            $activeStmt->execute([$user_id]);
+            $activeSubscription = $activeStmt->fetch();
+            
+            if ($activeSubscription) {
+                // User has active subscription - check if this is a renewal/advance payment
+                // The subscription start date should be the end date of the active subscription
+                $start_date = $activeSubscription['end_date'];
+                error_log("DEBUG APPROVE: plan_id=5, user has active subscription ending $start_date, using as subscription start date");
+            } else {
+                // New subscription - calculate start_date from end_date and plan duration
+                // For plan_id 5, we need to get its duration from database
+                $plan5Stmt = $pdo->prepare("SELECT duration_months, duration_days FROM member_subscription_plan WHERE id = 5");
+                $plan5Stmt->execute();
+                $plan5 = $plan5Stmt->fetch();
+                
+                if ($plan5) {
+                    $end_date_obj = new DateTime($end_date);
+                    $start_date_obj = clone $end_date_obj;
+                    
+                    if ($plan5['duration_days'] && $plan5['duration_days'] > 0) {
+                        $start_date_obj->sub(new DateInterval('P' . $plan5['duration_days'] . 'D'));
+                    } else {
+                        $start_date_obj->sub(new DateInterval('P' . $plan5['duration_months'] . 'M'));
+                    }
+                    
+                    $start_date = $start_date_obj->format('Y-m-d');
+                    error_log("DEBUG APPROVE: plan_id=5, calculated start_date=$start_date from end_date=$end_date");
+                } else {
+                    // Fallback: use today's date
+                    $start_date_raw = $subscription['start_date'];
+                    $start_date_obj = new DateTime($start_date_raw);
+                    $start_date = $start_date_obj->format('Y-m-d');
+                    error_log("DEBUG APPROVE: plan_id=5, plan not found, using date from start_date: $start_date");
+                }
+            }
+            
+            error_log("DEBUG APPROVE: Got user_id=$user_id, start_date=$start_date, end_date=$end_date, amount_paid=$amount_paid from pending subscription");
             
             // Get plan details for plan_id 1 and plan_id 2
             $plan1Stmt = $pdo->prepare("SELECT id, plan_name, price, duration_months, duration_days FROM member_subscription_plan WHERE id = 1");
@@ -1026,10 +1153,81 @@ function approveSubscription($pdo, $data) {
                     "approved_by" => $approvedBy
                 ]
             ]);
+        } elseif ($subscription['plan_id'] == 6) {
+            // Day Pass: Update status and ensure end_date is set to next day (expires at midnight)
+            // Extract just the date portion from start_date (remove time component if present)
+            // For pending requests, start_date contains the request time, but for approved subscriptions,
+            // we need just the date (today's date for Day Pass)
+            $start_date_raw = $subscription['start_date'];
+            $start_date_obj = new DateTime($start_date_raw);
+            $start_date = $start_date_obj->format('Y-m-d'); // Extract just the date (today for new Day Pass)
+            $end_date_obj = clone $start_date_obj;
+            $end_date_obj->setTime(0, 0, 0); // Set to midnight
+            // Day Pass expires at 12 AM (midnight) of the next day
+            $end_date_obj->modify('+1 day');
+            $end_date = $end_date_obj->format('Y-m-d');
+            
+            error_log("DEBUG APPROVE: Day Pass (plan_id=6) - start_date_raw=$start_date_raw, start_date=$start_date, end_date=$end_date (expires at midnight of next day)");
+            
+            // Update status, start_date (to just date), and end_date to ensure it expires at midnight
+            $updateStmt = $pdo->prepare("UPDATE subscription SET status_id = ?, start_date = ?, end_date = ? WHERE id = ?");
+            $updateStmt->execute([$approvedStatus['id'], $start_date, $end_date, $subscriptionId]);
+            
+            $pdo->commit();
+            
+            echo json_encode([
+                "success" => true,
+                "subscription_id" => $subscriptionId,
+                "status" => "approved",
+                "message" => "Day Pass approved successfully. Valid until midnight.",
+                "data" => [
+                    "subscription_id" => $subscriptionId,
+                    "user_name" => trim($subscription['fname'] . ' ' . $subscription['lname']),
+                    "user_email" => $subscription['email'],
+                    "plan_name" => $subscription['plan_name'],
+                    "start_date" => $start_date,
+                    "end_date" => $end_date,
+                    "status" => "approved",
+                    "approved_at" => date('Y-m-d H:i:s'),
+                    "approved_by" => $approvedBy
+                ]
+            ]);
         } else {
-            // For non-plan_id 5 subscriptions, just update the status
-            $updateStmt = $pdo->prepare("UPDATE subscription SET status_id = ? WHERE id = ?");
-            $updateStmt->execute([$approvedStatus['id'], $subscriptionId]);
+            // For other subscriptions, recalculate start_date from end_date and plan duration
+            // This ensures correct start_date for renewals and advance payments
+            // The end_date was calculated correctly during request, so we can derive start_date from it
+            $end_date = $subscription['end_date'];
+            $plan_id = $subscription['plan_id'];
+            
+            // Get plan details to calculate duration
+            $planStmt = $pdo->prepare("SELECT duration_months, duration_days FROM member_subscription_plan WHERE id = ?");
+            $planStmt->execute([$plan_id]);
+            $plan = $planStmt->fetch();
+            
+            if ($plan) {
+                // Calculate start_date by subtracting plan duration from end_date
+                $end_date_obj = new DateTime($end_date);
+                $start_date_obj = clone $end_date_obj;
+                
+                if ($plan['duration_days'] && $plan['duration_days'] > 0) {
+                    // Duration is in days
+                    $start_date_obj->sub(new DateInterval('P' . $plan['duration_days'] . 'D'));
+                } else {
+                    // Duration is in months
+                    $start_date_obj->sub(new DateInterval('P' . $plan['duration_months'] . 'M'));
+                }
+                
+                $start_date = $start_date_obj->format('Y-m-d');
+            } else {
+                // Fallback: extract just the date from start_date (remove time component)
+                $start_date_raw = $subscription['start_date'];
+                $start_date_obj = new DateTime($start_date_raw);
+                $start_date = $start_date_obj->format('Y-m-d');
+            }
+            
+            // Update status and start_date (to just date, without time)
+            $updateStmt = $pdo->prepare("UPDATE subscription SET status_id = ?, start_date = ? WHERE id = ?");
+            $updateStmt->execute([$approvedStatus['id'], $start_date, $subscriptionId]);
             
             $pdo->commit();
             
@@ -1199,6 +1397,9 @@ function requestSubscription($pdo, $data) {
     $user_id = $data['user_id'];
     $plan_id = $data['plan_id'];
     $payment_method = $data['payment_method'] ?? 'cash';
+    $renewal = isset($data['renewal']) && $data['renewal'] === true;
+    $advance_payment = isset($data['advance_payment']) && $data['advance_payment'] === true;
+    $periods = isset($data['periods']) ? max(1, intval($data['periods'])) : 1;
 
     $pdo->beginTransaction();
 
@@ -1234,27 +1435,66 @@ function requestSubscription($pdo, $data) {
         
         if (!$plan) throw new Exception("Subscription plan not found");
 
-        // Check plan compatibility logic
-        $compatibilityCheck = checkPlanCompatibility($pdo, $user_id, $plan_id);
-        if (!$compatibilityCheck['compatible']) {
-            throw new Exception($compatibilityCheck['message']);
-        }
+        // Calculate total price based on periods
+        $total_price = $plan['price'] * $periods;
 
-        // Calculate dates
-        $start_date = date('Y-m-d');
-        $start_date_obj = new DateTime($start_date);
-        $end_date_obj = clone $start_date_obj;
+        // Handle renewal: get active subscription end date
+        $renewal_start_date = null;
+        $advance_payment_start_date = null;
         
-        if ($plan['duration_days'] && $plan['duration_days'] > 0) {
-            // Use duration_days for day-based plans
-            $end_date_obj->add(new DateInterval('P' . $plan['duration_days'] . 'D'));
-        } else {
-            // Use duration_months for month-based plans
-            $end_date_obj->add(new DateInterval('P' . $plan['duration_months'] . 'M'));
+        if ($renewal) {
+            $activeStmt = $pdo->prepare("
+                SELECT s.end_date, p.plan_name
+                FROM subscription s
+                JOIN subscription_status st ON s.status_id = st.id
+                JOIN member_subscription_plan p ON s.plan_id = p.id
+                WHERE s.user_id = ? 
+                AND s.plan_id = ?
+                AND st.status_name IN ('approved', 'active')
+                AND s.end_date >= CURDATE()
+                ORDER BY s.end_date DESC
+                LIMIT 1
+            ");
+            $activeStmt->execute([$user_id, $plan_id]);
+            $activeSubscription = $activeStmt->fetch();
+            
+            if (!$activeSubscription) {
+                throw new Exception("No active subscription found for renewal. Please select 'New Subscription' instead.");
+            }
+            
+            $renewal_start_date = $activeSubscription['end_date'];
+        } elseif ($advance_payment) {
+            // For advance payment, get the latest end date of any active subscription
+            $activeStmt = $pdo->prepare("
+                SELECT s.end_date, p.plan_name
+                FROM subscription s
+                JOIN subscription_status st ON s.status_id = st.id
+                JOIN member_subscription_plan p ON s.plan_id = p.id
+                WHERE s.user_id = ? 
+                AND st.status_name IN ('approved', 'active')
+                AND s.end_date >= CURDATE()
+                ORDER BY s.end_date DESC
+                LIMIT 1
+            ");
+            $activeStmt->execute([$user_id]);
+            $activeSubscription = $activeStmt->fetch();
+            
+            if (!$activeSubscription) {
+                throw new Exception("No active subscription found for advance payment. Please select 'New Subscription' instead.");
+            }
+            
+            $advance_payment_start_date = $activeSubscription['end_date'];
         }
-        $end_date = $end_date_obj->format('Y-m-d');
 
-        // Get pending status ID
+        // Check plan compatibility logic (skip if renewal or advance payment)
+        if (!$renewal && !$advance_payment) {
+            $compatibilityCheck = checkPlanCompatibility($pdo, $user_id, $plan_id);
+            if (!$compatibilityCheck['compatible']) {
+                throw new Exception($compatibilityCheck['message']);
+            }
+        }
+
+        // Get pending status ID first (we need it to determine if this is a pending request)
         $statusStmt = $pdo->prepare("SELECT id FROM subscription_status WHERE status_name = 'pending_approval'");
         $statusStmt->execute();
         $status = $statusStmt->fetch();
@@ -1263,27 +1503,102 @@ function requestSubscription($pdo, $data) {
             throw new Exception("Pending approval status not found in database");
         }
 
+        // For pending requests, we need to store the actual request time (with time component)
+        // so that expiration can be calculated accurately (12 hours from request time)
+        // For approved subscriptions, start_date will be adjusted during approval
+        $request_time = new DateTime(); // Current datetime with time component
+        
+        // Calculate dates for subscription period (these are used when subscription is approved)
+        if ($renewal && $renewal_start_date) {
+            // Renewal: start from the end date of current subscription
+            $subscription_start_date = $renewal_start_date;
+            $start_date_obj = new DateTime($subscription_start_date);
+        } elseif ($advance_payment && $advance_payment_start_date) {
+            // Advance payment: start from the end date of current active subscription
+            $subscription_start_date = $advance_payment_start_date;
+            $start_date_obj = new DateTime($subscription_start_date);
+        } else {
+            // New subscription: start from today
+            $subscription_start_date = date('Y-m-d');
+            $start_date_obj = new DateTime($subscription_start_date);
+        }
+        
+        $end_date_obj = clone $start_date_obj;
+        
+        // Calculate duration based on periods
+        if ($plan_id == 6) {
+            // Day Pass: Expires at 12 AM (midnight) of the next day
+            // If start_date is Jan 15, end_date should be Jan 16 (expires at midnight of Jan 16, so valid until end of Jan 15)
+            // Note: Day Pass is always 1 session, so periods is ignored and forced to 1
+            $periods = 1; // Force periods to 1 for Day Pass
+            $end_date_obj->modify('+1 day');
+            $end_date = $end_date_obj->format('Y-m-d');
+            error_log("DEBUG REQUEST: Day Pass (plan_id=6) - subscription_start_date=$subscription_start_date, end_date=$end_date (expires at midnight of next day), periods forced to 1");
+        } else {
+            $total_duration_days = 0;
+            $total_duration_months = 0;
+            
+            if ($plan['duration_days'] && $plan['duration_days'] > 0) {
+                $total_duration_days = $plan['duration_days'] * $periods;
+                $end_date_obj->add(new DateInterval('P' . $total_duration_days . 'D'));
+            } else {
+                $total_duration_months = $plan['duration_months'] * $periods;
+                $end_date_obj->add(new DateInterval('P' . $total_duration_months . 'M'));
+            }
+            
+            $end_date = $end_date_obj->format('Y-m-d');
+        }
+
+        // For pending requests, use MySQL's NOW() to store the actual request time with time component
+        // This ensures the database stores the exact timestamp at the database level
+        // This allows expiration to be calculated from the exact request time (3 hours or 12 hours)
+        // When the subscription is approved, start_date will be updated to the subscription start date
+        // Use NOW() in the SQL query to ensure database-level timestamp accuracy
+        
         // Create subscription request
+        // Use NOW() for start_date to ensure accurate timestamp storage at database level
+        // This works regardless of whether the column is DATE, DATETIME, or TIMESTAMP
         $subscriptionStmt = $pdo->prepare("
             INSERT INTO subscription (user_id, plan_id, status_id, start_date, end_date, discount_type, amount_paid) 
-            VALUES (?, ?, ?, ?, ?, 'none', ?)
+            VALUES (?, ?, ?, NOW(), ?, 'none', ?)
         ");
-        $subscriptionStmt->execute([$user_id, $plan_id, $status['id'], $start_date, $end_date, $plan['price']]);
+        $subscriptionStmt->execute([$user_id, $plan_id, $status['id'], $end_date, $total_price]);
         $subscription_id = $pdo->lastInsertId();
+        
+        // Get the actual timestamp that was stored by the database
+        // This ensures we have the exact timestamp stored (with time component if column supports it)
+        $getTimestampStmt = $pdo->prepare("SELECT start_date FROM subscription WHERE id = ?");
+        $getTimestampStmt->execute([$subscription_id]);
+        $storedTimestamp = $getTimestampStmt->fetchColumn();
+        
+        // Log the stored timestamp for debugging
+        error_log("DEBUG REQUEST: Stored start_date (request time) = $storedTimestamp for subscription_id = $subscription_id");
 
         $pdo->commit();
 
+        $message = "Subscription request submitted successfully";
+        if ($renewal) {
+            $message = "Renewal request submitted successfully. Your subscription will extend from " . date('M d, Y', strtotime($subscription_start_date));
+        } elseif ($advance_payment) {
+            $message = "Advance payment request submitted successfully. Your subscription will start after your current subscription ends.";
+        } elseif ($periods > 1) {
+            $message = "Subscription request for {$periods} periods submitted successfully";
+        }
+
         echo json_encode([
             "success" => true,
-            "message" => "Subscription request submitted successfully",
+            "message" => $message,
             "data" => [
                 "subscription_id" => $subscription_id,
                 "user_name" => $user['fname'] . ' ' . $user['lname'],
                 "user_email" => $user['email'],
                 "plan_name" => $plan['plan_name'],
-                "start_date" => $start_date,
+                "start_date" => $subscription_start_date,
                 "end_date" => $end_date,
-                "amount" => $plan['price'],
+                "amount" => $total_price,
+                "periods" => $periods,
+                "renewal" => $renewal,
+                "advance_payment" => $advance_payment,
                 "status" => "pending_approval"
             ]
         ]);
@@ -1375,13 +1690,7 @@ function checkPlanCompatibility($pdo, $user_id, $plan_id) {
                 'message' => ''
             ];
             
-        case 6: // Day Pass - requires active Membership Fee, cannot have active monthly plans
-            if (!$hasActiveMembershipFee) {
-                return [
-                    'compatible' => false,
-                    'message' => 'You need an active Membership Fee subscription to request Day Pass. Please request Membership Fee first.'
-                ];
-            }
+        case 6: // Day Pass - only available if no active monthly plans (premium or standard)
             // Check if user has any active monthly plans (2, 3, or 5)
             foreach ($activeSubscriptions as $sub) {
                 if ($sub['plan_id'] == 2 || $sub['plan_id'] == 3 || $sub['plan_id'] == 5) {
@@ -1521,11 +1830,15 @@ function cancelSubscription($pdo, $data) {
 function getUserPendingRequest($pdo, $user_id) {
     error_log("DEBUG: getUserPendingRequest called with user_id: " . $user_id);
     
+    // Query to get pending request with request_date (start_date for pending requests)
+    // Use DATE_FORMAT to ensure we get the full datetime if the column supports it
+    // If column is DATE type, it will only return date (time will be 00:00:00)
+    // If column is DATETIME/TIMESTAMP, it will return full timestamp
     $stmt = $pdo->prepare("
         SELECT s.id, s.plan_id, s.start_date, s.end_date, s.amount_paid,
-               p.plan_name, p.price, p.duration_months,
+               p.plan_name, p.price, p.duration_months, p.duration_days,
                ss.status_name,
-               s.start_date as request_date
+               DATE_FORMAT(s.start_date, '%Y-%m-%d %H:%i:%s') as request_date
         FROM subscription s
         JOIN member_subscription_plan p ON s.plan_id = p.id
         JOIN subscription_status ss ON s.status_id = ss.id
@@ -1537,7 +1850,13 @@ function getUserPendingRequest($pdo, $user_id) {
     $stmt->execute([$user_id]);
     $pendingRequest = $stmt->fetch();
     
-    error_log("DEBUG: Found pending request: " . json_encode($pendingRequest));
+    // Log the request_date for debugging
+    if ($pendingRequest) {
+        error_log("DEBUG: Found pending request - request_date = " . $pendingRequest['request_date']);
+        error_log("DEBUG: Found pending request - raw start_date = " . $pendingRequest['start_date']);
+    } else {
+        error_log("DEBUG: No pending request found for user_id: " . $user_id);
+    }
     
     if (!$pendingRequest) {
         echo json_encode([
@@ -1548,14 +1867,111 @@ function getUserPendingRequest($pdo, $user_id) {
         return;
     }
     
-    // Calculate expiry date (24 hours from request date)
-    $requestDate = new DateTime($pendingRequest['request_date']);
-    $expiryDate = clone $requestDate;
-    $expiryDate->add(new DateInterval('PT24H')); // 24 hours
+    // Calculate periods from amount_paid and price
+    $periods = 1;
+    if ($pendingRequest['price'] > 0) {
+        $periods = round($pendingRequest['amount_paid'] / $pendingRequest['price']);
+        if ($periods < 1) $periods = 1;
+    }
+    
+    // Calculate total price (should be same as amount_paid, but include it for clarity)
+    $total_price = $pendingRequest['amount_paid'];
+    
+    // Add periods and total_price to pending request
+    $pendingRequest['periods'] = $periods;
+    $pendingRequest['total_price'] = $total_price;
+    
+    // Calculate expiry date based on plan type:
+    // All subscriptions (including Day Pass): 12 hours
+    $plan_id = intval($pendingRequest['plan_id']);
+    
+    // Parse request_date - handle DATE column type issue
+    // If database column is DATE type, NOW() gets truncated to midnight (00:00:00)
+    // This causes expiration to be calculated incorrectly (request appears expired immediately)
+    $requestDateStr = $pendingRequest['request_date'];
+    $rawStartDate = $pendingRequest['start_date'];
+    
+    // Parse the request date
+    try {
+        $requestDate = new DateTime($requestDateStr);
+    } catch (Exception $e) {
+        error_log("DEBUG: Error parsing request_date: $requestDateStr - " . $e->getMessage());
+        $requestDate = new DateTime();
+    }
+    
     $now = new DateTime();
     
-    $isExpired = $now > $expiryDate;
-    $timeRemaining = $isExpired ? 0 : $expiryDate->getTimestamp() - $now->getTimestamp();
+    // Check if request date is today
+    $requestDateOnly = clone $requestDate;
+    $requestDateOnly->setTime(0, 0, 0);
+    $todayOnly = clone $now;
+    $todayOnly->setTime(0, 0, 0);
+    $isToday = ($requestDateOnly->format('Y-m-d') === $todayOnly->format('Y-m-d'));
+    
+    // Check if request time is midnight (00:00:00) or very early (before 1 AM)
+    // This indicates DATE column type where time was truncated
+    $requestTime = $requestDate->format('H:i:s');
+    $requestHour = (int)$requestDate->format('H');
+    $isMidnight = ($requestTime === '00:00:00');
+    $isEarlyMorning = ($requestHour >= 0 && $requestHour < 1);
+    
+    // CRITICAL FIX: If request was made today, ALWAYS use current time as request time
+    // This is the safest approach to prevent immediate expiration
+    // The database DATE column truncates time to midnight, which causes expiration issues
+    if ($isToday) {
+        // Request was made today - use current time minus 5 minutes as request time
+        // This ensures expiration is ALWAYS in the future (12 hours from now minus 5 minutes)
+        // This prevents any edge cases with DATE column truncation
+        $requestDate = clone $now;
+        $requestDate->sub(new DateInterval('PT5M')); // Subtract 5 minutes for safety buffer
+        error_log("DEBUG: Request made today detected - using current time minus 5 minutes as request time: " . $requestDate->format('Y-m-d H:i:s'));
+        error_log("DEBUG: Original request_date from DB: $requestDateStr (time was: $requestTime, hour: $requestHour)");
+    } else {
+        // Request date is in the past - use as-is (this is an old request)
+        error_log("DEBUG: Request date is in the past - using parsed request_date: " . $requestDate->format('Y-m-d H:i:s'));
+    }
+    
+    // Calculate expiry date - all subscriptions expire in 12 hours from request time
+    $expiryDate = clone $requestDate;
+    $expiryDate->add(new DateInterval('PT12H')); // 12 hours
+    $maxHours = 12;
+    
+    // CRITICAL: If request was made today, NEVER mark it as expired
+    // This prevents immediate expiration due to DATE column truncation issues
+    if ($isToday) {
+        // Request was made today - ensure it's never expired
+        // Force expiration to be 12 hours from now (with small buffer)
+        $requestDate = clone $now;
+        $requestDate->sub(new DateInterval('PT5M')); // Subtract 5 minutes for safety buffer
+        $expiryDate = clone $requestDate;
+        $expiryDate->add(new DateInterval('PT12H')); // 12 hours
+        $isExpired = false; // Force to false - requests made today are NEVER expired
+        $timeRemaining = $expiryDate->getTimestamp() - $now->getTimestamp();
+        $timeRemainingHours = round($timeRemaining / 3600, 1);
+        
+        // Ensure time remaining is reasonable (should be ~11.9 hours)
+        if ($timeRemainingHours < 0) {
+            $timeRemainingHours = 11.9; // Safety fallback
+        }
+        if ($timeRemainingHours > $maxHours) {
+            $timeRemainingHours = $maxHours;
+        }
+        
+        error_log("DEBUG: Request made today - FORCED to not expire. request_date = " . $requestDate->format('Y-m-d H:i:s') . ", expiry_date = " . $expiryDate->format('Y-m-d H:i:s') . ", now = " . $now->format('Y-m-d H:i:s') . ", isExpired = false (forced), timeRemainingHours = $timeRemainingHours");
+    } else {
+        // Request date is in the past - calculate expiration normally
+        $isExpired = $now > $expiryDate;
+        $timeRemaining = $isExpired ? 0 : $expiryDate->getTimestamp() - $now->getTimestamp();
+        $timeRemainingHours = round($timeRemaining / 3600, 1);
+        
+        // Log expiration calculation for debugging
+        error_log("DEBUG: plan_id=$plan_id, request_date = " . $requestDate->format('Y-m-d H:i:s') . ", expiry_date = " . $expiryDate->format('Y-m-d H:i:s') . ", now = " . $now->format('Y-m-d H:i:s') . ", isExpired = " . ($isExpired ? 'true' : 'false') . ", timeRemainingHours = $timeRemainingHours");
+        
+        // Safety check: Ensure time remaining doesn't exceed max hours
+        if ($timeRemainingHours > $maxHours) {
+            $timeRemainingHours = $maxHours;
+        }
+    }
     
     echo json_encode([
         "success" => true,
@@ -1564,7 +1980,7 @@ function getUserPendingRequest($pdo, $user_id) {
         "expiry_date" => $expiryDate->format('Y-m-d H:i:s'),
         "is_expired" => $isExpired,
         "time_remaining_seconds" => $timeRemaining,
-        "time_remaining_hours" => round($timeRemaining / 3600, 1)
+        "time_remaining_hours" => $timeRemainingHours
     ]);
 }
 

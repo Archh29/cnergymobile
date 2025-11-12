@@ -244,6 +244,30 @@ switch ($action) {
         }
         break;
 
+    case 'update-coach-availability':
+        if ($method === 'POST') {
+            updateCoachAvailability($pdo);
+        } else {
+            echo json_encode(['success' => false, 'message' => 'POST method required']);
+        }
+        break;
+
+    case 'get-coach-availability':
+        if ($method === 'GET' && isset($_GET['coach_id'])) {
+            getCoachAvailability($pdo, (int) $_GET['coach_id']);
+        } else {
+            echo json_encode(['success' => false, 'message' => 'Coach ID required']);
+        }
+        break;
+
+    case 'cancel-coach-request':
+        if ($method === 'POST') {
+            cancelCoachRequest($pdo);
+        } else {
+            echo json_encode(['success' => false, 'message' => 'POST method required']);
+        }
+        break;
+
     default:
         echo json_encode(['success' => false, 'message' => 'Invalid endpoint']);
         break;
@@ -1399,10 +1423,13 @@ function checkSessionAvailability($pdo, $userId, $coachId)
             $now = new DateTime();
         }
 
-        // Check if subscription is expired
-        if ($expirationDate && $now > $expirationDate) {
+        // Check if subscription is expired by date OR by sessions (for monthly plans with limited sessions)
+        $isExpiredByDate = $expirationDate && $now > $expirationDate;
+        $isExpiredBySessions = ($remainingSessions !== null && $remainingSessions <= 0);
+        
+        if ($isExpiredByDate || $isExpiredBySessions) {
             $canStartWorkout = false;
-            $reason = 'Subscription expired';
+            $reason = $isExpiredBySessions ? 'All sessions used' : 'Subscription expired';
             $subscriptionType = 'expired';
             $remainingSessions = 0;
         } else {
@@ -1418,15 +1445,24 @@ function checkSessionAvailability($pdo, $userId, $coachId)
                     $reason = "Session package active ($remainingSessions sessions)";
                 }
             } elseif ($rateType === 'monthly' || $monthlyRate) {
-                // Monthly subscription
+                // Monthly subscription - check if sessions are available
                 $subscriptionType = 'monthly';
-                $remainingSessions = 999; // Unlimited
-                $canStartWorkout = true;
-                if ($expirationDate) {
-                    $daysLeft = $now->diff($expirationDate)->days;
-                    $reason = "Monthly subscription active ($daysLeft days left)";
+                // Use actual remaining_sessions from database (not unlimited)
+                $remainingSessions = $remainingSessions !== null ? (int) $remainingSessions : 0;
+                
+                if ($remainingSessions > 0) {
+                    $canStartWorkout = true;
+                    if ($expirationDate) {
+                        $daysLeft = $now->diff($expirationDate)->days;
+                        $reason = "Monthly subscription active ($remainingSessions sessions, $daysLeft days left)";
+                    } else {
+                        $reason = "Monthly subscription active ($remainingSessions sessions)";
+                    }
                 } else {
-                    $reason = "Monthly subscription active";
+                    // Monthly plan but no sessions left
+                    $canStartWorkout = false;
+                    $reason = 'All sessions used';
+                    $subscriptionType = 'expired';
                 }
             } elseif ($rateType === 'hourly') {
                 // Hourly rate
@@ -1444,7 +1480,7 @@ function checkSessionAvailability($pdo, $userId, $coachId)
                 $subscriptionType = 'monthly';
                 $canStartWorkout = true;
                 $reason = 'Subscription active';
-                $remainingSessions = 999;
+                $remainingSessions = $remainingSessions !== null ? (int) $remainingSessions : 0;
             }
         }
 
@@ -1514,6 +1550,7 @@ function deductSession($pdo)
         $subscription = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if (!$subscription) {
+            error_log("DEBUG deductSession: No active subscription found for member_id=$memberId, coach_id=$coachId");
             echo json_encode([
                 'success' => false,
                 'message' => 'No active subscription found'
@@ -1521,12 +1558,16 @@ function deductSession($pdo)
             return;
         }
 
+        error_log("DEBUG deductSession: Found subscription - id={$subscription['id']}, remaining_sessions={$subscription['remaining_sessions']}, rate_type={$subscription['rate_type']}");
+
         $expiresAt = $subscription['expires_at'];
         $remainingSessions = $subscription['remaining_sessions'];
         $rateType = $subscription['rate_type'] ?? '';
         $sessionPackageRate = $subscription['session_package_rate'];
         $sessionPackageCount = $subscription['session_package_count'];
         $monthlyRate = $subscription['monthly_rate'];
+        
+        error_log("DEBUG deductSession: Before deduction - remaining_sessions=$remainingSessions, rate_type=$rateType");
 
         // Check if subscription is expired
         if ($expiresAt) {
@@ -1563,13 +1604,44 @@ function deductSession($pdo)
                 return;
             }
 
+            // Verify the record exists before updating
+            $verifyStmt = $pdo->prepare("
+                SELECT id, remaining_sessions, member_id, coach_id 
+                FROM coach_member_list 
+                WHERE id = ? AND member_id = ? AND coach_id = ?
+            ");
+            $verifyStmt->execute([$subscription['id'], $memberId, $coachId]);
+            $verifyRecord = $verifyStmt->fetch(PDO::FETCH_ASSOC);
+            
+            if (!$verifyRecord) {
+                error_log("ERROR deductSession: Record not found - id={$subscription['id']}, member_id=$memberId, coach_id=$coachId");
+                echo json_encode([
+                    'success' => false,
+                    'message' => 'Subscription record not found'
+                ]);
+                return;
+            }
+            
+            error_log("DEBUG deductSession: Verified record exists - id={$verifyRecord['id']}, current remaining_sessions={$verifyRecord['remaining_sessions']}");
+            
             // Deduct 1 session from the remaining_sessions in coach_member_list
+            // Use member_id and coach_id to ensure we update the correct record
             $updateStmt = $pdo->prepare("
                 UPDATE coach_member_list 
                 SET remaining_sessions = remaining_sessions - 1 
-                WHERE id = ? AND remaining_sessions > 0
+                WHERE id = ? 
+                AND member_id = ? 
+                AND coach_id = ?
+                AND remaining_sessions > 0
             ");
-            $updateStmt->execute([$subscription['id']]);
+            $updateStmt->execute([$subscription['id'], $memberId, $coachId]);
+            
+            error_log("DEBUG deductSession: Updated coach_member_list record id={$subscription['id']}, member_id=$memberId, coach_id=$coachId");
+            error_log("DEBUG deductSession: Row count after update: " . $updateStmt->rowCount());
+            
+            if ($updateStmt->rowCount() == 0) {
+                error_log("WARNING deductSession: Update affected 0 rows. Record may not match conditions or remaining_sessions is already 0.");
+            }
 
             if ($updateStmt->rowCount() > 0) {
                 // Record today's usage in the coach_session_usage table
@@ -1582,19 +1654,22 @@ function deductSession($pdo)
 
                 // Get updated remaining sessions
                 $remainingStmt = $pdo->prepare("
-                    SELECT remaining_sessions FROM coach_member_list WHERE id = ?
+                    SELECT remaining_sessions FROM coach_member_list 
+                    WHERE id = ? AND member_id = ? AND coach_id = ?
                 ");
-                $remainingStmt->execute([$subscription['id']]);
+                $remainingStmt->execute([$subscription['id'], $memberId, $coachId]);
                 $newRemainingSessions = $remainingStmt->fetchColumn();
+                
+                error_log("DEBUG deductSession (package): After deduction - new remaining_sessions=$newRemainingSessions");
 
                 // If no sessions left, update status to 'expired'
                 if ($newRemainingSessions <= 0) {
                     $statusUpdateStmt = $pdo->prepare("
                         UPDATE coach_member_list 
                         SET status = 'expired' 
-                        WHERE id = ?
+                        WHERE id = ? AND member_id = ? AND coach_id = ?
                     ");
-                    $statusUpdateStmt->execute([$subscription['id']]);
+                    $statusUpdateStmt->execute([$subscription['id'], $memberId, $coachId]);
                 }
 
                 echo json_encode([
@@ -1604,6 +1679,7 @@ function deductSession($pdo)
                     'already_used_today' => false
                 ]);
             } else {
+                error_log("DEBUG deductSession (package): Update failed - row count = 0. Check if record exists with id={$subscription['id']}, member_id=$memberId, coach_id=$coachId");
                 echo json_encode([
                     'success' => false,
                     'message' => 'No sessions remaining in package'
@@ -1611,12 +1687,101 @@ function deductSession($pdo)
             }
 
         } elseif ($rateType === 'monthly' || $monthlyRate) {
-            // Monthly subscription - no session deduction needed
-            echo json_encode([
-                'success' => true,
-                'message' => 'Monthly subscription - no session deduction needed',
-                'remaining_sessions' => 999
-            ]);
+            // Monthly subscription - deduct session if available
+            if ($remainingSessions === null || $remainingSessions <= 0) {
+                echo json_encode([
+                    'success' => false,
+                    'message' => 'No sessions remaining in monthly plan'
+                ]);
+                return;
+            }
+            
+            // Get today's date
+            $today = date('Y-m-d');
+            
+            // Verify the record exists before updating
+            $verifyStmt = $pdo->prepare("
+                SELECT id, remaining_sessions, member_id, coach_id 
+                FROM coach_member_list 
+                WHERE id = ? AND member_id = ? AND coach_id = ?
+            ");
+            $verifyStmt->execute([$subscription['id'], $memberId, $coachId]);
+            $verifyRecord = $verifyStmt->fetch(PDO::FETCH_ASSOC);
+            
+            if (!$verifyRecord) {
+                error_log("ERROR deductSession (monthly): Record not found - id={$subscription['id']}, member_id=$memberId, coach_id=$coachId");
+                echo json_encode([
+                    'success' => false,
+                    'message' => 'Subscription record not found'
+                ]);
+                return;
+            }
+            
+            error_log("DEBUG deductSession (monthly): Verified record exists - id={$verifyRecord['id']}, current remaining_sessions={$verifyRecord['remaining_sessions']}");
+            
+            // Deduct 1 session
+            // Use member_id and coach_id to ensure we update the correct record
+            $updateStmt = $pdo->prepare("
+                UPDATE coach_member_list 
+                SET remaining_sessions = remaining_sessions - 1,
+                    status = CASE 
+                        WHEN remaining_sessions - 1 <= 0 THEN 'expired'
+                        ELSE status 
+                    END
+                WHERE id = ?
+                AND member_id = ?
+                AND coach_id = ?
+            ");
+            $updateStmt->execute([$subscription['id'], $memberId, $coachId]);
+            
+            error_log("DEBUG deductSession (monthly): Updated coach_member_list record id={$subscription['id']}, member_id=$memberId, coach_id=$coachId");
+            error_log("DEBUG deductSession (monthly): Row count after update: " . $updateStmt->rowCount());
+            
+            if ($updateStmt->rowCount() == 0) {
+                error_log("WARNING deductSession (monthly): Update affected 0 rows. Record may not match conditions.");
+            }
+            
+            if ($updateStmt->rowCount() > 0) {
+                // Record today's usage in the coach_session_usage table
+                $usageStmt = $pdo->prepare("
+                    INSERT INTO coach_session_usage (coach_member_id, usage_date, created_at)
+                    VALUES (?, ?, NOW())
+                    ON DUPLICATE KEY UPDATE created_at = NOW()
+                ");
+                $usageStmt->execute([$subscription['id'], $today]);
+                
+                // Get updated remaining sessions
+                $remainingStmt = $pdo->prepare("
+                    SELECT remaining_sessions FROM coach_member_list 
+                    WHERE id = ? AND member_id = ? AND coach_id = ?
+                ");
+                $remainingStmt->execute([$subscription['id'], $memberId, $coachId]);
+                $newRemainingSessions = $remainingStmt->fetchColumn();
+                
+                error_log("DEBUG deductSession (monthly): After deduction - new remaining_sessions=$newRemainingSessions");
+                
+                // If no sessions left, update status to 'expired'
+                if ($newRemainingSessions <= 0) {
+                    $statusUpdateStmt = $pdo->prepare("
+                        UPDATE coach_member_list 
+                        SET status = 'expired' 
+                        WHERE id = ? AND member_id = ? AND coach_id = ?
+                    ");
+                    $statusUpdateStmt->execute([$subscription['id'], $memberId, $coachId]);
+                }
+                
+                echo json_encode([
+                    'success' => true,
+                    'message' => 'Session deducted successfully',
+                    'remaining_sessions' => (int) $newRemainingSessions,
+                    'already_used_today' => false
+                ]);
+            } else {
+                echo json_encode([
+                    'success' => false,
+                    'message' => 'No sessions remaining in monthly plan'
+                ]);
+            }
 
         } elseif ($rateType === 'hourly') {
             // Hourly rate - no session deduction needed
@@ -1686,35 +1851,30 @@ function getRemainingSessions($pdo, $userId, $coachId)
         $sessionPackageCount = $subscription['session_package_count'];
         $monthlyRate = $subscription['monthly_rate'];
 
-        // Check if subscription is expired
+        // Check if subscription is expired by date OR by sessions (for monthly plans with limited sessions)
+        $isExpiredByDate = false;
         if ($expiresAt) {
             $expirationDate = new DateTime($expiresAt);
             $now = new DateTime();
-
-            if ($now > $expirationDate) {
-                $remainingSessions = 0; // Expired
-            } else {
-                // Determine remaining sessions based on rate_type
-                if ($rateType === 'package' && $remainingSessions !== null) {
-                    $remainingSessions = $remainingSessions; // Use from coach_member_list
-                } elseif ($rateType === 'monthly' || $monthlyRate) {
-                    $remainingSessions = 999; // Unlimited
-                } elseif ($rateType === 'hourly') {
-                    $remainingSessions = 999; // Unlimited
-                } else {
-                    $remainingSessions = 999; // Default unlimited
-                }
-            }
+            $isExpiredByDate = $now > $expirationDate;
+        }
+        
+        $isExpiredBySessions = ($remainingSessions !== null && $remainingSessions <= 0);
+        
+        if ($isExpiredByDate || $isExpiredBySessions) {
+            $remainingSessions = 0; // Expired
         } else {
-            // No expiration date - determine based on rate_type
+            // Determine remaining sessions based on rate_type
             if ($rateType === 'package' && $remainingSessions !== null) {
-                $remainingSessions = $remainingSessions; // Use from coach_member_list
+                $remainingSessions = (int) $remainingSessions; // Use from coach_member_list
             } elseif ($rateType === 'monthly' || $monthlyRate) {
-                $remainingSessions = 999; // Unlimited
+                // Monthly plans have limited sessions (e.g., 18 sessions)
+                $remainingSessions = $remainingSessions !== null ? (int) $remainingSessions : 0;
             } elseif ($rateType === 'hourly') {
                 $remainingSessions = 999; // Unlimited
             } else {
-                $remainingSessions = 999; // Default unlimited
+                // Default - use actual remaining sessions
+                $remainingSessions = $remainingSessions !== null ? (int) $remainingSessions : 0;
             }
         }
 
@@ -1980,6 +2140,154 @@ function getRoutineExercises($pdo)
         echo json_encode([
             'success' => false,
             'message' => 'Error fetching routine exercises: ' . $e->getMessage()
+        ]);
+    }
+}
+
+function updateCoachAvailability($pdo)
+{
+    try {
+        $input = json_decode(file_get_contents('php://input'), true);
+        
+        if (!isset($input['coach_id']) || !isset($input['is_available'])) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'Coach ID and availability status are required'
+            ]);
+            return;
+        }
+        
+        $coachId = (int) $input['coach_id'];
+        $isAvailable = (bool) $input['is_available'];
+        
+        // Update coach availability in the coaches table
+        $stmt = $pdo->prepare("
+            UPDATE coaches 
+            SET is_available = ? 
+            WHERE user_id = ?
+        ");
+        $stmt->execute([$isAvailable ? 1 : 0, $coachId]);
+        
+        if ($stmt->rowCount() > 0) {
+            echo json_encode([
+                'success' => true,
+                'message' => 'Availability updated successfully',
+                'is_available' => $isAvailable
+            ]);
+        } else {
+            echo json_encode([
+                'success' => false,
+                'message' => 'Coach not found or no changes made'
+            ]);
+        }
+        
+    } catch (PDOException $e) {
+        error_log("Error in updateCoachAvailability: " . $e->getMessage());
+        echo json_encode([
+            'success' => false,
+            'message' => 'Error updating coach availability: ' . $e->getMessage()
+        ]);
+    }
+}
+
+function getCoachAvailability($pdo, $coachId)
+{
+    try {
+        $stmt = $pdo->prepare("
+            SELECT is_available 
+            FROM coaches 
+            WHERE user_id = ?
+        ");
+        $stmt->execute([$coachId]);
+        $result = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if ($result) {
+            echo json_encode([
+                'success' => true,
+                'is_available' => (bool) $result['is_available']
+            ]);
+        } else {
+            echo json_encode([
+                'success' => false,
+                'message' => 'Coach not found'
+            ]);
+        }
+        
+    } catch (PDOException $e) {
+        error_log("Error in getCoachAvailability: " . $e->getMessage());
+        echo json_encode([
+            'success' => false,
+            'message' => 'Error fetching coach availability: ' . $e->getMessage()
+        ]);
+    }
+}
+
+function cancelCoachRequest($pdo)
+{
+    try {
+        $input = json_decode(file_get_contents('php://input'), true);
+        
+        $userId = $input['user_id'] ?? null;
+        
+        if (!$userId) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'User ID is required'
+            ]);
+            return;
+        }
+        
+        // Find the pending request for this user
+        $stmt = $pdo->prepare("
+            SELECT id, coach_id, coach_approval, staff_approval, status
+            FROM coach_member_list
+            WHERE member_id = ? 
+            AND (coach_approval = 'pending' OR (coach_approval = 'approved' AND staff_approval = 'pending'))
+            AND status NOT IN ('rejected', 'completed', 'disconnected')
+            ORDER BY id DESC
+            LIMIT 1
+        ");
+        
+        $stmt->execute([$userId]);
+        $request = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if (!$request) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'No pending request found to cancel'
+            ]);
+            return;
+        }
+        
+        // Update the request to cancelled/rejected status
+        $updateStmt = $pdo->prepare("
+            UPDATE coach_member_list
+            SET coach_approval = 'rejected',
+                status = 'disconnected',
+                coach_approved_at = NULL,
+                staff_approved_at = NULL
+            WHERE id = ?
+        ");
+        
+        $result = $updateStmt->execute([$request['id']]);
+        
+        if ($result && $updateStmt->rowCount() > 0) {
+            echo json_encode([
+                'success' => true,
+                'message' => 'Coach request cancelled successfully'
+            ]);
+        } else {
+            echo json_encode([
+                'success' => false,
+                'message' => 'Failed to cancel request'
+            ]);
+        }
+        
+    } catch (PDOException $e) {
+        error_log("Error in cancelCoachRequest: " . $e->getMessage());
+        echo json_encode([
+            'success' => false,
+            'message' => 'Database error: ' . $e->getMessage()
         ]);
     }
 }

@@ -78,6 +78,11 @@ class HomeService {
             result['today_workout'] = TodayWorkout.fromJson(data['data']['todayWorkout']);
           }
           
+          // Add gym capacity data if available
+          if (data['data']['gymCapacity'] != null) {
+            result['gymCapacity'] = GymCapacity.fromJson(data['data']['gymCapacity']);
+          }
+          
           return result;
         } else {
           throw Exception('API returned success: false - ${data['error'] ?? 'Unknown error'}');
@@ -94,6 +99,7 @@ class HomeService {
         'promotions': <PromotionItem>[],
         'today_workout': null,
         'weekly_schedule': <WeeklyScheduleItem>[],
+        'gymCapacity': null,
       };
     }
   }
@@ -205,6 +211,32 @@ class PromotionItem {
       startDate: json['startDate'],
       endDate: json['endDate'],
       createdAt: json['createdAt'],
+    );
+  }
+}
+
+class GymCapacity {
+  final int currentCount;
+  final int maxCapacity;
+  final int availableSpots;
+  final bool isFull;
+  final int percentage;
+
+  GymCapacity({
+    required this.currentCount,
+    required this.maxCapacity,
+    required this.availableSpots,
+    required this.isFull,
+    required this.percentage,
+  });
+
+  factory GymCapacity.fromJson(Map<String, dynamic> json) {
+    return GymCapacity(
+      currentCount: json['currentCount'] ?? 0,
+      maxCapacity: json['maxCapacity'] ?? 30,
+      availableSpots: json['availableSpots'] ?? 30,
+      isFull: json['isFull'] ?? false,
+      percentage: json['percentage'] ?? 0,
     );
   }
 }

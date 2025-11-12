@@ -386,42 +386,6 @@ class _CoachMessagesPageState extends State<CoachMessagesPage> {
                           letterSpacing: 0.3,
                         ),
                       ),
-                      SizedBox(height: 2),
-                      Row(
-                        children: [
-                          Container(
-                            width: 8,
-                            height: 8,
-                            decoration: BoxDecoration(
-                              color: widget.selectedMember!.hasActiveSubscription 
-                                  ? Colors.green[400] 
-                                  : Colors.grey[400],
-                              shape: BoxShape.circle,
-                              boxShadow: [
-                                BoxShadow(
-                                  color: (widget.selectedMember!.hasActiveSubscription 
-                                      ? Colors.green 
-                                      : Colors.grey).withOpacity(0.5),
-                                  blurRadius: 4,
-                                  offset: Offset(0, 2),
-                                ),
-                              ],
-                            ),
-                          ),
-                          SizedBox(width: 6),
-                          Text(
-                            widget.selectedMember!.hasActiveSubscription ? 'ACTIVE' : 'INACTIVE',
-                            style: GoogleFonts.poppins(
-                              color: widget.selectedMember!.hasActiveSubscription 
-                                  ? Colors.green[400] 
-                                  : Colors.grey[400],
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                        ],
-                      ),
                     ],
                   ),
                 ),

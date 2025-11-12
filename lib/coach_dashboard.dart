@@ -10,9 +10,9 @@ import './Coach/coach_profile_page.dart';
 import './Coach/coach_progress_page.dart';
 import './Coach/coach_routine_page.dart';
 import './Coach/coach_schedule_page.dart';
-import './Coach/session_management_page.dart';
 import './Coach/coach_create_program_page.dart';
 import './Coach/coach_workout_preview_page.dart';
+import './Coach/coach_analytics_page.dart';
 import './Coach/models/member_model.dart';
 import './Coach/services/coach_service.dart';
 import './User/services/auth_service.dart';
@@ -58,12 +58,6 @@ class _CoachDashboardState extends State<CoachDashboard> with TickerProviderStat
       activeIcon: Icons.people,
       label: 'Members',
       color: Color(0xFF45B7D1),
-    ),
-    NavigationItem(
-      icon: Icons.timer_outlined,
-      activeIcon: Icons.timer,
-      label: 'Sessions',
-      color: Color(0xFF4ECDC4),
     ),
     NavigationItem(
       icon: Icons.person_outline,
@@ -147,9 +141,18 @@ class _CoachDashboardState extends State<CoachDashboard> with TickerProviderStat
 
   Future<void> _loadSelectedIndex() async {
     final prefs = await SharedPreferences.getInstance();
+    final savedIndex = prefs.getInt('coach_selectedIndex') ?? 0;
+    // Ensure the saved index is valid (we now have 5 tabs: 0-4)
+    final validIndex = savedIndex >= 0 && savedIndex < _navigationItems.length 
+        ? savedIndex 
+        : 0;
     setState(() {
-      _selectedIndex = prefs.getInt('coach_selectedIndex') ?? 0;
+      _selectedIndex = validIndex;
     });
+    // If the saved index was invalid, update it
+    if (savedIndex != validIndex) {
+      await _saveSelectedIndex(validIndex);
+    }
   }
 
   Future<void> _saveSelectedIndex(int index) async {
@@ -238,7 +241,6 @@ class _CoachDashboardState extends State<CoachDashboard> with TickerProviderStat
           onMemberSelected: _onMemberSelected,
           isLoading: isLoadingMembers,
         ),
-        _buildNoMembersAssignedPrompt('sessions'),
         CoachProfilePage(),
       ];
     }
@@ -255,7 +257,6 @@ class _CoachDashboardState extends State<CoachDashboard> with TickerProviderStat
           onMemberSelected: _onMemberSelected,
           isLoading: isLoadingMembers,
         ),
-        _buildSelectMemberPrompt(),
         CoachProfilePage(),
       ];
     }
@@ -271,7 +272,6 @@ class _CoachDashboardState extends State<CoachDashboard> with TickerProviderStat
         onMemberSelected: _onMemberSelected,
         isLoading: isLoadingMembers,
       ),
-      SessionManagementPage(selectedMember: selectedMember!),
       CoachProfilePage(),
     ];
   }
@@ -459,16 +459,55 @@ class _CoachDashboardState extends State<CoachDashboard> with TickerProviderStat
         ],
       ),
       actions: [
+        // Revenue/Sales Icon
+        Container(
+          margin: EdgeInsets.only(right: isSmallScreen ? 4 : 8),
+          child: IconButton(
+            icon: Container(
+              padding: EdgeInsets.all(isSmallScreen ? 6 : 8),
+              decoration: BoxDecoration(
+                color: Color(0xFF1A1A1A),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                Icons.trending_up,
+                color: Color(0xFF4ECDC4),
+                size: isSmallScreen ? 16 : 20,
+              ),
+            ),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => CoachAnalyticsPage(),
+                ),
+              );
+            },
+            padding: EdgeInsets.all(isSmallScreen ? 4 : 8),
+            constraints: BoxConstraints(
+              minWidth: isSmallScreen ? 32 : 40,
+              minHeight: isSmallScreen ? 32 : 40,
+            ),
+          ),
+        ),
+        // Notification Icon
         Container(
           margin: EdgeInsets.only(right: isSmallScreen ? 8 : 16), // Responsive margin
           child: IconButton(
             onPressed: _showNotificationsDialog,
             icon: Stack(
               children: [
-                Icon(
-                  Icons.notifications_outlined,
-                  color: Colors.white,
-                  size: isSmallScreen ? 20 : 24, // Responsive icon size
+                Container(
+                  padding: EdgeInsets.all(isSmallScreen ? 6 : 8),
+                  decoration: BoxDecoration(
+                    color: Color(0xFF1A1A1A),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    Icons.notifications_outlined,
+                    color: Colors.white,
+                    size: isSmallScreen ? 16 : 20, // Responsive icon size
+                  ),
                 ),
                 if (_hasNotifications)
                   Positioned(
@@ -484,6 +523,11 @@ class _CoachDashboardState extends State<CoachDashboard> with TickerProviderStat
                     ),
                   ),
               ],
+            ),
+            padding: EdgeInsets.all(isSmallScreen ? 4 : 8),
+            constraints: BoxConstraints(
+              minWidth: isSmallScreen ? 32 : 40,
+              minHeight: isSmallScreen ? 32 : 40,
             ),
           ),
         ),
@@ -645,12 +689,6 @@ class _CoachDashboardState extends State<CoachDashboard> with TickerProviderStat
         iconColor = Color(0xFF9B59B6);
         title = 'No Schedule Available';
         message = 'You don\'t have any members assigned yet. Once members are assigned to you, you\'ll be able to manage their schedule here.';
-        break;
-      case 'sessions':
-        icon = Icons.timer_outlined;
-        iconColor = Color(0xFF4ECDC4);
-        title = 'No Sessions Available';
-        message = 'You don\'t have any members assigned yet. Once members are assigned to you, you\'ll be able to track their workout sessions here.';
         break;
       default:
         icon = Icons.people_outline;

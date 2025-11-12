@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'models/exercise_selection_model.dart';
 import 'services/routine_services.dart';
-import 'services/exercises_selection_service.dart'; // Corrected import
 import 'services/enhanced_muscle_group_service.dart'; // New service for primary parts logic
 import 'package:gym/User/exercise_selection_page.dart'; // Assuming this is the correct path to your ExerciseSelectionPage
 
@@ -13,6 +12,7 @@ class MuscleGroupSelectionPage extends StatefulWidget {
   final dynamic existingRoutine; // RoutineModel for editing
   final bool isProMember;
   final int currentRoutineCount;
+  final String? difficulty; // Optional difficulty level (Beginner, Intermediate, Advanced)
 
   const MuscleGroupSelectionPage({
     Key? key,
@@ -22,6 +22,7 @@ class MuscleGroupSelectionPage extends StatefulWidget {
     this.existingRoutine,
     this.isProMember = false,
     this.currentRoutineCount = 0,
+    this.difficulty,
   }) : super(key: key);
 
   @override
@@ -204,151 +205,6 @@ class _MuscleGroupSelectionPageState extends State<MuscleGroupSelectionPage> {
     return '${percentage.toStringAsFixed(1)}%';
   }
 
-  // Show info dialog explaining how percentages work
-  void _showPercentageInfo(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          backgroundColor: Color(0xFF1A1A1A),
-          title: Row(
-            children: [
-              Icon(Icons.info_outline, color: Colors.blue, size: 24),
-              SizedBox(width: 8),
-                Text(
-                  'How Muscle Group Completion Works',
-                  style: GoogleFonts.poppins(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-            ],
-          ),
-          content: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'Each muscle group is made up of several primary muscle parts. The percentage shows how many of these primary parts are being targeted by your selected exercises.',
-                  style: GoogleFonts.poppins(
-                    color: Colors.white70,
-                    fontSize: 14,
-                  ),
-                ),
-                SizedBox(height: 12),
-                Text(
-                  'Only exercises that target muscles as "primary" are counted. Secondary and stabilizer muscles are ignored.',
-                  style: GoogleFonts.poppins(
-                    color: Colors.orange,
-                    fontSize: 12,
-                    fontStyle: FontStyle.italic,
-                  ),
-                ),
-                SizedBox(height: 16),
-                Container(
-                  padding: EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Color(0xFF2A2A2A),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.blue.withOpacity(0.3)),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Example: Arms Muscle Group',
-                        style: GoogleFonts.poppins(
-                          color: Colors.blue,
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      SizedBox(height: 8),
-                      Text(
-                        'Primary Parts: Biceps, Triceps, Forearms (3 total)\n\nSelected Exercises:\n• Barbell Curl (hits Biceps)\n• Tricep Extension (hits Triceps)',
-                        style: GoogleFonts.poppins(
-                          color: Colors.white70,
-                          fontSize: 12,
-                        ),
-                      ),
-                      SizedBox(height: 8),
-                      Text(
-                        'Result: 2/3 = 66.7% completion',
-                        style: GoogleFonts.poppins(
-                          color: Colors.green,
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                SizedBox(height: 16),
-                Text(
-                  'The percentage shows how many primary muscle parts are being targeted within each muscle group.',
-                  style: GoogleFonts.poppins(
-                    color: Colors.white70,
-                    fontSize: 12,
-                    fontStyle: FontStyle.italic,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: Text(
-                'Got it!',
-                style: GoogleFonts.poppins(
-                  color: Colors.blue,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _buildInfoRow(String role, String points, Color color) {
-    return Padding(
-      padding: EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
-          Container(
-            width: 12,
-            height: 12,
-            decoration: BoxDecoration(
-              color: color,
-              shape: BoxShape.circle,
-            ),
-          ),
-          SizedBox(width: 12),
-          Text(
-            role,
-            style: GoogleFonts.poppins(
-              color: Colors.white,
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          Spacer(),
-          Text(
-            points,
-            style: GoogleFonts.poppins(
-              color: color,
-              fontSize: 14,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -385,8 +241,8 @@ class _MuscleGroupSelectionPageState extends State<MuscleGroupSelectionPage> {
         actions: [
           IconButton(
             icon: Icon(Icons.info_outline, color: Colors.white70),
-            onPressed: () => _showPercentageInfo(context),
-            tooltip: 'How percentages work',
+            onPressed: () => _showMusclePartsStatusModal(context),
+            tooltip: 'View muscle parts status',
           ),
           if (selectedExercises.isNotEmpty)
             TextButton(
@@ -443,8 +299,6 @@ class _MuscleGroupSelectionPageState extends State<MuscleGroupSelectionPage> {
                     },
                   ),
                 ),
-                // Muscle Parts Status Section
-                if (selectedExercises.isNotEmpty) _buildMusclePartsStatusCard(),
               ],
             ),
           ),
@@ -546,6 +400,7 @@ class _MuscleGroupSelectionPageState extends State<MuscleGroupSelectionPage> {
           muscleGroup: muscle,
           selectedColor: widget.selectedColor,
           currentSelections: selectedExercises, // IMPORTANT: Pass the GLOBAL list
+          difficulty: widget.difficulty,
         ),
       ),
     );
@@ -562,7 +417,12 @@ class _MuscleGroupSelectionPageState extends State<MuscleGroupSelectionPage> {
     }
   }
 
-  Widget _buildMusclePartsStatusCard() {
+  // Show muscle parts status in a modal
+  void _showMusclePartsStatusModal(BuildContext context) {
+    final isSmallScreen = MediaQuery.of(context).size.width < 600;
+    final screenHeight = MediaQuery.of(context).size.height;
+    final screenWidth = MediaQuery.of(context).size.width;
+    
     // Get all muscle groups that have exercises
     final muscleGroupsWithExercises = muscleGroups.where((muscle) {
       final completionPercentage = _getMuscleGroupCompletionPercentage(muscle.name);
@@ -570,79 +430,511 @@ class _MuscleGroupSelectionPageState extends State<MuscleGroupSelectionPage> {
     }).toList();
 
     if (muscleGroupsWithExercises.isEmpty) {
-      return SizedBox.shrink();
-    }
-
-    return Container(
-      margin: EdgeInsets.all(20),
-      padding: EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Color(0xFF1A1A1A),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: widget.selectedColor.withOpacity(0.3),
-          width: 1,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                Icons.info_outline,
-                color: widget.selectedColor,
-                size: 20,
+      // Show a message if no exercises are selected
+      showDialog(
+        context: context,
+        barrierDismissible: true,
+        builder: (BuildContext context) {
+          return Dialog(
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            child: Container(
+              margin: EdgeInsets.symmetric(
+                horizontal: isSmallScreen ? 16 : 20,
+                vertical: isSmallScreen ? 20 : 40,
               ),
-              SizedBox(width: 8),
-              Text(
-                'Muscle Parts Status',
-                style: GoogleFonts.poppins(
-                  color: Colors.white,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
+              constraints: BoxConstraints(
+                maxWidth: isSmallScreen ? screenWidth * 0.9 : 400,
               ),
-            ],
-          ),
-          SizedBox(height: 12),
-          ...muscleGroupsWithExercises.map((muscle) {
-            final musclePartsStatus = _getMusclePartsStatus(muscle.name);
-            if (musclePartsStatus.isEmpty) return SizedBox.shrink();
-            
-            return Container(
-              margin: EdgeInsets.only(bottom: 8),
-              padding: EdgeInsets.all(12),
+              padding: EdgeInsets.all(isSmallScreen ? 20 : 24),
               decoration: BoxDecoration(
-                color: Color(0xFF2A2A2A),
-                borderRadius: BorderRadius.circular(8),
+                gradient: LinearGradient(
+                  colors: [
+                    Color(0xFF1A1A1A),
+                    Color(0xFF0F0F0F),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(
+                  color: widget.selectedColor.withOpacity(0.3),
+                  width: 2,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.5),
+                    blurRadius: 30,
+                    offset: Offset(0, 15),
+                  ),
+                  BoxShadow(
+                    color: widget.selectedColor.withOpacity(0.1),
+                    blurRadius: 20,
+                    offset: Offset(0, 5),
+                  ),
+                ],
               ),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    muscle.name,
-                    style: GoogleFonts.poppins(
+                  // Icon
+                  Container(
+                    width: 64,
+                    height: 64,
+                    decoration: BoxDecoration(
+                      color: widget.selectedColor.withOpacity(0.2),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.info_outline,
                       color: widget.selectedColor,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
+                      size: 32,
                     ),
                   ),
-                  SizedBox(height: 4),
+                  SizedBox(height: 20),
+                  // Title
                   Text(
-                    musclePartsStatus,
+                    'Muscle Parts Status',
+                    style: GoogleFonts.poppins(
+                      color: Colors.white,
+                      fontSize: isSmallScreen ? 20 : 24,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  SizedBox(height: 16),
+                  // Message
+                  Text(
+                    'No exercises selected yet. Select some exercises to see which muscle parts are being targeted.',
                     style: GoogleFonts.poppins(
                       color: Colors.grey[300],
-                      fontSize: 12,
-                      height: 1.3,
+                      fontSize: isSmallScreen ? 14 : 15,
+                      height: 1.5,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  SizedBox(height: 24),
+                  // Close Button
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: widget.selectedColor,
+                        foregroundColor: Colors.white,
+                        padding: EdgeInsets.symmetric(vertical: isSmallScreen ? 14 : 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        elevation: 0,
+                      ),
+                      child: Text(
+                        'Got it',
+                        style: GoogleFonts.poppins(
+                          fontSize: isSmallScreen ? 15 : 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                     ),
                   ),
                 ],
               ),
-            );
-          }).toList(),
-        ],
-      ),
+            ),
+          );
+        },
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (BuildContext context) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          child: Container(
+            constraints: BoxConstraints(
+              maxHeight: screenHeight * 0.85,
+              maxWidth: isSmallScreen ? screenWidth * 0.95 : screenWidth * 0.6,
+            ),
+            margin: EdgeInsets.symmetric(
+              horizontal: isSmallScreen ? 10 : 20,
+              vertical: isSmallScreen ? 10 : 20,
+            ),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  Color(0xFF1A1A1A),
+                  Color(0xFF0F0F0F),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(
+                color: widget.selectedColor.withOpacity(0.3),
+                width: 2,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.5),
+                  blurRadius: 30,
+                  offset: Offset(0, 15),
+                ),
+                BoxShadow(
+                  color: widget.selectedColor.withOpacity(0.1),
+                  blurRadius: 20,
+                  offset: Offset(0, 5),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Header
+                Container(
+                  padding: EdgeInsets.all(isSmallScreen ? 20 : 24),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        widget.selectedColor.withOpacity(0.1),
+                        Colors.transparent,
+                      ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.only(
+                      topLeft: Radius.circular(24),
+                      topRight: Radius.circular(24),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: widget.selectedColor.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(
+                          Icons.info_outline,
+                          color: widget.selectedColor,
+                          size: 24,
+                        ),
+                      ),
+                      SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Muscle Parts Status',
+                              style: GoogleFonts.poppins(
+                                color: Colors.white,
+                                fontSize: isSmallScreen ? 20 : 22,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            SizedBox(height: 4),
+                            Text(
+                              '${muscleGroupsWithExercises.length} muscle group${muscleGroupsWithExercises.length != 1 ? 's' : ''} targeted',
+                              style: GoogleFonts.poppins(
+                                color: Colors.grey[400],
+                                fontSize: isSmallScreen ? 12 : 13,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: Container(
+                          padding: EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.grey[800]!.withOpacity(0.5),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Icon(Icons.close, color: Colors.grey[400], size: 20),
+                        ),
+                        onPressed: () => Navigator.of(context).pop(),
+                        tooltip: 'Close',
+                      ),
+                    ],
+                  ),
+                ),
+                // Content
+                Flexible(
+                  child: SingleChildScrollView(
+                    padding: EdgeInsets.all(isSmallScreen ? 20 : 24),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          padding: EdgeInsets.all(isSmallScreen ? 14 : 16),
+                          decoration: BoxDecoration(
+                            color: widget.selectedColor.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: widget.selectedColor.withOpacity(0.2),
+                              width: 1,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.lightbulb_outline,
+                                color: widget.selectedColor,
+                                size: 20,
+                              ),
+                              SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  'Here\'s which muscle parts are being targeted by your selected exercises.',
+                                  style: GoogleFonts.poppins(
+                                    color: Colors.grey[300],
+                                    fontSize: isSmallScreen ? 13 : 14,
+                                    height: 1.5,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        SizedBox(height: 20),
+                        ...muscleGroupsWithExercises.map((muscle) {
+                          final musclePartsStatus = _getMusclePartsStatus(muscle.name);
+                          if (musclePartsStatus.isEmpty) return SizedBox.shrink();
+                          
+                          final completionPercentage = _getMuscleGroupCompletionPercentage(muscle.name);
+                          
+                          return Container(
+                            margin: EdgeInsets.only(bottom: 16),
+                            padding: EdgeInsets.all(isSmallScreen ? 16 : 18),
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [
+                                  Color(0xFF2A2A2A),
+                                  Color(0xFF1F1F1F),
+                                ],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                              ),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: widget.selectedColor.withOpacity(0.3),
+                                width: 1.5,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.3),
+                                  blurRadius: 10,
+                                  offset: Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        muscle.name,
+                                        style: GoogleFonts.poppins(
+                                          color: widget.selectedColor,
+                                          fontSize: isSmallScreen ? 17 : 18,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                    Container(
+                                      padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                      decoration: BoxDecoration(
+                                        color: widget.selectedColor.withOpacity(0.2),
+                                        borderRadius: BorderRadius.circular(20),
+                                      ),
+                                      child: Text(
+                                        '${completionPercentage.toStringAsFixed(0)}%',
+                                        style: GoogleFonts.poppins(
+                                          color: widget.selectedColor,
+                                          fontSize: isSmallScreen ? 13 : 14,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                SizedBox(height: 16),
+                                // Parse and display hit/missed parts separately
+                                ..._parseMusclePartsStatus(musclePartsStatus, isSmallScreen),
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                      ],
+                    ),
+                  ),
+                ),
+                // Footer
+                Container(
+                  padding: EdgeInsets.all(isSmallScreen ? 16 : 20),
+                  decoration: BoxDecoration(
+                    color: Color(0xFF1A1A1A).withOpacity(0.8),
+                    borderRadius: BorderRadius.only(
+                      bottomLeft: Radius.circular(24),
+                      bottomRight: Radius.circular(24),
+                    ),
+                  ),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: widget.selectedColor,
+                        foregroundColor: Colors.white,
+                        padding: EdgeInsets.symmetric(vertical: isSmallScreen ? 14 : 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        elevation: 0,
+                      ),
+                      child: Text(
+                        'Close',
+                        style: GoogleFonts.poppins(
+                          fontSize: isSmallScreen ? 15 : 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
+  }
+
+  // Parse muscle parts status string into widgets
+  List<Widget> _parseMusclePartsStatus(String status, bool isSmallScreen) {
+    List<Widget> widgets = [];
+    
+    if (status.isEmpty) return widgets;
+    
+    final lines = status.split('\n');
+    for (var line in lines) {
+      if (line.startsWith('Hit:')) {
+        final parts = line.replaceFirst('Hit:', '').trim();
+        widgets.add(
+          Container(
+            margin: EdgeInsets.only(bottom: 12),
+            padding: EdgeInsets.all(isSmallScreen ? 12 : 14),
+            decoration: BoxDecoration(
+              color: Colors.green.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: Colors.green.withOpacity(0.3),
+                width: 1,
+              ),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withOpacity(0.2),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(Icons.check_circle, color: Colors.green, size: isSmallScreen ? 18 : 20),
+                ),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Hit',
+                        style: GoogleFonts.poppins(
+                          color: Colors.green,
+                          fontSize: isSmallScreen ? 12 : 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      SizedBox(height: 4),
+                      Text(
+                        parts,
+                        style: GoogleFonts.poppins(
+                          color: Colors.grey[300],
+                          fontSize: isSmallScreen ? 13 : 14,
+                          height: 1.4,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      } else if (line.startsWith('Missed:')) {
+        final parts = line.replaceFirst('Missed:', '').trim();
+        widgets.add(
+          Container(
+            margin: EdgeInsets.only(bottom: 12),
+            padding: EdgeInsets.all(isSmallScreen ? 12 : 14),
+            decoration: BoxDecoration(
+              color: Colors.orange.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: Colors.orange.withOpacity(0.3),
+                width: 1,
+              ),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withOpacity(0.2),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(Icons.info_outline, color: Colors.orange, size: isSmallScreen ? 18 : 20),
+                ),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Missed',
+                        style: GoogleFonts.poppins(
+                          color: Colors.orange,
+                          fontSize: isSmallScreen ? 12 : 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      SizedBox(height: 4),
+                      Text(
+                        parts,
+                        style: GoogleFonts.poppins(
+                          color: Colors.grey[300],
+                          fontSize: isSmallScreen ? 13 : 14,
+                          height: 1.4,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }
+    }
+    
+    return widgets;
   }
 }

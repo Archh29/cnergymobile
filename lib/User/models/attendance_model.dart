@@ -99,6 +99,10 @@ class AttendanceResponse {
   final String action;
   final AttendanceModel? data;
   final String? error;
+  final String? userName;
+  final String? guestName;
+  final String? checkInTime;
+  final String? checkOutTime;
 
   AttendanceResponse({
     required this.success,
@@ -106,6 +110,10 @@ class AttendanceResponse {
     this.action = '',
     this.data,
     this.error,
+    this.userName,
+    this.guestName,
+    this.checkInTime,
+    this.checkOutTime,
   });
 
   factory AttendanceResponse.fromJson(Map<String, dynamic> json) {
@@ -115,6 +123,10 @@ class AttendanceResponse {
       action: json['action'] ?? '',
       data: json['data'] != null ? AttendanceModel.fromJson(json['data']) : null,
       error: json['error'],
+      userName: json['user_name'],
+      guestName: json['guest_name'],
+      checkInTime: json['check_in_time'],
+      checkOutTime: json['check_out_time'],
     );
   }
 }

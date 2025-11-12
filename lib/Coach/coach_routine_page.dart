@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'dart:convert';
 import './models/member_model.dart';
 import './models/routine.models.dart';
+import './models/exercise_model.dart';
 import './models/program_template_model.dart';
 import '../User/models/routine.models.dart' as UserModels;
 import './services/coach_service.dart';
@@ -120,9 +122,20 @@ class _CoachRoutinePageState extends State<CoachRoutinePage> with SingleTickerPr
         return;
       }
       
+      // Remove duplicate members by ID
+      final uniqueMembers = <int, MemberModel>{};
+      for (var member in members) {
+        if (!uniqueMembers.containsKey(member.id)) {
+          uniqueMembers[member.id] = member;
+        } else {
+          print('⚠️ DEBUG: Duplicate member found and removed: ID=${member.id}, Name=${member.fullName}');
+        }
+      }
+      final finalMembers = uniqueMembers.values.toList();
+      
       print('🔄 DEBUG: Setting state with loaded data');
       setState(() {
-        assignedMembers = members;
+        assignedMembers = finalMembers;
         memberRoutines = routines;
         programTemplates = templates;
         isLoading = false;
@@ -1571,13 +1584,7 @@ class _CoachRoutinePageState extends State<CoachRoutinePage> with SingleTickerPr
               ),
               onTap: () {
                 Navigator.pop(context);
-                // TODO: Implement template editing
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Template editing coming soon!'),
-                    backgroundColor: Colors.orange,
-                  ),
-                );
+                _editTemplate(template);
               },
             ),
             ListTile(
@@ -1595,6 +1602,181 @@ class _CoachRoutinePageState extends State<CoachRoutinePage> with SingleTickerPr
           ],
         ),
       ),
+    );
+  }
+
+  void _editTemplate(Map<String, dynamic> template) async {
+    try {
+      // Show loading
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => Center(
+          child: CircularProgressIndicator(
+            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF4ECDC4)),
+          ),
+        ),
+      );
+
+      // Fetch template details with exercises
+      final templateId = template['id']?.toString();
+      if (templateId == null) {
+        Navigator.pop(context); // Close loading
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: Template ID not found'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      // Try to fetch full template details with exercises
+      Map<String, dynamic> fullTemplate = template;
+      try {
+        fullTemplate = await RoutineService.getTemplateDetails(templateId);
+      } catch (e) {
+        print('⚠️ Could not fetch template details, using existing data: $e');
+        // Use existing template data if fetch fails
+      }
+
+      Navigator.pop(context); // Close loading
+
+      // Convert template Map to RoutineModel
+      final routineModel = _convertTemplateToRoutineModel(fullTemplate);
+
+      // Navigate to edit page
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => CoachCreateRoutinePage(
+            isTemplate: true,
+            selectedColor: Color(int.parse(template['color'] ?? '4288073396')),
+            editingRoutine: routineModel,
+          ),
+        ),
+      ).then((result) {
+        if (result == true) {
+          _loadCoachTemplates(); // Refresh templates
+        }
+      });
+    } catch (e) {
+      if (Navigator.of(context).canPop()) {
+        Navigator.pop(context); // Close loading if still open
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error loading template: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  RoutineModel _convertTemplateToRoutineModel(Map<String, dynamic> template) {
+    // Parse color first (needed for exercises)
+    final color = template['color']?.toString() ?? '4288073396';
+    
+    // Parse difficulty
+    RoutineDifficulty difficulty;
+    final difficultyStr = (template['difficulty'] ?? 'Beginner').toString().toLowerCase();
+    switch (difficultyStr) {
+      case 'intermediate':
+        difficulty = RoutineDifficulty.intermediate;
+        break;
+      case 'advanced':
+        difficulty = RoutineDifficulty.advanced;
+        break;
+      case 'expert':
+        difficulty = RoutineDifficulty.expert;
+        break;
+      default:
+        difficulty = RoutineDifficulty.beginner;
+    }
+
+    // Parse exercises from template
+    List<ExerciseModel> exercises = [];
+    
+    // Try to get exercises from different possible fields
+    if (template['exercises'] != null && template['exercises'] is List) {
+      exercises = (template['exercises'] as List).map((e) {
+        try {
+          if (e is Map<String, dynamic>) {
+            // Map API fields to ExerciseModel format
+            return ExerciseModel(
+              id: e['id'] is int ? e['id'] : int.tryParse(e['id']?.toString() ?? '0'),
+              name: e['name'] ?? '',
+              targetSets: e['target_sets'] ?? e['sets'] ?? 3,
+              targetReps: (e['target_reps'] ?? e['reps'] ?? '10').toString(),
+              targetWeight: (e['target_weight'] ?? e['weight'] ?? '0').toString(),
+              restTime: e['rest_time'] ?? 60,
+              category: 'Strength',
+              difficulty: template['difficulty'] ?? 'Beginner',
+              color: color,
+              targetMuscle: e['target_muscle'] ?? '',
+              description: e['description'] ?? '',
+              imageUrl: e['image_url'] ?? '',
+            );
+          }
+        } catch (ex) {
+          print('⚠️ Error parsing exercise: $ex');
+        }
+        return null;
+      }).whereType<ExerciseModel>().toList();
+    }
+    
+    // If no exercises found, try parsing from workout_details
+    if (exercises.isEmpty && template['workout_details'] != null) {
+      try {
+        final workoutDetails = template['workout_details'];
+        Map<String, dynamic>? workoutData;
+        
+        if (workoutDetails is String) {
+          workoutData = json.decode(workoutDetails) as Map<String, dynamic>?;
+        } else if (workoutDetails is Map<String, dynamic>) {
+          workoutData = workoutDetails;
+        }
+        
+        if (workoutData != null && workoutData['exercises'] != null && workoutData['exercises'] is List) {
+          exercises = (workoutData['exercises'] as List).map((e) {
+            try {
+              if (e is Map<String, dynamic>) {
+                return ExerciseModel.fromJson(e);
+              }
+            } catch (ex) {
+              print('⚠️ Error parsing exercise from workout_details: $ex');
+            }
+            return null;
+          }).whereType<ExerciseModel>().toList();
+        }
+      } catch (e) {
+        print('⚠️ Error parsing workout_details: $e');
+      }
+    }
+
+    // Parse created date
+    DateTime createdDate;
+    try {
+      createdDate = DateTime.parse(template['created_at'] ?? DateTime.now().toIso8601String());
+    } catch (e) {
+      createdDate = DateTime.now();
+    }
+
+    return RoutineModel(
+      id: template['id']?.toString() ?? '',
+      name: template['name'] ?? template['workout_name'] ?? 'Untitled Template',
+      description: template['description'] ?? template['notes'] ?? '',
+      difficulty: difficulty,
+      exercises: template['exercise_count'] ?? exercises.length,
+      duration: template['duration']?.toString() ?? '30',
+      exerciseList: exercises.isNotEmpty ? exercises.map((e) => e.name).join(', ') : '',
+      createdBy: 'coach',
+      color: color,
+      notes: template['notes'] ?? '',
+      tags: List<String>.from(template['tags'] ?? []),
+      goal: template['goal'] ?? 'General Fitness',
+      createdDate: createdDate,
+      detailedExercises: exercises.isNotEmpty ? exercises : null,
     );
   }
 

@@ -6,14 +6,10 @@ import 'package:get/get.dart';
 import 'walk_in_registration_screen.dart';
 import 'package:flutter/gestures.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:google_fonts/google_fonts.dart';
 import './User/services/auth_service.dart';
 import 'user_dashboard.dart';
-import 'account_verification_page.dart';
-import 'account_deactivated_page.dart';
 import 'coach_dashboard.dart'; // Import CoachDashboard
-import 'first_time_setup_screen.dart';
 import 'welcome_onboarding_screen.dart';
 // import 'walk_in_registration_screen.dart'; // Import WalkInRegistrationScreen - File deleted
 
@@ -241,8 +237,8 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
               }
               break;
             case 'rejected':
-              // Show rejection dialog and logout
-              _showAccountRejectedDialog();
+              // Show rejection dialog with contact support
+              _showRejectedAccountDialog(emailController.text.trim());
               break;
             case 'pending':
             default:
@@ -286,55 +282,262 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     }
   }
 
-  void _showAccountRejectedDialog() {
+
+  // Show dialog for deactivated accounts with contact support option
+  void _showDeactivatedAccountDialog() {
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (BuildContext context) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          title: Row(
-            children: [
-              Icon(
-                Icons.cancel_outlined,
-                color: Colors.red,
-                size: 28,
+        final String loginEmail = emailController.text.trim();
+        final TextEditingController emailControllerDialog = TextEditingController(text: loginEmail);
+        final TextEditingController subjectController = TextEditingController(text: 'Account Deactivation');
+        final TextEditingController messageController = TextEditingController();
+        bool isSending = false;
+
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              backgroundColor: const Color(0xFF1A1A1A),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              title: Row(
+                children: [
+                  Icon(Icons.block, color: Colors.red, size: 28),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Account Deactivated',
+                      style: GoogleFonts.poppins(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 12),
-              Text(
-                'Account Rejected',
-                style: GoogleFonts.poppins(
-                  fontWeight: FontWeight.w600,
-                  color: Colors.red,
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Your account has been deactivated by the administrators. If you believe this is an error or need assistance, please contact support.',
+                      style: GoogleFonts.poppins(
+                        color: Colors.grey[300],
+                        fontSize: 14,
+                        height: 1.5,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    TextField(
+                      controller: emailControllerDialog,
+                      keyboardType: TextInputType.emailAddress,
+                      style: GoogleFonts.poppins(color: Colors.white),
+                      decoration: InputDecoration(
+                        labelText: 'Email',
+                        labelStyle: GoogleFonts.poppins(color: Colors.grey[400]),
+                        filled: true,
+                        fillColor: const Color(0xFF0F0F0F),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: Colors.grey[700]!),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: Colors.grey[700]!),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: Color(0xFFFF6B35)),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: subjectController,
+                      style: GoogleFonts.poppins(color: Colors.white),
+                      decoration: InputDecoration(
+                        labelText: 'Subject',
+                        labelStyle: GoogleFonts.poppins(color: Colors.grey[400]),
+                        filled: true,
+                        fillColor: const Color(0xFF0F0F0F),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: Colors.grey[700]!),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: Colors.grey[700]!),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: Color(0xFFFF6B35)),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: messageController,
+                      maxLines: 5,
+                      style: GoogleFonts.poppins(color: Colors.white),
+                      decoration: InputDecoration(
+                        labelText: 'Message (Optional)',
+                        labelStyle: GoogleFonts.poppins(color: Colors.grey[400]),
+                        hintText: 'Explain your situation...',
+                        hintStyle: GoogleFonts.poppins(color: Colors.grey[600]),
+                        filled: true,
+                        fillColor: const Color(0xFF0F0F0F),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: Colors.grey[700]!),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: Colors.grey[700]!),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: Color(0xFFFF6B35)),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ],
-          ),
-          content: Text(
-            'Your account verification has been rejected. Please contact our staff for more information or create a new account.',
-            style: GoogleFonts.poppins(
-              fontSize: 14,
-              color: Colors.black87,
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () async {
-                Navigator.of(context).pop();
-                await AuthService.logout();
-                // Stay on login screen - no navigation needed
-              },
-              child: Text(
-                'OK',
-                style: GoogleFonts.poppins(
-                  fontWeight: FontWeight.w600,
-                  color: const Color(0xFFFF6B35),
+              actions: [
+                TextButton(
+                  onPressed: isSending ? null : () => Navigator.pop(context),
+                  child: Text(
+                    'Cancel',
+                    style: GoogleFonts.poppins(color: Colors.grey[400]),
+                  ),
                 ),
-              ),
-            ),
-          ],
+                ElevatedButton(
+                  onPressed: isSending ? null : () async {
+                    // Validate email
+                    final email = emailControllerDialog.text.trim();
+                    if (email.isEmpty) {
+                      Get.snackbar(
+                        'Error',
+                        'Please enter your email address',
+                        snackPosition: SnackPosition.BOTTOM,
+                        backgroundColor: Colors.red,
+                        colorText: Colors.white,
+                      );
+                      return;
+                    }
+                    
+                    // Basic email validation
+                    if (!email.contains('@') || !email.contains('.')) {
+                      Get.snackbar(
+                        'Error',
+                        'Please enter a valid email address',
+                        snackPosition: SnackPosition.BOTTOM,
+                        backgroundColor: Colors.red,
+                        colorText: Colors.white,
+                      );
+                      return;
+                    }
+                    
+                    setDialogState(() => isSending = true);
+                    
+                    try {
+                      final response = await http.post(
+                        Uri.parse('https://api.cnergy.site/support_tickets.php'),
+                        headers: {'Content-Type': 'application/json'},
+                        body: jsonEncode({
+                          'action': 'create_ticket',
+                          'email': email,
+                          'subject': subjectController.text.trim(),
+                          'description': messageController.text.trim().isEmpty 
+                            ? 'My account has been deactivated. Please help reactivate my account.'
+                            : messageController.text.trim(),
+                          'source': 'mobile_app_deactivation',
+                        }),
+                      );
+
+                      // Check response status
+                      if (response.statusCode != 200) {
+                        throw Exception('Server returned status ${response.statusCode}: ${response.body}');
+                      }
+
+                      // Try to parse JSON response
+                      dynamic responseData;
+                      try {
+                        responseData = jsonDecode(response.body);
+                      } catch (e) {
+                        throw Exception('Invalid JSON response: ${response.body}');
+                      }
+                      
+                      if (mounted) {
+                        setDialogState(() => isSending = false);
+                        
+                        if (responseData['success'] == true) {
+                          final ticketNumber = responseData['ticket']?['ticket_number'] ?? responseData['ticket_number'];
+                          final message = ticketNumber != null
+                              ? 'Support ticket created successfully! Ticket: $ticketNumber'
+                              : 'Support ticket created successfully! We will review your case.';
+                          
+                          Navigator.pop(context);
+                          
+                          Get.snackbar(
+                            'Success',
+                            message,
+                            snackPosition: SnackPosition.BOTTOM,
+                            backgroundColor: Colors.green,
+                            colorText: Colors.white,
+                            duration: const Duration(seconds: 4),
+                          );
+                        } else {
+                          Get.snackbar(
+                            'Error',
+                            responseData['error'] ?? responseData['message'] ?? 'Failed to create ticket. Please try again.',
+                            snackPosition: SnackPosition.BOTTOM,
+                            backgroundColor: Colors.red,
+                            colorText: Colors.white,
+                            duration: const Duration(seconds: 4),
+                          );
+                        }
+                      }
+                    } catch (e) {
+                      if (mounted) {
+                        setDialogState(() => isSending = false);
+                        print('Support request error: $e'); // Debug print
+                        Get.snackbar(
+                          'Error',
+                          e.toString().contains('Invalid JSON') || e.toString().contains('Server returned')
+                            ? 'Failed to create ticket. Please try again later.'
+                            : 'Network error. Please check your connection.',
+                          snackPosition: SnackPosition.BOTTOM,
+                          backgroundColor: Colors.red,
+                          colorText: Colors.white,
+                          duration: const Duration(seconds: 4),
+                        );
+                      }
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFFF6B35),
+                    foregroundColor: Colors.white,
+                  ),
+                  child: isSending
+                    ? SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                        ),
+                      )
+                    : Text(
+                        'Contact Support',
+                        style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+                      ),
+                ),
+              ],
+            );
+          },
         );
       },
     );
@@ -380,12 +583,10 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
 
       // Handle deactivated account (403 status)
       if (response.statusCode == 403 && data.containsKey("account_status") && data["account_status"] == "deactivated") {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (context) => AccountDeactivatedPage(),
-          ),
-        );
+        setState(() {
+          isLoading = false;
+        });
+        _showDeactivatedAccountDialog();
         return;
       }
 
@@ -402,7 +603,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
             });
             
             // Calculate time remaining if deadline is provided
-            String deadlineMessage = "Please visit the front desk for verification to access the app.";
+            String deadlineMessage = "Your account verification is pending. Please visit the front desk to complete verification and gain access to the application.";
             if (data.containsKey("verification_deadline") && data["verification_deadline"] != null) {
               try {
                 final deadline = DateTime.parse(data["verification_deadline"]);
@@ -410,18 +611,18 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                 final difference = deadline.difference(now);
                 
                 if (difference.isNegative) {
-                  deadlineMessage = "⚠️ Your verification period has expired. Please create a new account.";
+                  deadlineMessage = "Your verification period has expired. Please create a new account to continue.";
                 } else {
                   final daysLeft = difference.inDays;
                   final hoursLeft = difference.inHours.remainder(24);
                   final minutesLeft = difference.inMinutes.remainder(60);
                   
                   if (daysLeft > 0) {
-                    deadlineMessage = "⏰ $daysLeft day${daysLeft > 1 ? 's' : ''} left. Please visit the front desk for verification to access the app.";
+                    deadlineMessage = "You have $daysLeft day${daysLeft > 1 ? 's' : ''} remaining to complete verification. Please visit the front desk to verify your account and access the application.";
                   } else if (hoursLeft > 0) {
-                    deadlineMessage = "⏰ $hoursLeft hour${hoursLeft > 1 ? 's' : ''} left. Please visit the front desk for verification to access the app.";
+                    deadlineMessage = "You have $hoursLeft hour${hoursLeft > 1 ? 's' : ''} remaining to complete verification. Please visit the front desk to verify your account and access the application.";
                   } else {
-                    deadlineMessage = "⏰ $minutesLeft minute${minutesLeft > 1 ? 's' : ''} left. Please visit the front desk for verification to access the app.";
+                    deadlineMessage = "You have $minutesLeft minute${minutesLeft > 1 ? 's' : ''} remaining to complete verification. Please visit the front desk to verify your account and access the application.";
                   }
                 }
               } catch (e) {
@@ -454,12 +655,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
             setState(() {
               isLoading = false;
             });
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(
-                builder: (context) => AccountDeactivatedPage(),
-              ),
-            );
+            _showDeactivatedAccountDialog();
             return;
           }
         }
@@ -560,7 +756,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
         // Handle 401 Unauthorized - check for pending account status
         if (data.containsKey("account_status")) {
           if (data["account_status"] == "pending") {
-            String deadlineMessage = "Please visit the front desk for verification to access the app.";
+            String deadlineMessage = "Your account verification is pending. Please visit the front desk to complete verification and gain access to the application.";
             if (data.containsKey("verification_deadline") && data["verification_deadline"] != null) {
               try {
                 final deadline = DateTime.parse(data["verification_deadline"]);
@@ -568,18 +764,18 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                 final difference = deadline.difference(now);
                 
                 if (difference.isNegative) {
-                  deadlineMessage = "⚠️ Your verification period has expired. Please create a new account.";
+                  deadlineMessage = "Your verification period has expired. Please create a new account to continue.";
                 } else {
                   final daysLeft = difference.inDays;
                   final hoursLeft = difference.inHours.remainder(24);
                   final minutesLeft = difference.inMinutes.remainder(60);
                   
                   if (daysLeft > 0) {
-                    deadlineMessage = "⏰ $daysLeft day${daysLeft > 1 ? 's' : ''} left. Please visit the front desk for verification to access the app.";
+                    deadlineMessage = "You have $daysLeft day${daysLeft > 1 ? 's' : ''} remaining to complete verification. Please visit the front desk to verify your account and access the application.";
                   } else if (hoursLeft > 0) {
-                    deadlineMessage = "⏰ $hoursLeft hour${hoursLeft > 1 ? 's' : ''} left. Please visit the front desk for verification to access the app.";
+                    deadlineMessage = "You have $hoursLeft hour${hoursLeft > 1 ? 's' : ''} remaining to complete verification. Please visit the front desk to verify your account and access the application.";
                   } else {
-                    deadlineMessage = "⏰ $minutesLeft minute${minutesLeft > 1 ? 's' : ''} left. Please visit the front desk for verification to access the app.";
+                    deadlineMessage = "You have $minutesLeft minute${minutesLeft > 1 ? 's' : ''} remaining to complete verification. Please visit the front desk to verify your account and access the application.";
                   }
                 }
               } catch (e) {
@@ -681,6 +877,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       context: context,
       barrierDismissible: false,
       builder: (BuildContext context) {
+        final TextEditingController emailControllerDialog = TextEditingController(text: email);
         final TextEditingController subjectController = TextEditingController(text: 'Account Verification Expired');
         final TextEditingController messageController = TextEditingController();
         bool isSending = false;
@@ -720,6 +917,30 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                       ),
                     ),
                     const SizedBox(height: 20),
+                    TextField(
+                      controller: emailControllerDialog,
+                      keyboardType: TextInputType.emailAddress,
+                      style: GoogleFonts.poppins(color: Colors.white),
+                      decoration: InputDecoration(
+                        labelText: 'Email',
+                        labelStyle: GoogleFonts.poppins(color: Colors.grey[400]),
+                        filled: true,
+                        fillColor: const Color(0xFF0F0F0F),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: Colors.grey[700]!),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: Colors.grey[700]!),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: Color(0xFFFF6B35)),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
                     TextField(
                       controller: subjectController,
                       style: GoogleFonts.poppins(color: Colors.white),
@@ -781,19 +1002,45 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                 ),
                 ElevatedButton(
                   onPressed: isSending ? null : () async {
+                    // Validate email
+                    final email = emailControllerDialog.text.trim();
+                    if (email.isEmpty) {
+                      Get.snackbar(
+                        'Error',
+                        'Please enter your email address',
+                        snackPosition: SnackPosition.BOTTOM,
+                        backgroundColor: Colors.red,
+                        colorText: Colors.white,
+                      );
+                      return;
+                    }
+                    
+                    // Basic email validation
+                    if (!email.contains('@') || !email.contains('.')) {
+                      Get.snackbar(
+                        'Error',
+                        'Please enter a valid email address',
+                        snackPosition: SnackPosition.BOTTOM,
+                        backgroundColor: Colors.red,
+                        colorText: Colors.white,
+                      );
+                      return;
+                    }
+                    
                     setDialogState(() => isSending = true);
                     
                     try {
                       final response = await http.post(
-                        Uri.parse('https://api.cnergy.site/contact_support.php'),
+                        Uri.parse('https://api.cnergy.site/support_tickets.php'),
                         headers: {'Content-Type': 'application/json'},
                         body: jsonEncode({
-                          'action': 'send_support_email',
+                          'action': 'create_ticket',
                           'email': email,
                           'subject': subjectController.text.trim(),
-                          'message': messageController.text.trim().isEmpty 
+                          'description': messageController.text.trim().isEmpty 
                             ? 'My account verification has expired. Please help reactivate my account.'
                             : messageController.text.trim(),
+                          'source': 'mobile_app_rejection',
                         }),
                       );
 
@@ -811,20 +1058,34 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                       }
                       
                       if (mounted) {
-                        Navigator.pop(context);
+                        setDialogState(() => isSending = false);
                         
-                        Get.snackbar(
-                          responseData['success'] == true ? 'Success' : 'Error',
-                          responseData['success'] == true 
-                            ? 'Support request sent! We will review your case.'
-                            : (responseData['message'] ?? 'Failed to send request. Please try again.'),
-                          snackPosition: SnackPosition.BOTTOM,
-                          backgroundColor: responseData['success'] == true 
-                            ? Colors.green 
-                            : Colors.red,
-                          colorText: Colors.white,
-                          duration: const Duration(seconds: 4),
-                        );
+                        if (responseData['success'] == true) {
+                          final ticketNumber = responseData['ticket']?['ticket_number'] ?? responseData['ticket_number'];
+                          final message = ticketNumber != null
+                              ? 'Support ticket created successfully! Ticket: $ticketNumber'
+                              : 'Support ticket created successfully! We will review your case.';
+                          
+                          Navigator.pop(context);
+                          
+                          Get.snackbar(
+                            'Success',
+                            message,
+                            snackPosition: SnackPosition.BOTTOM,
+                            backgroundColor: Colors.green,
+                            colorText: Colors.white,
+                            duration: const Duration(seconds: 4),
+                          );
+                        } else {
+                          Get.snackbar(
+                            'Error',
+                            responseData['error'] ?? responseData['message'] ?? 'Failed to create ticket. Please try again.',
+                            snackPosition: SnackPosition.BOTTOM,
+                            backgroundColor: Colors.red,
+                            colorText: Colors.white,
+                            duration: const Duration(seconds: 4),
+                          );
+                        }
                       }
                     } catch (e) {
                       if (mounted) {
@@ -833,12 +1094,12 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                         Get.snackbar(
                           'Error',
                           e.toString().contains('Invalid JSON') || e.toString().contains('Server returned')
-                            ? e.toString().split(':').last.trim()
-                            : 'Failed to send support request. Please check your connection and try again.',
+                            ? 'Failed to create ticket. Please try again later.'
+                            : 'Network error. Please check your connection.',
                           snackPosition: SnackPosition.BOTTOM,
                           backgroundColor: Colors.red,
                           colorText: Colors.white,
-                          duration: const Duration(seconds: 5),
+                          duration: const Duration(seconds: 4),
                         );
                       }
                     }

@@ -224,7 +224,7 @@
              SELECT 
                  s.*,
                  msp.plan_name,
-                 msp.price,
+                 msp.price as original_price,
                  msp.duration_months,
                  msp.duration_days,
                  ss.status_name,
@@ -262,23 +262,153 @@
              $subscriptionHistoryStmt->execute([$userId]);
              $allSubscriptions = $subscriptionHistoryStmt->fetchAll(PDO::FETCH_ASSOC);
              
-            // Get current subscription (most recent approved one with latest end date)
+             // Calculate periods and total duration for each subscription
+             foreach ($allSubscriptions as &$sub) {
+                 $periods = 1;
+                 $originalPrice = floatval($sub['original_price'] ?? 0);
+                 $amountPaid = floatval($sub['amount_paid'] ?? 0);
+                 
+                 if ($originalPrice > 0) {
+                     $periods = round($amountPaid / $originalPrice);
+                     if ($periods < 1) $periods = 1;
+                 }
+                 
+                 $sub['periods'] = $periods;
+                 
+                 // Calculate total duration based on periods
+                 $baseDurationMonths = intval($sub['duration_months'] ?? 0);
+                 $baseDurationDays = intval($sub['duration_days'] ?? 0);
+                 
+                 if ($baseDurationDays > 0) {
+                     $sub['total_duration_days'] = $baseDurationDays * $periods;
+                     $sub['total_duration_months'] = 0;
+                 } else {
+                     $sub['total_duration_months'] = $baseDurationMonths * $periods;
+                     $sub['total_duration_days'] = 0;
+                 }
+             }
+             unset($sub); // Break reference
+             
+            // Get current subscription using the SAME logic as subscription_plans.php
+            // Filter active subscriptions directly in SQL using CURDATE() (same as getAvailablePlansForUser)
+            $activeSubscriptionsStmt = $pdo->prepare("
+                SELECT 
+                    s.*,
+                    msp.plan_name,
+                    msp.price as original_price,
+                    msp.duration_months,
+                    msp.duration_days,
+                    ss.status_name
+                FROM subscription s
+                JOIN subscription_status ss ON s.status_id = ss.id
+                JOIN member_subscription_plan msp ON s.plan_id = msp.id
+                WHERE s.user_id = ? 
+                AND ss.status_name = 'approved' 
+                AND s.end_date >= CURDATE()
+                ORDER BY s.start_date DESC
+            ");
+            $activeSubscriptionsStmt->execute([$userId]);
+            $activeSubscriptions = $activeSubscriptionsStmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            error_log("DEBUG getSubscriptionHistory: Found " . count($activeSubscriptions) . " active subscriptions (using SQL filter with CURDATE())");
+            foreach ($activeSubscriptions as $idx => $sub) {
+                error_log("DEBUG getSubscriptionHistory: Active Subscription #$idx - ID: {$sub['id']}, Plan ID: {$sub['plan_id']}, Plan Name: {$sub['plan_name']}, Start: {$sub['start_date']}, End: {$sub['end_date']}");
+            }
+            
+            // Calculate periods and total duration for each active subscription
+            foreach ($activeSubscriptions as &$sub) {
+                $periods = 1;
+                $originalPrice = floatval($sub['original_price'] ?? 0);
+                $amountPaid = floatval($sub['amount_paid'] ?? 0);
+                
+                if ($originalPrice > 0) {
+                    $periods = round($amountPaid / $originalPrice);
+                    if ($periods < 1) $periods = 1;
+                }
+                
+                $sub['periods'] = $periods;
+                
+                // Calculate total duration based on periods
+                $baseDurationMonths = intval($sub['duration_months'] ?? 0);
+                $baseDurationDays = intval($sub['duration_days'] ?? 0);
+                
+                if ($baseDurationDays > 0) {
+                    $sub['total_duration_days'] = $baseDurationDays * $periods;
+                    $sub['total_duration_months'] = 0;
+                } else {
+                    $sub['total_duration_months'] = $baseDurationMonths * $periods;
+                    $sub['total_duration_days'] = 0;
+                }
+            }
+            unset($sub); // Break reference
+            
+            // Prioritize active subscriptions: Day Pass (plan_id 6) > Monthly Access (plan_id 2, 3) > Membership (plan_id 1)
             $currentSubscription = null;
-            $latestEndDate = null;
-            foreach ($allSubscriptions as $sub) {
-                // Only get active subscriptions (approved status AND end_date >= today)
-                if ($sub['status_name'] === 'approved' && $sub['end_date'] > date('Y-m-d')) {
-                    // Additional check: ensure subscription hasn't expired
-                    $endDateTime = new DateTime($sub['end_date']);
-                    $now = new DateTime();
-                    
-                    if ($endDateTime > $now) {
-                        // Select the subscription with the latest end date (most recent/active)
-                        if ($latestEndDate === null || $sub['end_date'] > $latestEndDate) {
-                            $currentSubscription = $sub;
-                            $latestEndDate = $sub['end_date'];
-                        }
+            $dayPassSubscription = null;
+            $monthlySubscription = null;
+            $membershipSubscription = null;
+            
+            foreach ($activeSubscriptions as $sub) {
+                $planId = intval($sub['plan_id']);
+                
+                // Categorize active subscriptions by plan type
+                if ($planId == 6) {
+                    // Day Pass - prioritize most recent
+                    if ($dayPassSubscription === null || $sub['start_date'] > $dayPassSubscription['start_date']) {
+                        $dayPassSubscription = $sub;
                     }
+                } elseif ($planId == 2 || $planId == 3) {
+                    // Monthly Access - prioritize most recent
+                    if ($monthlySubscription === null || $sub['start_date'] > $monthlySubscription['start_date']) {
+                        $monthlySubscription = $sub;
+                    }
+                } elseif ($planId == 1) {
+                    // Membership - prioritize most recent
+                    if ($membershipSubscription === null || $sub['start_date'] > $membershipSubscription['start_date']) {
+                        $membershipSubscription = $sub;
+                    }
+                }
+            }
+            
+            // Select subscription based on priority: Day Pass > Monthly > Membership
+            error_log("DEBUG getSubscriptionHistory: Active subscriptions found - Day Pass: " . ($dayPassSubscription ? "YES (ID: {$dayPassSubscription['id']}, Plan: {$dayPassSubscription['plan_name']})" : "NO") . ", Monthly: " . ($monthlySubscription ? "YES (ID: {$monthlySubscription['id']}, Plan: {$monthlySubscription['plan_name']})" : "NO") . ", Membership: " . ($membershipSubscription ? "YES (ID: {$membershipSubscription['id']}, Plan: {$membershipSubscription['plan_name']})" : "NO"));
+            
+            if ($dayPassSubscription !== null) {
+                $currentSubscription = $dayPassSubscription;
+                error_log("DEBUG getSubscriptionHistory: Selected Day Pass subscription (ID: {$currentSubscription['id']}, Plan: {$currentSubscription['plan_name']})");
+            } elseif ($monthlySubscription !== null) {
+                $currentSubscription = $monthlySubscription;
+                error_log("DEBUG getSubscriptionHistory: Selected Monthly subscription (ID: {$currentSubscription['id']}, Plan: {$currentSubscription['plan_name']})");
+            } elseif ($membershipSubscription !== null) {
+                $currentSubscription = $membershipSubscription;
+                error_log("DEBUG getSubscriptionHistory: Selected Membership subscription (ID: {$currentSubscription['id']}, Plan: {$currentSubscription['plan_name']})");
+            } else {
+                error_log("DEBUG getSubscriptionHistory: No active subscription found");
+            }
+            
+            // Calculate periods and total duration for current subscription if it exists
+            if ($currentSubscription) {
+                $periods = 1;
+                $originalPrice = floatval($currentSubscription['original_price'] ?? 0);
+                $amountPaid = floatval($currentSubscription['amount_paid'] ?? 0);
+                
+                if ($originalPrice > 0) {
+                    $periods = round($amountPaid / $originalPrice);
+                    if ($periods < 1) $periods = 1;
+                }
+                
+                $currentSubscription['periods'] = $periods;
+                
+                // Calculate total duration based on periods
+                $baseDurationMonths = intval($currentSubscription['duration_months'] ?? 0);
+                $baseDurationDays = intval($currentSubscription['duration_days'] ?? 0);
+                
+                if ($baseDurationDays > 0) {
+                    $currentSubscription['total_duration_days'] = $baseDurationDays * $periods;
+                    $currentSubscription['total_duration_months'] = 0;
+                } else {
+                    $currentSubscription['total_duration_months'] = $baseDurationMonths * $periods;
+                    $currentSubscription['total_duration_days'] = 0;
                 }
             }
              
@@ -406,17 +536,18 @@
             
             
         // Get ALL subscription history (not just current)
+        // Use the SAME query structure as subscription_plans.php for consistency
         $subscriptionStmt = $pdo->prepare("
             SELECT 
                 s.*,
                 msp.plan_name,
-                msp.price,
+                msp.price as original_price,
                 msp.duration_months,
                 msp.duration_days,
                 ss.status_name,
                 CASE 
-                    WHEN ss.status_name = 'approved' AND s.end_date > CURDATE() THEN 'Active'
-                    WHEN ss.status_name = 'approved' AND s.end_date <= CURDATE() THEN 'Expired'
+                    WHEN ss.status_name = 'approved' AND s.end_date >= CURDATE() THEN 'Active'
+                    WHEN ss.status_name = 'approved' AND s.end_date < CURDATE() THEN 'Expired'
                     WHEN ss.status_name = 'pending_approval' THEN 'Pending Staff Approval'
                     WHEN ss.status_name = 'rejected' THEN 'Rejected by Staff'
                     WHEN ss.status_name = 'cancelled' THEN 'Cancelled'
@@ -440,26 +571,162 @@
             $subscriptionStmt->execute([$userId]);
             $allSubscriptions = $subscriptionStmt->fetchAll(PDO::FETCH_ASSOC);
             
+            // Debug: Log all subscriptions found
+            error_log("DEBUG getCurrentSubscription: Found " . count($allSubscriptions) . " total subscriptions for user $userId");
+            foreach ($allSubscriptions as $idx => $sub) {
+                error_log("DEBUG getCurrentSubscription: Subscription #$idx - ID: {$sub['id']}, Plan ID: {$sub['plan_id']}, Plan Name: {$sub['plan_name']}, Status: {$sub['status_name']}, Start: {$sub['start_date']}, End: {$sub['end_date']}");
+            }
+            
+            // Calculate periods and total duration for each subscription
+            foreach ($allSubscriptions as &$sub) {
+                $periods = 1;
+                $originalPrice = floatval($sub['original_price'] ?? 0);
+                $amountPaid = floatval($sub['amount_paid'] ?? 0);
+                
+                if ($originalPrice > 0) {
+                    $periods = round($amountPaid / $originalPrice);
+                    if ($periods < 1) $periods = 1;
+                }
+                
+                $sub['periods'] = $periods;
+                
+                // Calculate total duration based on periods
+                $baseDurationMonths = intval($sub['duration_months'] ?? 0);
+                $baseDurationDays = intval($sub['duration_days'] ?? 0);
+                
+                if ($baseDurationDays > 0) {
+                    $sub['total_duration_days'] = $baseDurationDays * $periods;
+                    $sub['total_duration_months'] = 0;
+                } else {
+                    $sub['total_duration_months'] = $baseDurationMonths * $periods;
+                    $sub['total_duration_days'] = 0;
+                }
+            }
+            unset($sub); // Break reference
+            
             // Note: plan_id 5 (combination package) now creates separate subscriptions for plan_id 1 and 2
             // So we show all active subscriptions together
             
-            // Get current subscription (most recent approved one with latest end date)
+            // Get current subscription using the SAME logic as subscription_plans.php
+            // Filter active subscriptions directly in SQL using CURDATE() (same as getAvailablePlansForUser)
+            $activeSubscriptionsStmt = $pdo->prepare("
+                SELECT 
+                    s.*,
+                    msp.plan_name,
+                    msp.price as original_price,
+                    msp.duration_months,
+                    msp.duration_days,
+                    ss.status_name
+                FROM subscription s
+                JOIN subscription_status ss ON s.status_id = ss.id
+                JOIN member_subscription_plan msp ON s.plan_id = msp.id
+                WHERE s.user_id = ? 
+                AND ss.status_name = 'approved' 
+                AND s.end_date >= CURDATE()
+                ORDER BY s.start_date DESC
+            ");
+            $activeSubscriptionsStmt->execute([$userId]);
+            $activeSubscriptions = $activeSubscriptionsStmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            error_log("DEBUG getCurrentSubscription: Found " . count($activeSubscriptions) . " active subscriptions (using SQL filter with CURDATE())");
+            foreach ($activeSubscriptions as $idx => $sub) {
+                error_log("DEBUG getCurrentSubscription: Active Subscription #$idx - ID: {$sub['id']}, Plan ID: {$sub['plan_id']}, Plan Name: {$sub['plan_name']}, Start: {$sub['start_date']}, End: {$sub['end_date']}");
+            }
+            
+            // Calculate periods and total duration for each active subscription
+            foreach ($activeSubscriptions as &$sub) {
+                $periods = 1;
+                $originalPrice = floatval($sub['original_price'] ?? 0);
+                $amountPaid = floatval($sub['amount_paid'] ?? 0);
+                
+                if ($originalPrice > 0) {
+                    $periods = round($amountPaid / $originalPrice);
+                    if ($periods < 1) $periods = 1;
+                }
+                
+                $sub['periods'] = $periods;
+                
+                // Calculate total duration based on periods
+                $baseDurationMonths = intval($sub['duration_months'] ?? 0);
+                $baseDurationDays = intval($sub['duration_days'] ?? 0);
+                
+                if ($baseDurationDays > 0) {
+                    $sub['total_duration_days'] = $baseDurationDays * $periods;
+                    $sub['total_duration_months'] = 0;
+                } else {
+                    $sub['total_duration_months'] = $baseDurationMonths * $periods;
+                    $sub['total_duration_days'] = 0;
+                }
+            }
+            unset($sub); // Break reference
+            
+            // Prioritize active subscriptions: Day Pass (plan_id 6) > Monthly Access (plan_id 2, 3) > Membership (plan_id 1)
             $subscription = null;
-            $latestEndDate = null;
-            foreach ($allSubscriptions as $sub) {
-                // Only get active subscriptions (approved status AND end_date >= today)
-                if ($sub['status_name'] === 'approved' && $sub['end_date'] > date('Y-m-d')) {
-                    // Additional check: ensure subscription hasn't expired
-                    $endDateTime = new DateTime($sub['end_date']);
-                    $now = new DateTime();
-                    
-                    if ($endDateTime > $now) {
-                        // Select the subscription with the latest end date (most recent/active)
-                        if ($latestEndDate === null || $sub['end_date'] > $latestEndDate) {
-                            $subscription = $sub;
-                            $latestEndDate = $sub['end_date'];
-                        }
+            $dayPassSubscription = null;
+            $monthlySubscription = null;
+            $membershipSubscription = null;
+            
+            foreach ($activeSubscriptions as $sub) {
+                $planId = intval($sub['plan_id']);
+                
+                // Categorize active subscriptions by plan type
+                if ($planId == 6) {
+                    // Day Pass - prioritize most recent
+                    if ($dayPassSubscription === null || $sub['start_date'] > $dayPassSubscription['start_date']) {
+                        $dayPassSubscription = $sub;
                     }
+                } elseif ($planId == 2 || $planId == 3) {
+                    // Monthly Access - prioritize most recent
+                    if ($monthlySubscription === null || $sub['start_date'] > $monthlySubscription['start_date']) {
+                        $monthlySubscription = $sub;
+                    }
+                } elseif ($planId == 1) {
+                    // Membership - prioritize most recent
+                    if ($membershipSubscription === null || $sub['start_date'] > $membershipSubscription['start_date']) {
+                        $membershipSubscription = $sub;
+                    }
+                }
+            }
+            
+            // Select subscription based on priority: Day Pass > Monthly > Membership
+            error_log("DEBUG getCurrentSubscription: Active subscriptions found - Day Pass: " . ($dayPassSubscription ? "YES (ID: {$dayPassSubscription['id']}, Plan: {$dayPassSubscription['plan_name']})" : "NO") . ", Monthly: " . ($monthlySubscription ? "YES (ID: {$monthlySubscription['id']}, Plan: {$monthlySubscription['plan_name']})" : "NO") . ", Membership: " . ($membershipSubscription ? "YES (ID: {$membershipSubscription['id']}, Plan: {$membershipSubscription['plan_name']})" : "NO"));
+            
+            if ($dayPassSubscription !== null) {
+                $subscription = $dayPassSubscription;
+                error_log("DEBUG getCurrentSubscription: Selected Day Pass subscription (ID: {$subscription['id']}, Plan: {$subscription['plan_name']})");
+            } elseif ($monthlySubscription !== null) {
+                $subscription = $monthlySubscription;
+                error_log("DEBUG getCurrentSubscription: Selected Monthly subscription (ID: {$subscription['id']}, Plan: {$subscription['plan_name']})");
+            } elseif ($membershipSubscription !== null) {
+                $subscription = $membershipSubscription;
+                error_log("DEBUG getCurrentSubscription: Selected Membership subscription (ID: {$subscription['id']}, Plan: {$subscription['plan_name']})");
+            } else {
+                error_log("DEBUG getCurrentSubscription: No active subscription found");
+            }
+            
+            // Calculate periods and total duration for current subscription if it exists
+            if ($subscription) {
+                $periods = 1;
+                $originalPrice = floatval($subscription['original_price'] ?? 0);
+                $amountPaid = floatval($subscription['amount_paid'] ?? 0);
+                
+                if ($originalPrice > 0) {
+                    $periods = round($amountPaid / $originalPrice);
+                    if ($periods < 1) $periods = 1;
+                }
+                
+                $subscription['periods'] = $periods;
+                
+                // Calculate total duration based on periods
+                $baseDurationMonths = intval($subscription['duration_months'] ?? 0);
+                $baseDurationDays = intval($subscription['duration_days'] ?? 0);
+                
+                if ($baseDurationDays > 0) {
+                    $subscription['total_duration_days'] = $baseDurationDays * $periods;
+                    $subscription['total_duration_months'] = 0;
+                } else {
+                    $subscription['total_duration_months'] = $baseDurationMonths * $periods;
+                    $subscription['total_duration_days'] = 0;
                 }
             }
             
@@ -472,11 +739,19 @@
                 $startDate = new DateTime($subscription['start_date']);
                 $endDate = new DateTime($subscription['end_date']);
                 $now = new DateTime();
+                $today = $now->format('Y-m-d');
                 
-                if ($now >= $startDate && $now <= $endDate) {
+                $startDateOnly = $startDate->format('Y-m-d');
+                $endDateOnly = $endDate->format('Y-m-d');
+                
+                // Use date-only comparison for consistency
+                if ($startDateOnly <= $today && $endDateOnly >= $today) {
                     $subscriptionStatus = 'Active';
-                    $daysRemaining = $now->diff($endDate)->days;
-                } elseif ($now > $endDate) {
+                    // Calculate days remaining using date difference
+                    $endDateObj = new DateTime($endDateOnly);
+                    $todayObj = new DateTime($today);
+                    $daysRemaining = $todayObj->diff($endDateObj)->days;
+                } elseif ($endDateOnly < $today) {
                     $subscriptionStatus = 'Expired';
                 } else {
                     $subscriptionStatus = 'Pending';
@@ -484,8 +759,8 @@
             }
             
             // Process active coach data
-            $processedActiveCoach = false;
-            if ($activeCoach) {
+            $processedActiveCoach = null;
+            if ($activeCoach && is_array($activeCoach)) {
                 $processedActiveCoach = [
                     'coach_id' => $activeCoach['coach_id'],
                     'coach_name' => trim(($activeCoach['coach_fname'] ?? '') . ' ' . ($activeCoach['coach_lname'] ?? '')),
@@ -519,10 +794,54 @@
                 }
             }
             
+            // Get active gym membership separately (plan_id = 1) if it exists and is active
+            // This is separate from the prioritized subscription, so users can see their membership status
+            // even if they have a Day Pass or Monthly Access as their current subscription
+            $activeMembership = null;
+            if ($membershipSubscription !== null) {
+                // Calculate membership status and days remaining
+                $membershipStartDate = new DateTime($membershipSubscription['start_date']);
+                $membershipEndDate = new DateTime($membershipSubscription['end_date']);
+                $now = new DateTime();
+                $today = $now->format('Y-m-d');
+                
+                $membershipStartDateOnly = $membershipStartDate->format('Y-m-d');
+                $membershipEndDateOnly = $membershipEndDate->format('Y-m-d');
+                
+                $membershipStatus = 'Inactive';
+                $membershipDaysRemaining = 0;
+                
+                if ($membershipStartDateOnly <= $today && $membershipEndDateOnly >= $today) {
+                    $membershipStatus = 'Active';
+                    $membershipEndDateObj = new DateTime($membershipEndDateOnly);
+                    $todayObj = new DateTime($today);
+                    $membershipDaysRemaining = $todayObj->diff($membershipEndDateObj)->days;
+                } elseif ($membershipEndDateOnly < $today) {
+                    $membershipStatus = 'Expired';
+                } else {
+                    $membershipStatus = 'Pending';
+                }
+                
+                $activeMembership = [
+                    'id' => $membershipSubscription['id'],
+                    'plan_id' => $membershipSubscription['plan_id'],
+                    'plan_name' => $membershipSubscription['plan_name'],
+                    'start_date' => $membershipSubscription['start_date'],
+                    'end_date' => $membershipSubscription['end_date'],
+                    'original_price' => $membershipSubscription['original_price'],
+                    'amount_paid' => $membershipSubscription['amount_paid'],
+                    'status' => $membershipStatus,
+                    'days_remaining' => $membershipDaysRemaining,
+                    'duration_months' => $membershipSubscription['duration_months'],
+                    'duration_days' => $membershipSubscription['duration_days'],
+                ];
+            }
+            
              echo json_encode([
                  'success' => true,
                  'active_coach' => $processedActiveCoach,
                  'subscription' => $subscription,
+                 'active_membership' => $activeMembership, // Gym membership status (plan_id = 1) if active
                  'subscription_history' => $allSubscriptions, // Include all subscription requests
                  'subscription_status' => $subscriptionStatus,
                  'days_remaining' => $daysRemaining,

@@ -5,11 +5,13 @@ import './models/exercise_selection_model.dart';
 class ExerciseConfigurationPage extends StatefulWidget {
   final List<SelectedExerciseWithConfig> exercises;
   final Color selectedColor;
+  final String? difficulty; // Optional difficulty level (Beginner, Intermediate, Advanced)
 
   const ExerciseConfigurationPage({
     Key? key,
     required this.exercises,
     required this.selectedColor,
+    this.difficulty,
   }) : super(key: key);
 
   @override
@@ -90,6 +92,9 @@ class _ExerciseConfigurationPageState extends State<ExerciseConfigurationPage> {
           setWeightControllers.remove(setKey);
         }
       }
+      
+      // Update sets guidance by triggering rebuild
+      // This will be handled automatically by setState
     });
   }
 
@@ -335,11 +340,14 @@ class _ExerciseConfigurationPageState extends State<ExerciseConfigurationPage> {
   }
 
   Widget _buildCompactConfiguration(int exerciseId) {
-    final exercise = configuredExercises.firstWhere((e) => e.exercise.id == exerciseId);
     final isExpanded = expandedExercises[exerciseId] ?? false;
     
     return Column(
       children: [
+        // Sets guidance
+        _buildSetsGuidance(exerciseId),
+        SizedBox(height: 8),
+        
         // Compact view - always visible
         Row(
           children: [
@@ -451,7 +459,6 @@ class _ExerciseConfigurationPageState extends State<ExerciseConfigurationPage> {
         SizedBox(height: 8),
         ...exercise.setConfigs.asMap().entries.map((entry) {
           final setIndex = entry.key;
-          final setConfig = entry.value;
           final setKey = '${exerciseId}_${setIndex}';
           
           return Container(
@@ -581,6 +588,93 @@ class _ExerciseConfigurationPageState extends State<ExerciseConfigurationPage> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildSetsGuidance(int exerciseId) {
+    final currentSets = int.tryParse(setsControllers[exerciseId]?.text ?? '3') ?? 3;
+    final difficulty = widget.difficulty ?? 'Intermediate'; // Default to Intermediate if not provided
+    final isBeginner = difficulty.toLowerCase() == 'beginner';
+    final isIntermediate = difficulty.toLowerCase() == 'intermediate';
+    final isAdvanced = difficulty.toLowerCase() == 'advanced';
+    
+    String guidanceText = '';
+    Color guidanceColor = Color(0xFF4ECDC4); // Default teal
+    IconData guidanceIcon = Icons.info_outline;
+    bool showGuidance = false;
+    
+    if (isBeginner) {
+      // Beginners: 2-4 sets recommended
+      if (currentSets < 2) {
+        guidanceText = 'Recommended: 2-4 sets for beginners. Consider adding more sets.';
+        guidanceColor = Color(0xFFFFB74D); // Orange
+        guidanceIcon = Icons.info;
+        showGuidance = true;
+      } else if (currentSets >= 2 && currentSets <= 4) {
+        guidanceText = 'Recommended: 2-4 sets for beginners.';
+        guidanceColor = Color(0xFF4ECDC4); // Teal
+        guidanceIcon = Icons.check_circle_outline;
+        showGuidance = true;
+      } else if (currentSets > 4) {
+        guidanceText = 'This is higher than the recommended 2-4 sets for beginners. Ensure proper form and recovery.';
+        guidanceColor = Color(0xFFFFB74D); // Orange
+        guidanceIcon = Icons.warning_amber_rounded;
+        showGuidance = true;
+      }
+    } else if (isIntermediate || isAdvanced) {
+      // Intermediate/Advanced: 3-5 sets recommended
+      if (currentSets < 3) {
+        guidanceText = 'Recommended: 3-5 sets for ${difficulty.toLowerCase()} users. Consider adding more sets.';
+        guidanceColor = Color(0xFFFFB74D); // Orange
+        guidanceIcon = Icons.info;
+        showGuidance = true;
+      } else if (currentSets >= 3 && currentSets <= 5) {
+        guidanceText = 'Recommended: 3-5 sets for ${difficulty.toLowerCase()} users.';
+        guidanceColor = Color(0xFF4ECDC4); // Teal
+        guidanceIcon = Icons.check_circle_outline;
+        showGuidance = true;
+      } else if (currentSets > 5) {
+        guidanceText = 'This is higher than the recommended 3-5 sets for ${difficulty.toLowerCase()} users. Ensure proper recovery.';
+        guidanceColor = Color(0xFFFFB74D); // Orange
+        guidanceIcon = Icons.warning_amber_rounded;
+        showGuidance = true;
+      }
+    }
+    
+    if (!showGuidance) {
+      return SizedBox.shrink();
+    }
+    
+    return Container(
+      padding: EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: guidanceColor.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: guidanceColor.withOpacity(0.3),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            guidanceIcon,
+            color: guidanceColor,
+            size: 18,
+          ),
+          SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              guidanceText,
+              style: GoogleFonts.poppins(
+                color: Colors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

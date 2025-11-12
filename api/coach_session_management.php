@@ -284,6 +284,7 @@ function adjustSessionCount($pdo) {
     try {
         $input = json_decode(file_get_contents('php://input'), true);
         $memberId = $input['member_id'] ?? null;
+        $coachId = $input['coach_id'] ?? null;
         $adjustment = $input['adjustment'] ?? null;
         $reason = $input['reason'] ?? 'Manual adjustment by coach';
         
@@ -294,40 +295,49 @@ function adjustSessionCount($pdo) {
             ], 400);
         }
         
-        
         // Start transaction
         $pdo->beginTransaction();
         
-        // Get the active coach subscription for the member
-        $stmt = $pdo->prepare("
+        // Get the active coach subscription for the member (support both package and monthly)
+        $query = "
             SELECT id, remaining_sessions, rate_type, status, coach_id
             FROM coach_member_list 
             WHERE member_id = ? 
             AND status = 'active' 
-            AND rate_type = 'package'
-            ORDER BY requested_at DESC 
-            LIMIT 1
-        ");
-        $stmt->execute([$memberId]);
+            AND (rate_type = 'package' OR rate_type = 'monthly')
+        ";
+        $params = [$memberId];
+        
+        // If coach_id is provided, filter by it
+        if ($coachId) {
+            $query .= " AND coach_id = ?";
+            $params[] = $coachId;
+        }
+        
+        $query .= " ORDER BY requested_at DESC LIMIT 1";
+        
+        $stmt = $pdo->prepare($query);
+        $stmt->execute($params);
         $subscription = $stmt->fetch();
         
         if (!$subscription) {
             $pdo->rollBack();
             sendResponse([
                 'success' => false,
-                'message' => 'No active session package found for this member'
+                'message' => 'No active session package or monthly plan found for this member'
             ], 404);
         }
         
         // Calculate new session count
-        $newSessionCount = $subscription['remaining_sessions'] + $adjustment;
+        $currentSessions = (int)($subscription['remaining_sessions'] ?? 0);
+        $newSessionCount = $currentSessions + $adjustment;
         
         // Ensure session count doesn't go below 0
         if ($newSessionCount < 0) {
             $pdo->rollBack();
             sendResponse([
                 'success' => false,
-                'message' => 'Cannot reduce sessions below 0. Current sessions: ' . $subscription['remaining_sessions']
+                'message' => 'Cannot reduce sessions below 0. Current sessions: ' . $currentSessions
             ], 400);
         }
         
@@ -356,12 +366,15 @@ function adjustSessionCount($pdo) {
             'data' => [
                 'new_session_count' => $newSessionCount,
                 'adjustment' => $adjustment,
-                'previous_count' => $subscription['remaining_sessions']
+                'previous_count' => $currentSessions,
+                'rate_type' => $subscription['rate_type']
             ]
         ]);
         
     } catch (PDOException $e) {
-        $pdo->rollBack();
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
         error_log("ERROR - Adjust session count failed: " . $e->getMessage());
         sendResponse([
             'success' => false,
@@ -373,7 +386,7 @@ function adjustSessionCount($pdo) {
 function getMemberSessionInfo($pdo, $memberId) {
     try {
         
-        // Get current session package info
+        // Get current session package info (support both package and monthly)
         $stmt = $pdo->prepare("
             SELECT 
                 cml.id,
@@ -384,16 +397,18 @@ function getMemberSessionInfo($pdo, $memberId) {
                 cml.requested_at,
                 cml.coach_approval,
                 cml.staff_approval,
-                cml.monthly_rate,
-                cml.session_package_rate,
+                cml.coach_id,
+                c.monthly_rate,
+                c.session_package_rate,
+                c.session_package_count,
                 c.name as coach_name,
                 CONCAT(u.fname, ' ', u.lname) as member_name
             FROM coach_member_list cml
-            LEFT JOIN coaches c ON cml.coach_id = c.id
+            LEFT JOIN coaches c ON c.user_id = cml.coach_id
             LEFT JOIN user u ON cml.member_id = u.id
             WHERE cml.member_id = ? 
             AND cml.status = 'active' 
-            AND cml.rate_type = 'package'
+            AND (cml.rate_type = 'package' OR cml.rate_type = 'monthly')
             ORDER BY cml.requested_at DESC 
             LIMIT 1
         ");

@@ -135,25 +135,22 @@ class _UserDashboardState extends State<UserDashboard> with TickerProviderStateM
           .map((json) => NotificationModel.fromJson(json))
           .toList();
       
-      // Check if we have new notifications (by comparing IDs)
-      final currentIds = Set<int>.from(_notifications.map((n) => n.id));
-      final newIds = Set<int>.from(newNotifications.map((n) => n.id));
-      final hasNewNotifications = !currentIds.containsAll(newIds);
-      
       if (mounted) {
         setState(() {
           _notifications = newNotifications;
-          _unreadCount = data['unread_count'];
-          
-          // Show a subtle indicator if there are new notifications
-          if (hasNewNotifications) {
-            print('🆕 New notifications detected!');
+          // Handle both string and int unread_count from API
+          final unreadCount = data['unread_count'];
+          if (unreadCount is int) {
+            _unreadCount = unreadCount;
+          } else if (unreadCount is String) {
+            _unreadCount = int.tryParse(unreadCount) ?? 0;
+          } else {
+            _unreadCount = 0;
           }
         });
       }
     } catch (e) {
       // Silently handle polling errors
-      print('Polling error: $e');
     }
   }
 
@@ -218,7 +215,15 @@ class _UserDashboardState extends State<UserDashboard> with TickerProviderStateM
         } else {
           _notifications.addAll(notifications);
         }
-        _unreadCount = data['unread_count'];
+        // Handle both string and int unread_count from API
+        final unreadCount = data['unread_count'];
+        if (unreadCount is int) {
+          _unreadCount = unreadCount;
+        } else if (unreadCount is String) {
+          _unreadCount = int.tryParse(unreadCount) ?? 0;
+        } else {
+          _unreadCount = 0;
+        }
         _hasMoreNotifications = data['pagination']['has_more'];
         _isLoadingNotifications = false;
       });
@@ -432,31 +437,30 @@ class _UserDashboardState extends State<UserDashboard> with TickerProviderStateM
           decoration: BoxDecoration(
             color: const Color(0xFF1A1A1A),
             borderRadius: BorderRadius.circular(24),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.4),
-                blurRadius: 30,
-                offset: const Offset(0, 15),
-              ),
-            ],
           ),
           child: Column(
             children: [
-              // Modern Header
+              // Header
               Container(
-                padding: EdgeInsets.fromLTRB(20, 20, 16, 16),
+                padding: EdgeInsets.fromLTRB(20, 18, 16, 16),
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                     colors: [
-                      const Color(0xFFFF6B35).withOpacity(0.15),
-                      const Color(0xFF4ECDC4).withOpacity(0.1),
+                      const Color(0xFFFF6B35).withOpacity(0.2),
+                      const Color(0xFF4ECDC4).withOpacity(0.15),
                     ],
                   ),
                   borderRadius: BorderRadius.only(
                     topLeft: Radius.circular(24),
                     topRight: Radius.circular(24),
+                  ),
+                  border: Border(
+                    bottom: BorderSide(
+                      color: Colors.grey[800]!.withOpacity(0.3),
+                      width: 1,
+                    ),
                   ),
                 ),
                 child: Row(
@@ -465,52 +469,52 @@ class _UserDashboardState extends State<UserDashboard> with TickerProviderStateM
                     Stack(
                       children: [
                         Container(
-                          padding: EdgeInsets.all(12),
+                          padding: EdgeInsets.all(10),
                           decoration: BoxDecoration(
                             gradient: LinearGradient(
-                              colors: [Color(0xFFFF6B35), Color(0xFFFF8A65)],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [
+                                Color(0xFFFF6B35),
+                                Color(0xFFFF8A65),
+                              ],
                             ),
                             shape: BoxShape.circle,
-                            boxShadow: [
-                              BoxShadow(
-                                color: Color(0xFFFF6B35).withOpacity(0.3),
-                                blurRadius: 8,
-                                offset: Offset(0, 4),
-                              ),
-                            ],
                           ),
                           child: Icon(
                             Icons.notifications_rounded,
                             color: Colors.white,
-                            size: 24,
+                            size: 20,
                           ),
                         ),
                         if (_unreadCount > 0)
                           Positioned(
-                            right: 0,
-                            top: 0,
+                            right: -2,
+                            top: -2,
                             child: Container(
-                              padding: EdgeInsets.all(4),
+                              padding: EdgeInsets.symmetric(horizontal: 5, vertical: 2),
                               decoration: BoxDecoration(
                                 color: Colors.red,
                                 shape: BoxShape.circle,
                                 border: Border.all(color: Color(0xFF1A1A1A), width: 2),
                               ),
-                              constraints: BoxConstraints(minWidth: 20, minHeight: 20),
-                              child: Text(
-                                '$_unreadCount',
-                                style: GoogleFonts.poppins(
-                                  color: Colors.white,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
+                              constraints: BoxConstraints(minWidth: 18, minHeight: 18),
+                              child: Center(
+                                child: Text(
+                                  '$_unreadCount',
+                                  style: GoogleFonts.poppins(
+                                    color: Colors.white,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                  textAlign: TextAlign.center,
                                 ),
-                                textAlign: TextAlign.center,
                               ),
                             ),
                           ),
                       ],
                     ),
-                    SizedBox(width: 16),
+                    SizedBox(width: 18),
                     // Title and Subtitle
                     Expanded(
                       child: Column(
@@ -519,86 +523,149 @@ class _UserDashboardState extends State<UserDashboard> with TickerProviderStateM
                           Text(
                             'Notifications',
                             style: GoogleFonts.poppins(
-                              fontSize: 22,
+                              fontSize: 20,
                               fontWeight: FontWeight.w700,
                               color: Colors.white,
                               letterSpacing: -0.5,
                             ),
                           ),
-                          SizedBox(height: 2),
-                          Text(
-                            _notifications.isEmpty 
-                                ? 'No notifications yet'
-                                : '$_unreadCount unread • ${_notifications.length} total',
-                            style: GoogleFonts.poppins(
-                              fontSize: 13,
-                              color: Colors.grey[400],
-                              fontWeight: FontWeight.w500,
-                            ),
+                          SizedBox(height: 4),
+                          Row(
+                            children: [
+                              if (_unreadCount > 0) ...[
+                                Container(
+                                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: Color(0xFFFF6B35).withOpacity(0.2),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: Color(0xFFFF6B35).withOpacity(0.4),
+                                      width: 1,
+                                    ),
+                                  ),
+                                  child: Text(
+                                    '$_unreadCount unread',
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 12,
+                                      color: Color(0xFFFF6B35),
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                                SizedBox(width: 8),
+                                Text(
+                                  '•',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 12,
+                                    color: Colors.grey[500],
+                                  ),
+                                ),
+                                SizedBox(width: 8),
+                              ],
+                              Text(
+                                _notifications.isEmpty 
+                                    ? 'No notifications yet'
+                                    : '${_notifications.length} total',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 13,
+                                  color: Colors.grey[400],
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
                     ),
                     // Action Menu
                     if (_notifications.isNotEmpty)
-                      PopupMenuButton<String>(
-                        icon: Container(
-                          padding: EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: Colors.grey[800]!.withOpacity(0.5),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            Icons.more_vert_rounded,
-                            color: Colors.white,
-                            size: 20,
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Colors.grey[800]!.withOpacity(0.4),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: Colors.grey[700]!.withOpacity(0.3),
+                            width: 1,
                           ),
                         ),
-                        onSelected: (value) async {
-                          if (value == 'mark_all_read') {
-                            await _markAllNotificationsAsRead();
-                          } else if (value == 'clear_all') {
-                            await _clearAllNotifications();
-                          }
-                        },
-                        itemBuilder: (context) => [
-                          PopupMenuItem(
-                            value: 'mark_all_read',
-                            child: Row(
-                              children: [
-                                Icon(Icons.done_all_rounded, color: Color(0xFF4ECDC4), size: 18),
-                                SizedBox(width: 12),
-                                Text('Mark all as read', style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.w500)),
-                              ],
+                        child: PopupMenuButton<String>(
+                          icon: Padding(
+                            padding: EdgeInsets.all(6),
+                            child: Icon(
+                              Icons.more_vert_rounded,
+                              color: Colors.white,
+                              size: 18,
                             ),
                           ),
-                          PopupMenuItem(
-                            value: 'clear_all',
-                            child: Row(
-                              children: [
-                                Icon(Icons.clear_all_rounded, color: Colors.red, size: 18),
-                                SizedBox(width: 12),
-                                Text('Clear all', style: GoogleFonts.poppins(color: Colors.red, fontWeight: FontWeight.w500)),
-                              ],
-                            ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
                           ),
-                        ],
+                          color: Color(0xFF2A2A2A),
+                          onSelected: (value) async {
+                            if (value == 'mark_all_read') {
+                              await _markAllNotificationsAsRead();
+                            } else if (value == 'clear_all') {
+                              await _clearAllNotifications();
+                            }
+                          },
+                          itemBuilder: (context) => [
+                            PopupMenuItem(
+                              value: 'mark_all_read',
+                              child: Row(
+                                children: [
+                                  Container(
+                                    padding: EdgeInsets.all(6),
+                                    decoration: BoxDecoration(
+                                      color: Color(0xFF4ECDC4).withOpacity(0.2),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Icon(Icons.done_all_rounded, color: Color(0xFF4ECDC4), size: 18),
+                                  ),
+                                  SizedBox(width: 12),
+                                  Text('Mark all as read', style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.w500, fontSize: 14)),
+                                ],
+                              ),
+                            ),
+                            PopupMenuItem(
+                              value: 'clear_all',
+                              child: Row(
+                                children: [
+                                  Container(
+                                    padding: EdgeInsets.all(6),
+                                    decoration: BoxDecoration(
+                                      color: Colors.red.withOpacity(0.2),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Icon(Icons.clear_all_rounded, color: Colors.red, size: 18),
+                                  ),
+                                  SizedBox(width: 12),
+                                  Text('Clear all', style: GoogleFonts.poppins(color: Colors.red, fontWeight: FontWeight.w500, fontSize: 14)),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
+                    SizedBox(width: 6),
                     // Close Button
                     Container(
                       decoration: BoxDecoration(
-                        color: Colors.grey[800]!.withOpacity(0.5),
+                        color: Colors.grey[800]!.withOpacity(0.4),
                         shape: BoxShape.circle,
+                        border: Border.all(
+                          color: Colors.grey[700]!.withOpacity(0.3),
+                          width: 1,
+                        ),
                       ),
                       child: IconButton(
                         onPressed: () => Navigator.pop(context),
                         icon: Icon(
                           Icons.close_rounded,
                           color: Colors.white,
-                          size: 22,
+                          size: 18,
                         ),
-                        padding: EdgeInsets.all(8),
-                        constraints: BoxConstraints(minWidth: 40, minHeight: 40),
+                        padding: EdgeInsets.all(6),
+                        constraints: BoxConstraints(minWidth: 36, minHeight: 36),
                       ),
                     ),
                   ],
@@ -711,8 +778,11 @@ class _UserDashboardState extends State<UserDashboard> with TickerProviderStateM
     return RefreshIndicator(
       onRefresh: _refreshNotifications,
       color: const Color(0xFFFF6B35),
+      backgroundColor: Color(0xFF1A1A1A),
+      strokeWidth: 2,
       child: ListView.builder(
-        padding: EdgeInsets.fromLTRB(16, 8, 16, 16),
+        padding: EdgeInsets.fromLTRB(16, 12, 16, 16),
+        physics: BouncingScrollPhysics(),
         itemCount: _notifications.length + (_hasMoreNotifications ? 1 : 0),
         itemBuilder: (context, index) {
           if (index == _notifications.length) {
@@ -727,28 +797,24 @@ class _UserDashboardState extends State<UserDashboard> with TickerProviderStateM
   }
 
   Widget _buildNotificationItem(NotificationModel notification, bool isSmallScreen) {
+    final notificationColor = _getNotificationColor(notification.typeName);
+    final isUnread = notification.isUnread;
+    
     return Container(
-      margin: EdgeInsets.only(bottom: 12),
+      margin: EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
-        color: notification.isUnread 
+        color: isUnread 
             ? Color(0xFF2A2A2A)
             : Color(0xFF1F1F1F),
-        borderRadius: BorderRadius.circular(16),
-        border: notification.isUnread 
+        borderRadius: BorderRadius.circular(14),
+        border: isUnread 
             ? Border.all(color: Color(0xFFFF6B35).withOpacity(0.3), width: 1)
-            : Border.all(color: Colors.grey[800]!.withOpacity(0.3), width: 1),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 8,
-            offset: Offset(0, 2),
-          ),
-        ],
+            : Border.all(color: Colors.grey[800]!.withOpacity(0.2), width: 1),
       ),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(14),
           onTap: () async {
             if (notification.isUnread) {
               await _markNotificationAsRead(notification.id);
@@ -756,96 +822,114 @@ class _UserDashboardState extends State<UserDashboard> with TickerProviderStateM
             _showNotificationModal(notification);
           },
           child: Padding(
-            padding: EdgeInsets.all(16),
+            padding: EdgeInsets.all(12),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Icon with modern styling
+                // Icon
                 Container(
-                  padding: EdgeInsets.all(12),
+                  width: 40,
+                  height: 40,
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
                       colors: [
-                        _getNotificationColor(notification.typeName).withOpacity(0.2),
-                        _getNotificationColor(notification.typeName).withOpacity(0.1),
+                        notificationColor.withOpacity(0.25),
+                        notificationColor.withOpacity(0.15),
                       ],
                     ),
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(10),
                     border: Border.all(
-                      color: _getNotificationColor(notification.typeName).withOpacity(0.3),
+                      color: notificationColor.withOpacity(0.3),
                       width: 1,
                     ),
                   ),
                   child: Icon(
                     _getNotificationIcon(notification.typeName),
-                    color: _getNotificationColor(notification.typeName),
+                    color: notificationColor,
                     size: 20,
                   ),
                 ),
-                SizedBox(width: 16),
+                SizedBox(width: 12),
                 // Content
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Message (using display message to hide question marks)
+                      // Message
                       Text(
                         notification.getDisplayMessage(),
                         style: GoogleFonts.poppins(
-                          fontSize: 15,
-                          fontWeight: notification.isUnread ? FontWeight.w600 : FontWeight.w500,
+                          fontSize: 14,
+                          fontWeight: isUnread ? FontWeight.w600 : FontWeight.w500,
                           color: Colors.white,
                           height: 1.4,
                         ),
                         maxLines: 3,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      SizedBox(height: 8),
-                      // Time
-                      Text(
-                        notification.getFormattedTime(),
-                        style: GoogleFonts.poppins(
-                          fontSize: 12,
-                          color: Colors.grey[400],
-                          fontWeight: FontWeight.w500,
-                        ),
+                      SizedBox(height: 6),
+                      // Time with icon
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.access_time_rounded,
+                            size: 12,
+                            color: Colors.grey[500],
+                          ),
+                          SizedBox(width: 4),
+                          Text(
+                            notification.getFormattedTime(),
+                            style: GoogleFonts.poppins(
+                              fontSize: 11.5,
+                              color: Colors.grey[400],
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
                 ),
+                SizedBox(width: 6),
                 // Actions
                 Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    if (notification.isUnread)
+                    if (isUnread)
                       Container(
                         width: 8,
                         height: 8,
                         decoration: BoxDecoration(
                           color: Color(0xFFFF6B35),
                           shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                              color: Color(0xFFFF6B35).withOpacity(0.3),
-                              blurRadius: 4,
-                              offset: Offset(0, 2),
-                            ),
-                          ],
                         ),
-                      ),
-                    SizedBox(height: 8),
+                      )
+                    else
+                      SizedBox(height: 8),
+                    SizedBox(height: 6),
                     PopupMenuButton<String>(
                       icon: Container(
                         padding: EdgeInsets.all(6),
                         decoration: BoxDecoration(
-                          color: Colors.grey[800]!.withOpacity(0.5),
+                          color: Colors.grey[800]!.withOpacity(0.4),
                           borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                            color: Colors.grey[700]!.withOpacity(0.3),
+                            width: 1,
+                          ),
                         ),
                         child: Icon(
                           Icons.more_vert_rounded,
-                          color: Colors.grey[400],
+                          color: Colors.grey[300],
                           size: 16,
                         ),
                       ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      color: Color(0xFF2A2A2A),
                       onSelected: (value) async {
                         if (value == 'mark_read' && notification.isUnread) {
                           await _markNotificationAsRead(notification.id);
@@ -859,9 +943,16 @@ class _UserDashboardState extends State<UserDashboard> with TickerProviderStateM
                             value: 'mark_read',
                             child: Row(
                               children: [
-                                Icon(Icons.done_rounded, color: Color(0xFF4ECDC4), size: 18),
-                                SizedBox(width: 12),
-                                Text('Mark as read', style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.w500)),
+                                Container(
+                                  padding: EdgeInsets.all(5),
+                                  decoration: BoxDecoration(
+                                    color: Color(0xFF4ECDC4).withOpacity(0.2),
+                                    borderRadius: BorderRadius.circular(5),
+                                  ),
+                                  child: Icon(Icons.done_rounded, color: Color(0xFF4ECDC4), size: 14),
+                                ),
+                                SizedBox(width: 10),
+                                Text('Mark as read', style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.w500, fontSize: 13)),
                               ],
                             ),
                           ),
@@ -869,9 +960,16 @@ class _UserDashboardState extends State<UserDashboard> with TickerProviderStateM
                           value: 'delete',
                           child: Row(
                             children: [
-                              Icon(Icons.delete_rounded, color: Colors.red, size: 18),
-                              SizedBox(width: 12),
-                              Text('Delete', style: GoogleFonts.poppins(color: Colors.red, fontWeight: FontWeight.w500)),
+                              Container(
+                                padding: EdgeInsets.all(5),
+                                decoration: BoxDecoration(
+                                  color: Colors.red.withOpacity(0.2),
+                                  borderRadius: BorderRadius.circular(5),
+                                ),
+                                child: Icon(Icons.delete_rounded, color: Colors.red, size: 14),
+                              ),
+                              SizedBox(width: 10),
+                              Text('Delete', style: GoogleFonts.poppins(color: Colors.red, fontWeight: FontWeight.w500, fontSize: 13)),
                             ],
                           ),
                         ),
@@ -889,13 +987,14 @@ class _UserDashboardState extends State<UserDashboard> with TickerProviderStateM
 
   Widget _buildLoadMoreButton(bool isSmallScreen) {
     return Container(
-      margin: EdgeInsets.all(isSmallScreen ? 8 : 12),
+      margin: EdgeInsets.all(isSmallScreen ? 6 : 8),
       child: _isLoadingNotifications
           ? Center(
               child: Padding(
-                padding: EdgeInsets.all(isSmallScreen ? 16 : 20),
+                padding: EdgeInsets.all(isSmallScreen ? 12 : 16),
                 child: CircularProgressIndicator(
                   valueColor: AlwaysStoppedAnimation<Color>(const Color(0xFFFF6B35)),
+                  strokeWidth: 2,
                 ),
               ),
             )
@@ -903,18 +1002,19 @@ class _UserDashboardState extends State<UserDashboard> with TickerProviderStateM
               onPressed: _loadMoreNotifications,
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFFFF6B35),
+                elevation: 0,
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(10),
                 ),
                 padding: EdgeInsets.symmetric(
-                  horizontal: isSmallScreen ? 16 : 24,
-                  vertical: isSmallScreen ? 12 : 16,
+                  horizontal: isSmallScreen ? 14 : 20,
+                  vertical: isSmallScreen ? 10 : 12,
                 ),
               ),
               child: Text(
                 'Load More',
                 style: GoogleFonts.poppins(
-                  fontSize: isSmallScreen ? 12 : 14,
+                  fontSize: isSmallScreen ? 12 : 13,
                   fontWeight: FontWeight.w600,
                   color: Colors.white,
                 ),

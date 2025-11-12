@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import '../User/models/routine.models.dart' as UserModels;
 import '../User/models/workoutpreview_model.dart';
-import '../User/services/auth_service.dart';
 import 'models/member_model.dart';
 import '../coach_dashboard.dart';
 
@@ -189,7 +187,8 @@ class _CoachWorkoutSummaryPageState extends State<CoachWorkoutSummaryPage> {
                 Expanded(
                   child: _buildStatCard(
                     'Exercises',
-                    widget.exercises.where((e) => e.isCompleted).length.toString(),
+                    widget.exercises.where((e) => 
+                        e.loggedSets.any((set) => set.isCompleted)).length.toString(),
                     Icons.list_alt,
                     Color(0xFFFF9500),
                   ),
@@ -416,7 +415,8 @@ class _CoachWorkoutSummaryPageState extends State<CoachWorkoutSummaryPage> {
           sum + exercise.loggedSets.where((set) => set.isCompleted)
               .fold(0.0, (setSum, set) => setSum + (set.weight * set.reps)));
       
-      final completedExercises = widget.exercises.where((e) => e.isCompleted).length;
+      final completedExercises = widget.exercises.where((e) => 
+          e.loggedSets.any((set) => set.isCompleted)).length;
       final totalSets = widget.exercises.fold(0, (sum, exercise) => sum + exercise.completedSets);
       
       final requestData = {

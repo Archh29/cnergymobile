@@ -22,6 +22,8 @@ class _CoachProfilePageState extends State<CoachProfilePage>
   UserModel? currentCoach;
   bool isLoading = true;
   String? errorMessage;
+  bool isAvailable = true;
+  bool isUpdatingAvailability = false;
   
   // Coach-specific stats
   int assignedMembers = 0;
@@ -90,6 +92,8 @@ class _CoachProfilePageState extends State<CoachProfilePage>
       if (coach != null) {
         // Load coach ratings and reviews
         await _loadCoachRatings(coachId);
+        // Load coach availability
+        await _loadCoachAvailability(coachId);
         
         setState(() {
           currentCoach = coach;
@@ -161,6 +165,86 @@ class _CoachProfilePageState extends State<CoachProfilePage>
       return int.tryParse(value);
     }
     return null;
+  }
+
+  Future<void> _loadCoachAvailability(int coachId) async {
+    try {
+      final response = await http.get(
+        Uri.parse('https://api.cnergy.site/coach_api.php?action=get-coach-availability&coach_id=$coachId'),
+        headers: {'Content-Type': 'application/json'},
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true) {
+          setState(() {
+            isAvailable = data['is_available'] ?? true;
+          });
+        }
+      }
+    } catch (e) {
+      print('Error loading coach availability: $e');
+      // Keep default value if API fails
+    }
+  }
+
+  Future<void> _updateCoachAvailability(bool newValue) async {
+    if (currentCoach == null) return;
+    
+    setState(() {
+      isUpdatingAvailability = true;
+    });
+
+    try {
+      final coachId = AuthService.getCurrentUserId();
+      if (coachId == null || coachId == 0) {
+        throw Exception('Coach not logged in');
+      }
+
+      final response = await http.post(
+        Uri.parse('https://api.cnergy.site/coach_api.php?action=update-coach-availability'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'coach_id': coachId,
+          'is_available': newValue,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true) {
+          setState(() {
+            isAvailable = newValue;
+            isUpdatingAvailability = false;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(newValue ? 'You are now available' : 'You are now unavailable'),
+              backgroundColor: Color(0xFF4ECDC4),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        } else {
+          throw Exception(data['message'] ?? 'Failed to update availability');
+        }
+      } else {
+        throw Exception('Failed to update availability: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Error updating coach availability: $e');
+      setState(() {
+        isUpdatingAvailability = false;
+        // Revert to previous value on error
+        isAvailable = !newValue;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error updating availability: $e'),
+          backgroundColor: Colors.red,
+          duration: Duration(seconds: 3),
+        ),
+      );
+    }
   }
 
   @override
@@ -357,6 +441,183 @@ class _CoachProfilePageState extends State<CoachProfilePage>
                           color: Colors.white,
                           fontWeight: FontWeight.w600,
                           fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          SizedBox(height: 24),
+
+          // Availability Toggle Section
+          Container(
+            padding: EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  Color(0xFF1A1A1A),
+                  Color(0xFF2A2A2A).withOpacity(0.5),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(
+                color: isAvailable
+                    ? Color(0xFF4ECDC4).withOpacity(0.3)
+                    : Colors.grey[800]!.withOpacity(0.3),
+                width: 1.5,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: (isAvailable ? Color(0xFF4ECDC4) : Colors.black).withOpacity(0.2),
+                  blurRadius: 20,
+                  offset: Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Header Row
+                Row(
+                  children: [
+                    Container(
+                      padding: EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: isAvailable
+                              ? [Color(0xFF4ECDC4), Color(0xFF44A08D)]
+                              : [Colors.grey[700]!, Colors.grey[800]!],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: (isAvailable ? Color(0xFF4ECDC4) : Colors.grey[700]!).withOpacity(0.4),
+                            blurRadius: 12,
+                            offset: Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: Icon(
+                        isAvailable ? Icons.check_circle : Icons.cancel,
+                        color: Colors.white,
+                        size: 24,
+                      ),
+                    ),
+                    SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Availability Status',
+                            style: GoogleFonts.poppins(
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          SizedBox(height: 4),
+                          Text(
+                            isAvailable
+                                ? 'Currently Available'
+                                : 'Currently Unavailable',
+                            style: GoogleFonts.poppins(
+                              color: isAvailable
+                                  ? Color(0xFF4ECDC4)
+                                  : Colors.grey[400],
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (isUpdatingAvailability)
+                      Padding(
+                        padding: EdgeInsets.all(8),
+                        child: SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF4ECDC4)),
+                          ),
+                        ),
+                      )
+                    else
+                      Switch(
+                        value: isAvailable,
+                        onChanged: (value) {
+                          _updateCoachAvailability(value);
+                        },
+                        activeColor: Color(0xFF4ECDC4),
+                        activeTrackColor: Color(0xFF4ECDC4).withOpacity(0.5),
+                        inactiveThumbColor: Colors.grey[600],
+                        inactiveTrackColor: Colors.grey[800],
+                      ),
+                  ],
+                ),
+                
+                SizedBox(height: 20),
+                
+                // Info Section
+                Container(
+                  padding: EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: isAvailable
+                        ? Color(0xFF4ECDC4).withOpacity(0.1)
+                        : Colors.orange.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: isAvailable
+                          ? Color(0xFF4ECDC4).withOpacity(0.3)
+                          : Colors.orange.withOpacity(0.3),
+                      width: 1,
+                    ),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        Icons.info_outline,
+                        color: isAvailable
+                            ? Color(0xFF4ECDC4)
+                            : Colors.orange,
+                        size: 20,
+                      ),
+                      SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              isAvailable
+                                  ? 'Your profile is visible to members'
+                                  : 'Your profile is hidden from members',
+                              style: GoogleFonts.poppins(
+                                color: Colors.white,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            SizedBox(height: 6),
+                            Text(
+                              isAvailable
+                                  ? 'When available, your profile will appear in the coach selection list for members seeking personal coaching services. You will be able to receive new client requests and bookings.'
+                                  : 'When unavailable, your profile will not appear in the coach selection list for members. Existing clients can still view and interact with your profile, but new members will not be able to find or request your services.',
+                              style: GoogleFonts.poppins(
+                                color: Colors.grey[300],
+                                fontSize: 12,
+                                height: 1.5,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],

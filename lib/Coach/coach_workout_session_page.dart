@@ -6,7 +6,9 @@ import 'dart:convert';
 import '../User/models/routine.models.dart' as UserModels;
 import '../User/models/workoutpreview_model.dart';
 import '../User/exercise_instructions_page.dart';
+import '../User/services/session_tracking_service.dart';
 import 'models/member_model.dart';
+import 'services/coach_service.dart';
 import 'package:http/http.dart' as http;
 import 'coach_workout_summary_page.dart';
 
@@ -71,7 +73,12 @@ class _CoachWorkoutSessionPageState extends State<CoachWorkoutSessionPage> {
     try {
       _initializeWorkout();
       _startDurationTimer();
-      _loadLatestWorkoutData();
+      // Load workout data after a short delay to ensure workoutExercises is set
+      Future.delayed(Duration(milliseconds: 100), () {
+        if (mounted) {
+          _loadLatestWorkoutData();
+        }
+      });
       
     } catch (e) {
       print('❌ CoachWorkoutSessionPage: Initialization error: $e');
@@ -81,8 +88,10 @@ class _CoachWorkoutSessionPageState extends State<CoachWorkoutSessionPage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Refresh latest workout data when page becomes visible
-    _loadLatestWorkoutData();
+    // Refresh latest workout data when page becomes visible (only if workout is initialized)
+    if (workoutExercises.isNotEmpty) {
+      _loadLatestWorkoutData();
+    }
   }
 
   @override
@@ -353,10 +362,18 @@ class _CoachWorkoutSessionPageState extends State<CoachWorkoutSessionPage> {
         headers: {'Content-Type': 'application/json'},
       );
 
+      print('📡 Progress API response status: ${response.statusCode}');
+      print('📄 Progress API response body: ${response.body}');
+
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        if (data['success'] == true && data['progress'] != null) {
-          final allProgress = data['progress'];
+        print('📊 Parsed progress data: $data');
+        
+        // API returns data in 'data' field, not 'progress'
+        if (data['success'] == true && data['data'] != null) {
+          final allProgress = data['data'];
+          print('📊 All progress data: $allProgress');
+          print('📊 Progress keys: ${allProgress.keys.toList()}');
           
           // Process each exercise
           for (String exerciseName in allProgress.keys) {
@@ -370,36 +387,130 @@ class _CoachWorkoutSessionPageState extends State<CoachWorkoutSessionPage> {
               Map<String, List<Map<String, dynamic>>> sessionData = {};
               
               for (final record in exerciseData) {
-                final dateKey = DateTime.parse(record['date']).toIso8601String().split('T')[0];
-                if (!sessionData.containsKey(dateKey)) {
-                  sessionData[dateKey] = [];
+                try {
+                  final dateKey = DateTime.parse(record['date']).toIso8601String().split('T')[0];
+                  if (!sessionData.containsKey(dateKey)) {
+                    sessionData[dateKey] = [];
+                  }
+                  // Parse weight and reps as numbers (they come as strings from API)
+                  final weight = double.tryParse(record['weight']?.toString() ?? '0') ?? 0.0;
+                  final reps = int.tryParse(record['reps']?.toString() ?? '0') ?? 0;
+                  
+                  sessionData[dateKey]!.add({
+                    'weight': weight,
+                    'reps': reps,
+                    'sets': record['sets'],
+                    'date': DateTime.parse(record['date']),
+                  });
+                } catch (e) {
+                  print('⚠️ Error parsing record: $e');
                 }
-                sessionData[dateKey]!.add({
-                  'weight': record['weight'],
-                  'reps': record['reps'],
-                  'sets': record['sets'],
-                  'date': DateTime.parse(record['date']),
-                });
               }
               
               // Get the most recent session
               if (sessionData.isNotEmpty) {
                 final sortedDates = sessionData.keys.toList()..sort((a, b) => b.compareTo(a));
                 final latestDate = sortedDates.first;
-                final latestSessionData = sessionData[latestDate]!;
+                var latestSessionData = sessionData[latestDate]!;
+                
+                // Sort by date/time within the session to maintain set order
+                latestSessionData.sort((a, b) {
+                  final dateA = a['date'] as DateTime;
+                  final dateB = b['date'] as DateTime;
+                  return dateA.compareTo(dateB);
+                });
                 
                 // Store the latest workout data for this exercise
                 latestWorkoutData[exerciseName] = latestSessionData;
                 print('📊 Loaded latest data for $exerciseName: ${latestSessionData.length} sets');
+                print('📊 Latest session data: $latestSessionData');
               }
             }
           }
           
           print('✅ Loaded workout data for ${latestWorkoutData.length} exercises');
+          print('📊 Latest workout data keys: ${latestWorkoutData.keys.toList()}');
+          
+          // Trigger UI update to show previous data in controllers
+          if (mounted && workoutExercises.isNotEmpty) {
+            print('🔄 Initializing controllers with previous data for ${workoutExercises.length} exercises');
+            print('📊 Available exercise names in latestWorkoutData: ${latestWorkoutData.keys.toList()}');
+            setState(() {
+              // Re-initialize controllers with previous data for all exercises
+              for (var exercise in workoutExercises) {
+                print('🔄 Processing exercise: "${exercise.name}"');
+                print('   - Looking for matching data in latestWorkoutData...');
+                print('   - Has data: ${latestWorkoutData.containsKey(exercise.name)}');
+                
+                for (int i = 0; i < exercise.loggedSets.length; i++) {
+                  final previousData = _getPreviousWorkoutData(exercise.name, i);
+                  print('🔍 Set $i previous data: $previousData');
+                  if (previousData != null) {
+                    final weightKey = '${exercise.name}_${i}_weight';
+                    final repsKey = '${exercise.name}_${i}_reps';
+                    
+                    final previousWeight = previousData['weight']?.toStringAsFixed(0) ?? '0';
+                    final previousReps = previousData['reps']?.toString() ?? '0';
+                    
+                    // Initialize or update weight controller
+                    if (!_weightControllers.containsKey(weightKey)) {
+                      _weightControllers[weightKey] = TextEditingController(text: previousWeight);
+                      print('✅ Created weight controller for set $i: $previousWeight');
+                      if (previousWeight != '0' && exercise.loggedSets[i].weight == 0) {
+                        _showingPreviousData[weightKey] = true;
+                      }
+                    } else {
+                      // Always update if current weight is 0 (not user-entered) and we have previous data
+                      final currentText = _weightControllers[weightKey]!.text;
+                      if (exercise.loggedSets[i].weight == 0) {
+                        // Update if: text is empty/0 OR we have new previous data that's different
+                        if (currentText.isEmpty || currentText == '0' || (previousWeight != '0' && currentText != previousWeight)) {
+                          _weightControllers[weightKey]!.text = previousWeight;
+                          print('✅ Updated weight controller for set $i: $previousWeight (was: $currentText)');
+                          if (previousWeight != '0') {
+                            _showingPreviousData[weightKey] = true;
+                          }
+                        }
+                      }
+                    }
+                    
+                    // Initialize or update reps controller
+                    if (!_repsControllers.containsKey(repsKey)) {
+                      _repsControllers[repsKey] = TextEditingController(text: previousReps);
+                      print('✅ Created reps controller for set $i: $previousReps');
+                      if (previousReps != '0' && exercise.loggedSets[i].reps == 0) {
+                        _showingPreviousData[repsKey] = true;
+                      }
+                    } else {
+                      // Always update if current reps is 0 (not user-entered) and we have previous data
+                      final currentText = _repsControllers[repsKey]!.text;
+                      if (exercise.loggedSets[i].reps == 0) {
+                        // Update if: text is empty/0 OR we have new previous data that's different
+                        if (currentText.isEmpty || currentText == '0' || (previousReps != '0' && currentText != previousReps)) {
+                          _repsControllers[repsKey]!.text = previousReps;
+                          print('✅ Updated reps controller for set $i: $previousReps (was: $currentText)');
+                          if (previousReps != '0') {
+                            _showingPreviousData[repsKey] = true;
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            });
+          }
+        } else {
+          print('⚠️ API response success is false or data is null');
+          print('   - success: ${data['success']}');
+          print('   - data: ${data['data']}');
         }
+      } else {
+        print('⚠️ API response status is not 200: ${response.statusCode}');
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
       print('❌ Error loading latest workout data: $e');
+      print('❌ Stack trace: $stackTrace');
     }
   }
 
@@ -501,6 +612,25 @@ class _CoachWorkoutSessionPageState extends State<CoachWorkoutSessionPage> {
 
   Future<void> _saveWorkout() async {
     if (isSavingWorkout) return;
+    
+    // Check if there's at least one completed set
+    final totalCompletedSets = workoutExercises.fold(0, (sum, exercise) => 
+        sum + exercise.loggedSets.where((set) => set.isCompleted).length);
+    
+    if (totalCompletedSets == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Please complete at least one set before saving the workout.'),
+          backgroundColor: Colors.orange,
+          behavior: SnackBarBehavior.floating,
+          margin: EdgeInsets.all(16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      );
+      return;
+    }
     
     setState(() {
       isSavingWorkout = true;
@@ -629,6 +759,11 @@ class _CoachWorkoutSessionPageState extends State<CoachWorkoutSessionPage> {
           
           // Also save all completed exercises to progress tracker for progressive overload
           await _saveAllExercisesToProgressTracker(routineId, exercises, clientId);
+          
+          // Show modal to ask coach if they want to deduct session
+          if (mounted) {
+            await _showSessionDeductionModal(clientId);
+          }
         }
         
         return success;
@@ -638,6 +773,102 @@ class _CoachWorkoutSessionPageState extends State<CoachWorkoutSessionPage> {
     } catch (e) {
       print('💥 Error completing workout session for client: $e');
       return false;
+    }
+  }
+
+  // Show modal to ask coach if they want to deduct session
+  Future<void> _showSessionDeductionModal(int memberId) async {
+    try {
+      // Get coach ID
+      final coachId = await CoachService.getCoachId();
+      if (coachId == 0) {
+        print('❌ SESSION DEDUCTION: Coach ID is 0, cannot check sessions');
+        return;
+      }
+
+      // Get current session status
+      final sessionStatus = await SessionTrackingService.checkSessionAvailability(
+        userId: memberId,
+        coachId: coachId,
+      );
+
+      // Get remaining sessions from session status
+      final remainingSessions = sessionStatus.remainingSessions;
+
+      if (!mounted) return;
+
+      // Show modal
+      final shouldDeduct = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => _SessionDeductionModal(
+          remainingSessions: remainingSessions,
+          memberName: widget.selectedMember.fullName,
+          canDeduct: sessionStatus.canStartWorkout,
+        ),
+      );
+
+      // Deduct session if coach chose to do so
+      if (shouldDeduct == true) {
+        await _deductSession(memberId, coachId);
+      }
+    } catch (e) {
+      print('❌ SESSION DEDUCTION: Error showing modal: $e');
+    }
+  }
+
+  // Deduct session
+  Future<void> _deductSession(int memberId, int coachId) async {
+    try {
+      print('🔄 SESSION DEDUCTION: Deducting session for member $memberId');
+      
+      // Deduct session
+      final deductionResult = await SessionTrackingService.deductSession(
+        userId: memberId,
+        coachId: coachId,
+      );
+
+      if (deductionResult.success && mounted) {
+        print('✅ SESSION DEDUCTION: Session deducted successfully. ${deductionResult.remainingSessions} sessions remaining.');
+        
+        // Show success message
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Session deducted. ${deductionResult.remainingSessions} sessions remaining.'),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        );
+      } else if (mounted) {
+        print('❌ SESSION DEDUCTION: Failed to deduct session: ${deductionResult.message}');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to deduct session: ${deductionResult.message}'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      print('❌ SESSION DEDUCTION: Error deducting session: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error deducting session: $e'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        );
+      }
     }
   }
 
@@ -1346,6 +1577,7 @@ class _CoachWorkoutSessionPageState extends State<CoachWorkoutSessionPage> {
     if (!_weightControllers.containsKey(fieldKey)) {
       // Always show previous data as guide text initially
       _weightControllers[fieldKey] = TextEditingController(text: previousWeight);
+      print('🔧 _buildEditableWeightField: Created controller for $fieldKey with value: $previousWeight');
       // Mark as showing previous data if we have previous data and current weight is 0
       if (previousWeight != '0' && set.weight == 0) {
         _showingPreviousData[fieldKey] = true;
@@ -1354,9 +1586,12 @@ class _CoachWorkoutSessionPageState extends State<CoachWorkoutSessionPage> {
         _showingPreviousData[fieldKey] = false;
       }
     } else {
-      // If controller exists but text is empty or "0", update it with previous data
-      if (_weightControllers[fieldKey]!.text.isEmpty || _weightControllers[fieldKey]!.text == '0') {
+      // If controller exists, check if we need to update it with previous data
+      final currentText = _weightControllers[fieldKey]!.text;
+      // Update if: current weight is 0 AND (text is empty/0 OR we have new previous data)
+      if (set.weight == 0 && (currentText.isEmpty || currentText == '0' || (previousWeight != '0' && currentText != previousWeight))) {
         _weightControllers[fieldKey]!.text = previousWeight;
+        print('🔧 _buildEditableWeightField: Updated controller for $fieldKey from "$currentText" to "$previousWeight"');
         // Mark as showing previous data if we have previous data and current weight is 0
         if (previousWeight != '0' && set.weight == 0) {
           _showingPreviousData[fieldKey] = true;
@@ -1427,6 +1662,7 @@ class _CoachWorkoutSessionPageState extends State<CoachWorkoutSessionPage> {
     if (!_repsControllers.containsKey(fieldKey)) {
       // Always show previous data as guide text initially
       _repsControllers[fieldKey] = TextEditingController(text: previousReps);
+      print('🔧 _buildEditableRepsField: Created controller for $fieldKey with value: $previousReps');
       // Mark as showing previous data if we have previous data and current reps is 0
       if (previousReps != '0' && set.reps == 0) {
         _showingPreviousData[fieldKey] = true;
@@ -1435,9 +1671,12 @@ class _CoachWorkoutSessionPageState extends State<CoachWorkoutSessionPage> {
         _showingPreviousData[fieldKey] = false;
       }
     } else {
-      // If controller exists but text is empty or "0", update it with previous data
-      if (_repsControllers[fieldKey]!.text.isEmpty || _repsControllers[fieldKey]!.text == '0') {
+      // If controller exists, check if we need to update it with previous data
+      final currentText = _repsControllers[fieldKey]!.text;
+      // Update if: current reps is 0 AND (text is empty/0 OR we have new previous data)
+      if (set.reps == 0 && (currentText.isEmpty || currentText == '0' || (previousReps != '0' && currentText != previousReps))) {
         _repsControllers[fieldKey]!.text = previousReps;
+        print('🔧 _buildEditableRepsField: Updated controller for $fieldKey from "$currentText" to "$previousReps"');
         // Mark as showing previous data if we have previous data and current reps is 0
         if (previousReps != '0' && set.reps == 0) {
           _showingPreviousData[fieldKey] = true;
@@ -1581,7 +1820,18 @@ class _CoachWorkoutSessionPageState extends State<CoachWorkoutSessionPage> {
 
   String _getPreviousWorkoutText(String exerciseName, int setIndex) {
     // Get previous workout data for this exercise
-    final previousData = latestWorkoutData[exerciseName];
+    // Try exact match first
+    var previousData = latestWorkoutData[exerciseName];
+    
+    // If no exact match, try case-insensitive match
+    if (previousData == null) {
+      for (String key in latestWorkoutData.keys) {
+        if (key.toLowerCase() == exerciseName.toLowerCase()) {
+          previousData = latestWorkoutData[key];
+          break;
+        }
+      }
+    }
     
     if (previousData != null && previousData.isNotEmpty && setIndex < previousData.length) {
       final data = previousData[setIndex];
@@ -1595,10 +1845,29 @@ class _CoachWorkoutSessionPageState extends State<CoachWorkoutSessionPage> {
 
   Map<String, dynamic>? _getPreviousWorkoutData(String exerciseName, int setIndex) {
     // Get previous workout data for this exercise
-    final previousData = latestWorkoutData[exerciseName];
+    // Try exact match first
+    var previousData = latestWorkoutData[exerciseName];
+    
+    // If no exact match, try case-insensitive match
+    if (previousData == null) {
+      for (String key in latestWorkoutData.keys) {
+        if (key.toLowerCase() == exerciseName.toLowerCase()) {
+          previousData = latestWorkoutData[key];
+          print('🔍 Found case-insensitive match: "$key" for "$exerciseName"');
+          break;
+        }
+      }
+    }
     
     if (previousData != null && previousData.isNotEmpty && setIndex < previousData.length) {
+      print('✅ Returning previous data for set $setIndex: weight=${previousData[setIndex]['weight']}, reps=${previousData[setIndex]['reps']}');
       return previousData[setIndex];
+    }
+    
+    if (previousData != null) {
+      print('⚠️ Previous data exists but setIndex $setIndex is out of range (length: ${previousData.length})');
+    } else {
+      print('⚠️ No previous data found for exercise: "$exerciseName"');
     }
     
     return null;
@@ -1652,6 +1921,10 @@ class _CoachWorkoutSessionPageState extends State<CoachWorkoutSessionPage> {
         
         // If we're completing the set (not unchecking), handle coach input logic
         if (newCompletedState) {
+          // Get previous workout data for this set
+          final previousData = _getPreviousWorkoutData(exercise.name, setIndex);
+          final isShowingPreviousData = currentSet.weight == 0 && previousData != null;
+          
           // Check if coach has manually entered any data by looking at the text controllers
           final weightFieldKey = '${exercise.name}_${setIndex}_weight';
           final repsFieldKey = '${exercise.name}_${setIndex}_reps';
@@ -1660,9 +1933,37 @@ class _CoachWorkoutSessionPageState extends State<CoachWorkoutSessionPage> {
                                     (_repsControllers[repsFieldKey]?.text.isNotEmpty == true && 
                                      _repsControllers[repsFieldKey]?.text != '0');
           
-          print('🔍 COACH SET COMPLETION DEBUG: hasCoachEnteredData = $hasCoachEnteredData');
+          print('🔍 COACH SET COMPLETION DEBUG: isShowingPreviousData = $isShowingPreviousData, hasCoachEnteredData = $hasCoachEnteredData');
           
-          if (hasCoachEnteredData) {
+          if (isShowingPreviousData && !hasCoachEnteredData && previousData != null) {
+            // Use previous workout data
+            final previousWeight = previousData['weight']?.toDouble() ?? 0.0;
+            final previousReps = previousData['reps']?.toInt() ?? 0;
+            
+            final updatedSetWithPreviousData = WorkoutSetModel(
+              reps: previousReps,
+              weight: previousWeight,
+              rpe: currentSet.rpe,
+              notes: currentSet.notes,
+              timestamp: currentSet.timestamp,
+              isCompleted: true,
+            );
+            
+            exercise.loggedSets[setIndex] = updatedSetWithPreviousData;
+            print('🏋️ COACH Using previous workout data: ${previousWeight}kg x ${previousReps} reps');
+            
+            // Update the text controllers to show the actual data (no longer guide)
+            if (_weightControllers.containsKey(weightFieldKey)) {
+              _weightControllers[weightFieldKey]!.text = previousWeight.toStringAsFixed(0);
+            }
+            if (_repsControllers.containsKey(repsFieldKey)) {
+              _repsControllers[repsFieldKey]!.text = previousReps.toString();
+            }
+            
+            // Mark as no longer showing previous data (now it's actual data)
+            _showingPreviousData[weightFieldKey] = false;
+            _showingPreviousData[repsFieldKey] = false;
+          } else if (hasCoachEnteredData) {
             // Use coach-entered data from text controllers
             final weightText = _weightControllers[weightFieldKey]?.text ?? '';
             final repsText = _repsControllers[repsFieldKey]?.text ?? '';
@@ -1682,7 +1983,7 @@ class _CoachWorkoutSessionPageState extends State<CoachWorkoutSessionPage> {
             exercise.loggedSets[setIndex] = updatedSetWithCoachData;
             print('🏋️ COACH Using coach-entered values: ${finalWeight}kg x ${finalReps} reps');
           } else {
-            // Use current data if no coach input
+            // Use current data if no coach input and no previous data
             final updatedSet = WorkoutSetModel(
               reps: currentSet.reps,
               weight: currentSet.weight,
@@ -1886,6 +2187,228 @@ class _CoachWorkoutSessionPageState extends State<CoachWorkoutSessionPage> {
                 },
               );
             }),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// Session Deduction Modal Widget
+class _SessionDeductionModal extends StatelessWidget {
+  final int remainingSessions;
+  final String memberName;
+  final bool canDeduct;
+
+  const _SessionDeductionModal({
+    Key? key,
+    required this.remainingSessions,
+    required this.memberName,
+    required this.canDeduct,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      child: Container(
+        padding: EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFF2A2A2A), Color(0xFF1F1F1F)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.5),
+              blurRadius: 30,
+              offset: Offset(0, 15),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Header Icon
+            Container(
+              padding: EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Color(0xFF4ECDC4).withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.fitness_center,
+                color: Color(0xFF4ECDC4),
+                size: 32,
+              ),
+            ),
+            SizedBox(height: 20),
+            
+            // Title
+            Text(
+              'Deduct Session?',
+              style: GoogleFonts.poppins(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
+            SizedBox(height: 12),
+            
+            // Member name
+            Text(
+              'Workout completed for',
+              style: GoogleFonts.poppins(
+                fontSize: 14,
+                color: Colors.grey[400],
+              ),
+            ),
+            SizedBox(height: 4),
+            Text(
+              memberName,
+              style: GoogleFonts.poppins(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: Colors.white,
+              ),
+            ),
+            SizedBox(height: 24),
+            
+            // Current Sessions Info
+            Container(
+              padding: EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Color(0xFF4ECDC4).withOpacity(0.1),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: Color(0xFF4ECDC4).withOpacity(0.3),
+                  width: 1,
+                ),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.event_available,
+                    color: Color(0xFF4ECDC4),
+                    size: 24,
+                  ),
+                  SizedBox(width: 12),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Current Sessions',
+                        style: GoogleFonts.poppins(
+                          fontSize: 12,
+                          color: Colors.grey[400],
+                        ),
+                      ),
+                      Text(
+                        '$remainingSessions ${remainingSessions == 1 ? 'session' : 'sessions'} remaining',
+                        style: GoogleFonts.poppins(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: remainingSessions > 0 
+                              ? Color(0xFF4ECDC4) 
+                              : Colors.red,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(height: 24),
+            
+            // Warning if no sessions available
+            if (!canDeduct || remainingSessions <= 0)
+              Container(
+                padding: EdgeInsets.all(12),
+                margin: EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: Colors.orange.withOpacity(0.3),
+                    width: 1,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.warning_amber_rounded,
+                      color: Colors.orange,
+                      size: 20,
+                    ),
+                    SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        remainingSessions <= 0
+                            ? 'No sessions remaining. Cannot deduct session.'
+                            : 'Session cannot be deducted at this time.',
+                        style: GoogleFonts.poppins(
+                          fontSize: 12,
+                          color: Colors.orange,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            
+            // Buttons
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.of(context).pop(false),
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(color: Colors.grey[700]!, width: 1),
+                      padding: EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: Text(
+                      'Skip',
+                      style: GoogleFonts.poppins(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ),
+                ),
+                SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: (canDeduct && remainingSessions > 0)
+                        ? () => Navigator.of(context).pop(true)
+                        : null,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Color(0xFF4ECDC4),
+                      foregroundColor: Colors.white,
+                      padding: EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      disabledBackgroundColor: Colors.grey[700],
+                      disabledForegroundColor: Colors.grey[400],
+                    ),
+                    child: Text(
+                      'Deduct Session',
+                      style: GoogleFonts.poppins(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ],
         ),
       ),

@@ -157,6 +157,11 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
      Map<String, dynamic>? subscription;
      Map<String, dynamic>? combinationPackage;
      
+     // Track the latest end dates to get the most recent active subscription
+     DateTime? latestMembershipEndDate;
+     DateTime? latestSubscriptionEndDate;
+     DateTime? latestCombinationEndDate;
+     
      for (final sub in subscriptionHistory) {
        final planId = sub['plan_id']?.toString() ?? '';
        final planName = sub['plan_name']?.toString().toLowerCase() ?? '';
@@ -169,21 +174,42 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
            if (endDate.isAfter(now)) {
              // Check for plan_id 5 (Combination Package)
              if (planId == '5' || planName.contains('combination') || planName.contains('membership + 1 month')) {
-               combinationPackage = sub;
+               if (latestCombinationEndDate == null || endDate.isAfter(latestCombinationEndDate)) {
+                 combinationPackage = sub;
+                 latestCombinationEndDate = endDate;
+               }
              }
              // Check for plan_id 1 (Gym Membership) or names containing 'gym membership'
              if (planId == '1' || planName.contains('gym membership') || planName.contains('membership fee')) {
-               membershipSubscription = sub;
+               if (latestMembershipEndDate == null || endDate.isAfter(latestMembershipEndDate)) {
+                 membershipSubscription = sub;
+                 latestMembershipEndDate = endDate;
+               }
              }
              // Check for plan_id 2 (Member Monthly) or names containing 'member' and 'monthly' or 'monthly access'
              else if (planId == '2' || planName.contains('member monthly') || (planName.contains('member') && planName.contains('monthly')) || planName.contains('monthly access')) {
-               subscription = sub;
+               if (latestSubscriptionEndDate == null || endDate.isAfter(latestSubscriptionEndDate)) {
+                 subscription = sub;
+                 latestSubscriptionEndDate = endDate;
+               }
              }
            }
          } catch (e) {
            continue;
          }
        }
+     }
+     
+     // Debug: Print selected subscription data
+     if (subscription != null) {
+       print('Debug: Selected subscription for current display:');
+       print('  Plan: ${subscription['plan_name']}');
+       print('  Periods: ${subscription['periods']}');
+       print('  Total Duration Months: ${subscription['total_duration_months']}');
+       print('  Total Duration Days: ${subscription['total_duration_days']}');
+       print('  Duration Months (base): ${subscription['duration_months']}');
+       print('  Amount Paid: ${subscription['amount_paid']}');
+       print('  Original Price: ${subscription['original_price']}');
      }
      
      // If combination package exists but individual plans don't, create virtual subscriptions
@@ -353,7 +379,20 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
           // Show subscription info (membership or monthly access)
           if (subscription != null) ...[
             const SizedBox(height: 16),
-            _buildSubscriptionInfo(subscription, daysRemaining),
+            Builder(
+              builder: (context) {
+                // Debug: Print subscription data to verify it has periods and total_duration
+                final sub = subscription!; // Non-null assertion since we're inside the if block
+                print('Debug: Current subscription data: ${sub.toString()}');
+                print('Debug: Subscription periods: ${sub['periods']}');
+                print('Debug: Subscription total_duration_months: ${sub['total_duration_months']}');
+                print('Debug: Subscription total_duration_days: ${sub['total_duration_days']}');
+                print('Debug: Subscription duration_months: ${sub['duration_months']}');
+                print('Debug: Subscription amount_paid: ${sub['amount_paid']}');
+                print('Debug: Subscription original_price: ${sub['original_price']}');
+                return _buildSubscriptionInfo(sub, daysRemaining);
+              },
+            ),
           ],
           // Show coach package info if available
           if (activeCoach != null) ...[
@@ -453,37 +492,247 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
     }
   }
 
-  // Helper method to format plan duration based on plan data
-  String _formatPlanDuration(Map<String, dynamic>? subscription) {
+  // Helper method to format days remaining in a user-friendly way (e.g., "1 year 2 months and 5 days")
+  String _formatDaysRemaining(int days) {
+    if (days <= 0) {
+      return 'Expired';
+    }
+    
+    if (days < 30) {
+      return '$days day${days > 1 ? 's' : ''}';
+    }
+    
+    // Calculate total months first (using 30 days per month)
+    final totalMonths = days ~/ 30;
+    
+    // If we have 12 or more months, convert to years
+    int years = 0;
+    int months = 0;
+    int remainingDays = days % 30;
+    
+    if (totalMonths >= 12) {
+      // Convert months to years
+      years = totalMonths ~/ 12;
+      months = totalMonths % 12;
+    } else {
+      // Less than 12 months, just use months
+      months = totalMonths;
+    }
+    
+    List<String> parts = [];
+    
+    if (years > 0) {
+      parts.add('$years year${years > 1 ? 's' : ''}');
+    }
+    
+    if (months > 0) {
+      parts.add('$months month${months > 1 ? 's' : ''}');
+    }
+    
+    if (remainingDays > 0) {
+      parts.add('$remainingDays day${remainingDays > 1 ? 's' : ''}');
+    }
+    
+    if (parts.isEmpty) {
+      return '$days day${days > 1 ? 's' : ''}';
+    }
+    
+    // Join parts with appropriate separators
+    if (parts.length == 1) {
+      return parts[0];
+    } else if (parts.length == 2) {
+      return '${parts[0]} and ${parts[1]}';
+    } else {
+      // For 3 parts: "1 year 2 months and 5 days"
+      return '${parts[0]} ${parts[1]} and ${parts[2]}';
+    }
+  }
+
+  // Helper method to get plan type label (Monthly Plan or Yearly Plan)
+  String _getPlanTypeLabel(Map<String, dynamic>? subscription) {
     if (subscription == null) return 'Unknown';
     
+    final planName = subscription['plan_name']?.toString().toLowerCase() ?? '';
     final durationMonths = subscription['duration_months'] ?? 0;
     final durationDays = subscription['duration_days'] ?? 0;
     
-    // If duration_days is specified and > 0, use days
-    if (durationDays > 0) {
-      if (durationDays == 1) {
-        return '1 day';
-      } else {
-        return '$durationDays days';
+    // Check if it's a yearly/membership plan
+    if (planName.contains('membership fee') || 
+        planName.contains('gym membership') ||
+        durationMonths >= 12 ||
+        (durationDays >= 365 && durationDays <= 366)) {
+      return 'Yearly Plan';
+    }
+    
+    // Check if it's a monthly plan
+    if (planName.contains('monthly') || 
+        planName.contains('month access') ||
+        durationMonths == 1 ||
+        (durationDays >= 28 && durationDays <= 31)) {
+      return 'Monthly Plan';
+    }
+    
+    // Check if it's a day pass
+    if (planName.contains('day pass') || durationDays == 1) {
+      return 'Day Pass';
+    }
+    
+    // Default to Monthly Plan for other cases
+    return 'Monthly Plan';
+  }
+
+  // Helper method to format plan duration based on plan data and periods
+  String _formatPlanDuration(Map<String, dynamic>? subscription) {
+    if (subscription == null) return 'Unknown';
+    
+    // PRIORITY 1: Calculate duration from actual start_date and end_date (most accurate)
+    final startDate = subscription['start_date'];
+    final endDate = subscription['end_date'];
+    if (startDate != null && endDate != null) {
+      try {
+        final start = DateTime.parse(startDate.toString());
+        final end = DateTime.parse(endDate.toString());
+        final difference = end.difference(start).inDays;
+        
+        if (difference > 0) {
+          // Format the actual duration from dates (rounded to months for cleaner display)
+          if (difference >= 365) {
+            final years = (difference / 365).floor();
+            final remainingDays = difference % 365;
+            // Round to nearest month if less than 30 days remaining
+            if (remainingDays < 15) {
+              return '$years year${years > 1 ? 's' : ''}';
+            } else if (remainingDays >= 15 && remainingDays < 365) {
+              final months = (remainingDays / 30).round();
+              if (months == 0) {
+                return '$years year${years > 1 ? 's' : ''}';
+              } else if (months >= 12) {
+                return '${years + 1} year${years + 1 > 1 ? 's' : ''}';
+              } else {
+                return '$years year${years > 1 ? 's' : ''} $months month${months > 1 ? 's' : ''}';
+              }
+            }
+            return '$years year${years > 1 ? 's' : ''}';
+          } else if (difference >= 30) {
+            // Round to nearest month (if less than 15 days extra, don't show days)
+            final months = (difference / 30).round();
+            final exactMonths = (difference / 30).floor();
+            final remainingDays = difference % 30;
+            
+            // If remaining days is less than 15, round down to months
+            if (remainingDays < 15) {
+              if (exactMonths == 0) {
+                return '$difference day${difference > 1 ? 's' : ''}';
+              }
+              return '$exactMonths month${exactMonths > 1 ? 's' : ''}';
+            } else {
+              // If 15+ days remaining, round up to next month
+              return '$months month${months > 1 ? 's' : ''}';
+            }
+          } else {
+            return '$difference day${difference > 1 ? 's' : ''}';
+          }
+        }
+      } catch (e) {
+        // If date parsing fails, fall through to other methods
+        print('Error parsing dates for duration: $e');
       }
     }
     
-    // Otherwise use months
-    if (durationMonths > 0) {
-      if (durationMonths == 1) {
+    // PRIORITY 2: Check if API already calculated total_duration
+    final totalDurationMonthsFromAPI = subscription['total_duration_months'];
+    final totalDurationDaysFromAPI = subscription['total_duration_days'];
+    
+    if (totalDurationDaysFromAPI != null && totalDurationDaysFromAPI > 0) {
+      final totalDays = int.tryParse(totalDurationDaysFromAPI.toString()) ?? 0;
+      if (totalDays == 1) {
+        return '1 day';
+      } else {
+        return '$totalDays days';
+      }
+    }
+    
+    if (totalDurationMonthsFromAPI != null && totalDurationMonthsFromAPI > 0) {
+      final totalMonths = int.tryParse(totalDurationMonthsFromAPI.toString()) ?? 0;
+      if (totalMonths == 1) {
         return '1 month';
-      } else if (durationMonths == 12) {
+      } else if (totalMonths == 12) {
         return '1 year';
-      } else if (durationMonths > 12) {
-        final years = (durationMonths / 12).floor();
-        final remainingMonths = durationMonths % 12;
+      } else if (totalMonths > 12 && totalMonths % 12 == 0) {
+        final years = totalMonths ~/ 12;
+        return '$years year${years > 1 ? 's' : ''}';
+      } else if (totalMonths > 12) {
+        final years = totalMonths ~/ 12;
+        final remainingMonths = totalMonths % 12;
         if (remainingMonths > 0) {
           return '$years year${years > 1 ? 's' : ''} $remainingMonths month${remainingMonths > 1 ? 's' : ''}';
         }
         return '$years year${years > 1 ? 's' : ''}';
       } else {
-        return '$durationMonths months';
+        return '$totalMonths months';
+      }
+    }
+    
+    // PRIORITY 3: Fallback - Calculate periods from amount_paid and price
+    int periods = 1;
+    final amountPaid = subscription['amount_paid'];
+    final originalPrice = subscription['original_price'] ?? subscription['price'];
+    
+    if (originalPrice != null && amountPaid != null) {
+      final priceValue = double.tryParse(originalPrice.toString()) ?? 0.0;
+      final paidValue = double.tryParse(amountPaid.toString()) ?? 0.0;
+      if (priceValue > 0) {
+        periods = (paidValue / priceValue).round();
+        if (periods < 1) periods = 1;
+      }
+    }
+    
+    // Also check if periods is already in the subscription data
+    if (subscription['periods'] != null) {
+      final periodsValue = subscription['periods'];
+      if (periodsValue is int) {
+        periods = periodsValue;
+      } else if (periodsValue is num) {
+        periods = periodsValue.toInt();
+      } else if (periodsValue is String) {
+        periods = int.tryParse(periodsValue) ?? periods;
+      }
+    }
+    
+    final durationMonths = subscription['duration_months'] ?? 0;
+    final durationDays = subscription['duration_days'] ?? 0;
+    
+    // Calculate total duration based on periods
+    final totalDurationDays = durationDays > 0 ? durationDays * periods : 0;
+    final totalDurationMonths = durationMonths > 0 ? durationMonths * periods : 0;
+    
+    // If duration_days is specified and > 0, use days
+    if (totalDurationDays > 0) {
+      if (totalDurationDays == 1) {
+        return '1 day';
+      } else {
+        return '$totalDurationDays days';
+      }
+    }
+    
+    // Otherwise use months
+    if (totalDurationMonths > 0) {
+      if (totalDurationMonths == 1) {
+        return '1 month';
+      } else if (totalDurationMonths == 12) {
+        return '1 year';
+      } else if (totalDurationMonths > 12 && totalDurationMonths % 12 == 0) {
+        final years = totalDurationMonths ~/ 12;
+        return '$years year${years > 1 ? 's' : ''}';
+      } else if (totalDurationMonths > 12) {
+        final years = totalDurationMonths ~/ 12;
+        final remainingMonths = totalDurationMonths % 12;
+        if (remainingMonths > 0) {
+          return '$years year${years > 1 ? 's' : ''} $remainingMonths month${remainingMonths > 1 ? 's' : ''}';
+        }
+        return '$years year${years > 1 ? 's' : ''}';
+      } else {
+        return '$totalDurationMonths months';
       }
     }
     
@@ -494,8 +743,6 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
   Widget _buildSubscriptionInfo(Map<String, dynamic> subscription, int daysRemaining) {
     // Handle both membership and coach subscription data
     final planName = subscription['plan_name'] ?? subscription['membership_type'] ?? 'Unknown Plan';
-    final price = subscription['price'] ?? subscription['discounted_price'] ?? '0';
-    final startDate = subscription['start_date'];
     final endDate = subscription['end_date'];
     // final status = subscription['display_status'] ?? subscription['status'] ?? subscription['status_name'] ?? 'Unknown';
     // final isExpired = subscription['is_expired'] ?? false;
@@ -592,132 +839,77 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
                ),
              ],
            ),
-           const SizedBox(height: 12),
-           // Plan info with better design
-           Container(
-             padding: const EdgeInsets.all(12),
-             decoration: BoxDecoration(
-               color: typeColor.withOpacity(0.1),
-               borderRadius: BorderRadius.circular(8),
-               border: Border.all(
-                 color: typeColor.withOpacity(0.2),
-                 width: 1,
-               ),
-             ),
-             child: Row(
-               children: [
-                 Icon(
-                   Icons.star,
-                   color: typeColor,
-                   size: 20,
-                 ),
-                 const SizedBox(width: 12),
-                 Expanded(
-                   child: Column(
-                     crossAxisAlignment: CrossAxisAlignment.start,
-                     children: [
-                       Text(
-                         planName, // Use the actual plan name from the API
-                         style: GoogleFonts.poppins(
-                           color: Colors.white,
-                           fontSize: 16,
-                           fontWeight: FontWeight.w600,
-                         ),
-                       ),
-                       Text(
-                         '₱$price',
-                         style: GoogleFonts.poppins(
-                           color: typeColor,
-                           fontSize: 14,
-                           fontWeight: FontWeight.w500,
-                         ),
-                       ),
-                     ],
-                   ),
-                 ),
-               ],
-             ),
-           ),
-           const SizedBox(height: 16),
-           // Enhanced Date Display Section
-           Container(
-             padding: const EdgeInsets.all(12),
-             decoration: BoxDecoration(
-               color: typeColor.withOpacity(0.1),
-               borderRadius: BorderRadius.circular(8),
-               border: Border.all(
-                 color: typeColor.withOpacity(0.2),
-                 width: 1,
-               ),
-             ),
-             child: Column(
-               children: [
-                 Row(
-                   children: [
-                     Icon(
-                       Icons.schedule,
-                       color: typeColor,
-                       size: 16,
-                     ),
-                     const SizedBox(width: 8),
-                     Text(
-                       'Subscription Period',
-                       style: GoogleFonts.poppins(
-                         color: typeColor,
-                         fontSize: 14,
-                         fontWeight: FontWeight.w600,
-                       ),
-                     ),
-                   ],
-                 ),
-                 const SizedBox(height: 12),
-                 Row(
-                   children: [
-                     Expanded(
-                       child: _buildDateItem(
-                         'Start Date',
-                         SubscriptionService.formatDate(startDate),
-                         Icons.play_circle_outline,
-                         typeColor,
-                       ),
-                     ),
-                     const SizedBox(width: 16),
-                     Expanded(
-                       child: _buildDateItem(
-                         'End Date',
-                         SubscriptionService.formatDate(endDate),
-                         Icons.event_available,
-                         typeColor,
-                       ),
-                     ),
-                   ],
-                 ),
-                 const SizedBox(height: 8),
-                 Row(
-                   children: [
-                     Expanded(
-                       child: _buildDateItem(
-                         'Duration',
-                         _formatPlanDuration(subscription),
-                         Icons.timer,
-                         typeColor,
-                       ),
-                     ),
-                     const SizedBox(width: 16),
-                     Expanded(
-                       child: _buildDateItem(
-                         'Days Remaining',
-                         '$daysRemaining days',
-                         Icons.hourglass_empty,
-                         daysRemaining > 7 ? typeColor : 
-                         daysRemaining > 0 ? typeColor : const Color(0xFFF44336),
-                       ),
-                     ),
-                   ],
-                 ),
-               ],
-             ),
-           ),
+          const SizedBox(height: 16),
+          // Enhanced Date Display Section
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: typeColor.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: typeColor.withOpacity(0.2),
+                width: 1,
+              ),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      Icons.schedule,
+                      color: typeColor,
+                      size: 16,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Subscription Details',
+                      style: GoogleFonts.poppins(
+                        color: typeColor,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildDateItem(
+                        'Plan Type',
+                        _getPlanTypeLabel(subscription),
+                        Icons.category,
+                        typeColor,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: _buildDateItem(
+                        'Expiry Date',
+                        SubscriptionService.formatDate(endDate),
+                        Icons.event_available,
+                        typeColor,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildDateItem(
+                        'Time Remaining',
+                        _formatDaysRemaining(daysRemaining),
+                        Icons.hourglass_empty,
+                        daysRemaining > 7 ? typeColor : 
+                        daysRemaining > 0 ? typeColor : const Color(0xFFF44336),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
          ],
        ),
      );
@@ -1013,11 +1205,7 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
     }
     
     // Use gym membership subscription data for membership card
-    final startDate = membershipSub['start_date'];
     final endDate = membershipSub['end_date'];
-    
-    // Get plan duration from subscription data
-    final planDuration = _formatPlanDuration(membershipSub);
     
     // Calculate days remaining for gym membership
     int daysRemaining = 0;
@@ -1030,8 +1218,6 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
         daysRemaining = 0;
       }
     }
-    
-    final price = membershipSub['price']?.toString() ?? '0';
     // final planName = monthlyAccessSub['plan_name'] ?? 'Membership';
     
     return Container(
@@ -1084,52 +1270,6 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          // Membership info with better design
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: const Color(0xFF4CAF50).withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: const Color(0xFF4CAF50).withOpacity(0.2),
-                width: 1,
-              ),
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.star,
-                  color: const Color(0xFF4CAF50),
-                  size: 20,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Premium Access',
-                        style: GoogleFonts.poppins(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      Text(
-                        '₱$price',
-                        style: GoogleFonts.poppins(
-                          color: const Color(0xFF4CAF50),
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
           const SizedBox(height: 16),
           // Enhanced Date Display Section
           Container(
@@ -1153,7 +1293,7 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
                     ),
                     const SizedBox(width: 8),
                     Text(
-                      'Subscription Period',
+                      'Subscription Details',
                       style: GoogleFonts.poppins(
                         color: const Color(0xFF4CAF50),
                         fontSize: 14,
@@ -1167,16 +1307,16 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
                   children: [
                     Expanded(
                       child: _buildDateItem(
-                        'Start Date',
-                        SubscriptionService.formatDate(startDate),
-                        Icons.play_circle_outline,
+                        'Plan Type',
+                        _getPlanTypeLabel(membershipSub),
+                        Icons.category,
                         const Color(0xFF4CAF50),
                       ),
                     ),
                     const SizedBox(width: 16),
                     Expanded(
                       child: _buildDateItem(
-                        'End Date',
+                        'Expiry Date',
                         SubscriptionService.formatDate(endDate),
                         Icons.event_available,
                         const Color(0xFF4CAF50),
@@ -1189,17 +1329,8 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
                   children: [
                     Expanded(
                       child: _buildDateItem(
-                        'Duration',
-                        planDuration,
-                        Icons.timer,
-                        const Color(0xFF4CAF50),
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: _buildDateItem(
-                        'Days Remaining',
-                        '$daysRemaining days',
+                        'Time Remaining',
+                        _formatDaysRemaining(daysRemaining),
                         Icons.hourglass_empty,
                         daysRemaining > 7 ? const Color(0xFF4CAF50) : 
                         daysRemaining > 0 ? const Color(0xFFFF9800) : const Color(0xFFF44336),
@@ -1318,14 +1449,12 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
       return _buildEmptyState();
     }
 
-    return ListView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: filteredHistory.length,
-      itemBuilder: (context, index) {
-        final subscription = filteredHistory[index];
+    // Use Column instead of ListView.builder since it's inside SingleChildScrollView
+    // This allows smooth scrolling for long lists
+    return Column(
+      children: filteredHistory.map((subscription) {
         return _buildSubscriptionHistoryCard(subscription);
-      },
+      }).toList(),
     );
   }
 
@@ -1431,11 +1560,40 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
   }
 
   Widget _buildSubscriptionHistoryDetails(Map<String, dynamic> subscription, String planDuration, int daysRemaining) {
-    final price = subscription['price']?.toString() ?? '0';
+    final price = subscription['price']?.toString() ?? subscription['original_price']?.toString() ?? '0';
+    
+    // Calculate periods from amount_paid and price
+    int periods = 1;
+    final amountPaid = subscription['amount_paid'];
+    final originalPrice = subscription['original_price'] ?? subscription['price'];
+    
+    if (originalPrice != null && amountPaid != null) {
+      final priceValue = double.tryParse(originalPrice.toString()) ?? 0.0;
+      final paidValue = double.tryParse(amountPaid.toString()) ?? 0.0;
+      if (priceValue > 0) {
+        periods = (paidValue / priceValue).round();
+        if (periods < 1) periods = 1;
+      }
+    }
+    
+    // Get duration info
+    final durationMonths = subscription['duration_months'] ?? 1;
+    final durationDays = subscription['duration_days'];
+    
+    // Format quantity text
+    String quantityText = '';
+    if (durationDays != null && durationDays > 0) {
+      quantityText = periods > 1 ? '$periods periods' : '1 period';
+    } else if (durationMonths >= 12) {
+      quantityText = periods > 1 ? '$periods years' : '1 year';
+    } else {
+      quantityText = periods > 1 ? '$periods months' : '1 month';
+    }
     
     return Column(
       children: [
         _buildDetailRow('Price', '₱$price'),
+        _buildDetailRow('Quantity', quantityText),
       ],
     );
   }

@@ -5,7 +5,7 @@ import 'package:intl/intl.dart';
 import 'models/messages_model.dart';
 import 'services/messages_service.dart';
 import 'chat_page.dart';
-import '../user_dashboard.dart';
+import 'support_tickets_page.dart';
 
 class MessagesPage extends StatefulWidget {
   final int currentUserId;
@@ -62,7 +62,6 @@ class _MessagesPageState extends State<MessagesPage> with TickerProviderStateMix
   void _startMessagePolling() {
     _messageTimer = Timer.periodic(Duration(seconds: 1), (timer) {
       if (mounted) {
-        print('🔄 Auto-polling for new conversations');
         _loadConversations(isPolling: true);
       } else {
         // Stop polling if widget is not mounted
@@ -78,7 +77,6 @@ class _MessagesPageState extends State<MessagesPage> with TickerProviderStateMix
 
   @override
   void dispose() {
-    print('🗑️ Disposing MessagesPage...');
     _stopMessagePolling();
     _animationController.dispose();
     super.dispose();
@@ -121,7 +119,6 @@ class _MessagesPageState extends State<MessagesPage> with TickerProviderStateMix
                 
                 // If local shows as read (0) but server still shows unread, keep local
                 if (localConv.unreadCount == 0 && serverConv.unreadCount > 0) {
-                  print('🔒 Keeping local read status for conversation ${localConv.id}');
                   loadedConversations[loadedConversations.indexWhere((c) => c.id == localConv.id)] = localConv;
                 }
               }
@@ -134,7 +131,6 @@ class _MessagesPageState extends State<MessagesPage> with TickerProviderStateMix
           if (!isPolling) {
             _animationController.forward();
           }
-          print('✅ Loaded ${loadedConversations.length} conversations${isPolling ? ' (polling)' : ''}');
         }
       }
     } catch (e) {
@@ -175,6 +171,122 @@ class _MessagesPageState extends State<MessagesPage> with TickerProviderStateMix
       return DateFormat('MMM d, y').format(dateTime);
     }
   }
+
+  Widget _buildSpecialCard({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required Color iconColor,
+    required List<Color> gradientColors,
+    required VoidCallback onTap,
+    required bool isSmallScreen,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: EdgeInsets.all(isSmallScreen ? 16 : 20),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: gradientColors,
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: iconColor.withOpacity(0.3),
+              blurRadius: 15,
+              offset: Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: EdgeInsets.all(isSmallScreen ? 12 : 16),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Icon(
+                icon,
+                color: Colors.white,
+                size: isSmallScreen ? 24 : 32,
+              ),
+            ),
+            SizedBox(width: isSmallScreen ? 12 : 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: GoogleFonts.poppins(
+                      fontSize: isSmallScreen ? 16 : 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    style: GoogleFonts.poppins(
+                      fontSize: isSmallScreen ? 12 : 14,
+                      color: Colors.white.withOpacity(0.9),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              Icons.arrow_forward_ios,
+              color: Colors.white,
+              size: isSmallScreen ? 16 : 20,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openSupportTickets(bool isSmallScreen) async {
+    try {
+      // Navigate to support tickets page
+      Navigator.push(
+        context,
+        PageRouteBuilder(
+          pageBuilder: (context, animation, secondaryAnimation) => SupportTicketsPage(
+            currentUserId: widget.currentUserId,
+          ),
+          transitionsBuilder: (context, animation, secondaryAnimation, child) {
+            const begin = Offset(1.0, 0.0);
+            const end = Offset.zero;
+            const curve = Curves.easeOutCubic;
+            
+            var tween = Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
+            var offsetAnimation = animation.drive(tween);
+            var fadeAnimation = Tween<double>(begin: 0.0, end: 1.0)
+                .chain(CurveTween(curve: Curves.easeOutCubic))
+                .animate(animation);
+            
+            return SlideTransition(
+              position: offsetAnimation,
+              child: FadeTransition(opacity: fadeAnimation, child: child),
+            );
+          },
+          transitionDuration: Duration(milliseconds: 300),
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error opening support tickets: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -343,6 +455,25 @@ class _MessagesPageState extends State<MessagesPage> with TickerProviderStateMix
                           ],
                         ),
                       ),
+                      // Special Action Cards
+                      Container(
+                        padding: EdgeInsets.symmetric(horizontal: isSmallScreen ? 12 : 20),
+                        child: Column(
+                          children: [
+                            // Support Tickets Card
+                            _buildSpecialCard(
+                              title: 'Need Help?',
+                              subtitle: 'View Support Tickets',
+                              icon: Icons.support_agent,
+                              iconColor: Color(0xFFFF6B35),
+                              gradientColors: [Color(0xFFFF6B35), Color(0xFFFF8C5A)],
+                              onTap: () => _openSupportTickets(isSmallScreen),
+                              isSmallScreen: isSmallScreen,
+                            ),
+                            SizedBox(height: isSmallScreen ? 16 : 20),
+                          ],
+                        ),
+                      ),
                       // Messages List
                       Expanded(
                         child: conversations.isEmpty
@@ -434,7 +565,9 @@ class _MessagesPageState extends State<MessagesPage> with TickerProviderStateMix
                                             ),
                                             child: Center(
                                               child: Text(
-                                                conversation.otherUser.initials,
+                                                conversation.otherUser.userTypeId == 1 
+                                                    ? 'A' 
+                                                    : conversation.otherUser.initials,
                                                 style: GoogleFonts.poppins(
                                                   fontSize: isSmallScreen ? 16 : 22,
                                                   fontWeight: FontWeight.bold,
@@ -471,7 +604,9 @@ class _MessagesPageState extends State<MessagesPage> with TickerProviderStateMix
                                         children: [
                                           Expanded(
                                             child: Text(
-                                              conversation.otherUser.fullName,
+                                              conversation.otherUser.userTypeId == 1 
+                                                  ? 'Admin' 
+                                                  : conversation.otherUser.fullName,
                                               style: GoogleFonts.poppins(
                                                 fontWeight: FontWeight.bold,
                                                 fontSize: isSmallScreen ? 14 : 16,

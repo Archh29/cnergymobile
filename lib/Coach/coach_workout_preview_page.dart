@@ -2,12 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../User/models/routine.models.dart' as UserModels;
 import '../User/models/workoutpreview_model.dart';
-import '../User/widgets/exercise_detail_modal.dart';
 import 'coach_workout_session_page.dart';
 import '../User/exercise_instructions_page.dart';
 import 'models/member_model.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import '../User/services/session_tracking_service.dart';
+import 'services/coach_service.dart';
 
 class CoachWorkoutPreviewPage extends StatefulWidget {
   final UserModels.RoutineModel routine;
@@ -122,7 +123,7 @@ class _CoachWorkoutPreviewPageState extends State<CoachWorkoutPreviewPage> {
     final currentDay = _getCurrentWorkoutDay();
     
     // Check if this program is for today's workout
-    final isTodayWorkout = widget.routine.scheduledDays?.contains(currentDay) == true;
+    final isTodayWorkout = widget.routine.scheduledDays.contains(currentDay);
     
     return Container(
       padding: EdgeInsets.symmetric(
@@ -194,7 +195,7 @@ class _CoachWorkoutPreviewPageState extends State<CoachWorkoutPreviewPage> {
                   textAlign: TextAlign.center,
                 ),
                 // Scheduled day info (if this is not today's workout)
-                if (widget.routine.scheduledDays?.isNotEmpty == true && !isTodayWorkout) ...[
+                if (widget.routine.scheduledDays.isNotEmpty && !isTodayWorkout) ...[
                   SizedBox(height: 4),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -206,7 +207,7 @@ class _CoachWorkoutPreviewPageState extends State<CoachWorkoutPreviewPage> {
                       ),
                       SizedBox(width: 4),
                       Text(
-                        'Scheduled: ${widget.routine.scheduledDays!.first}',
+                        'Scheduled: ${widget.routine.scheduledDays.first}',
                         style: GoogleFonts.poppins(
                           color: Colors.grey[400],
                           fontSize: 11,
@@ -246,61 +247,6 @@ class _CoachWorkoutPreviewPageState extends State<CoachWorkoutPreviewPage> {
           child: _buildExercisesList(isSmallScreen),
         ),
         _buildStartButton(isSmallScreen),
-      ],
-    );
-  }
-
-  Widget _buildWorkoutStats(bool isSmallScreen) {
-    final stats = workoutPreview!.stats;
-        
-    return Container(
-      padding: EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          _buildStatColumn('Duration', stats.formattedDuration, const Color(0xFF4ECDC4), isSmallScreen),
-          _buildStatColumn('Calories', stats.formattedCalories, Colors.white, isSmallScreen),
-          _buildStatColumn('Volume', stats.formattedVolume, Colors.white, isSmallScreen),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatColumn(String label, String value, Color valueColor, bool isSmallScreen) {
-    return Column(
-      children: [
-        Text(
-          label,
-          style: GoogleFonts.poppins(
-            color: Colors.grey[400],
-            fontSize: isSmallScreen ? 12 : 14,
-            fontWeight: FontWeight.w400,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (label == 'Duration')
-              Container(
-                width: 6,
-                height: 6,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF4ECDC4),
-                  shape: BoxShape.circle,
-                ),
-                margin: const EdgeInsets.only(right: 6),
-              ),
-            Text(
-              value,
-              style: GoogleFonts.poppins(
-                color: valueColor,
-                fontSize: isSmallScreen ? 16 : 18,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
       ],
     );
   }
@@ -562,7 +508,96 @@ class _CoachWorkoutPreviewPageState extends State<CoachWorkoutPreviewPage> {
     );
   }
 
-  void _startWorkout() {
+  void _startWorkout() async {
+    if (workoutPreview == null) return;
+
+    // Check if this routine was created by a coach (has createdBy)
+    final routineCreatedBy = widget.routine.createdBy;
+    print('🔍 SESSION CHECK: Routine createdBy value: "$routineCreatedBy"');
+    print('🔍 SESSION CHECK: Routine createdBy type: ${routineCreatedBy.runtimeType}');
+    
+    final hasCoachCreator = routineCreatedBy.isNotEmpty && 
+        routineCreatedBy != 'null' && 
+        routineCreatedBy != '0';
+    
+    print('🔍 SESSION CHECK: hasCoachCreator = $hasCoachCreator');
+
+    if (hasCoachCreator) {
+      print('✅ SESSION CHECK: Coach-created routine detected. Checking and deducting session...');
+      // Check and deduct session before starting workout
+      await _checkAndDeductSession();
+    } else {
+      print('⚠️ SESSION CHECK: User-created routine or no coach creator. Skipping session check.');
+      // User-created routine, no session check needed - start directly
+      _navigateToWorkoutSession();
+    }
+  }
+
+  Future<void> _checkAndDeductSession() async {
+    try {
+      print('🔄 SESSION DEDUCTION: Starting session check and deduction process...');
+      
+      // Get coach ID and member ID
+      final coachId = await CoachService.getCoachId();
+      print('🔄 SESSION DEDUCTION: Coach ID = $coachId');
+      
+      if (coachId == 0) {
+        print('❌ SESSION DEDUCTION: Coach ID is 0, cannot proceed');
+        _showErrorDialog('Unable to identify coach. Please try again.');
+        return;
+      }
+
+      final memberId = widget.selectedMember.id;
+      print('🔄 SESSION DEDUCTION: Member ID = $memberId');
+
+      // Show loading dialog
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          backgroundColor: Color(0xFF1A1A1A),
+          content: Row(
+            children: [
+              CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF4ECDC4)),
+              ),
+              SizedBox(width: 16),
+              Text(
+                'Checking session availability...',
+                style: GoogleFonts.poppins(color: Colors.white),
+              ),
+            ],
+          ),
+        ),
+      );
+
+      // Check session availability (but don't deduct yet - will deduct on completion)
+      final sessionStatus = await SessionTrackingService.checkSessionAvailability(
+        userId: memberId,
+        coachId: coachId,
+      );
+
+      // Close loading dialog
+      Navigator.of(context).pop();
+
+      if (!sessionStatus.canStartWorkout) {
+        _showSessionErrorDialog(sessionStatus.reason);
+        return;
+      }
+
+      // Start the workout (session will be deducted when workout is completed)
+      _navigateToWorkoutSession();
+
+    } catch (e) {
+      // Close loading dialog if still open
+      if (Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
+      _showErrorDialog('Error checking session: $e');
+    }
+  }
+
+  void _navigateToWorkoutSession() {
     if (workoutPreview == null) return;
 
     // Convert WorkoutExerciseModel to ExerciseModel for the session page
@@ -605,6 +640,100 @@ class _CoachWorkoutPreviewPageState extends State<CoachWorkoutPreviewPage> {
     );
   }
 
+  void _showSessionErrorDialog(String message) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Color(0xFF1A1A1A),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        title: Row(
+          children: [
+            Icon(Icons.error_outline, color: Colors.red, size: 28),
+            SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Cannot Start Workout',
+                style: GoogleFonts.poppins(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          message,
+          style: GoogleFonts.poppins(
+            color: Colors.grey[300],
+            fontSize: 14,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text(
+              'OK',
+              style: GoogleFonts.poppins(
+                color: Color(0xFF4ECDC4),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showErrorDialog(String message) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Color(0xFF1A1A1A),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        title: Row(
+          children: [
+            Icon(Icons.error_outline, color: Colors.red, size: 28),
+            SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Error',
+                style: GoogleFonts.poppins(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          message,
+          style: GoogleFonts.poppins(
+            color: Colors.grey[300],
+            fontSize: 14,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text(
+              'OK',
+              style: GoogleFonts.poppins(
+                color: Color(0xFF4ECDC4),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _navigateToInstructions(WorkoutExerciseModel exercise) {
     // Convert WorkoutExerciseModel to ExerciseModel for the instructions page
     final exerciseModel = UserModels.ExerciseModel(
@@ -642,40 +771,4 @@ class _CoachWorkoutPreviewPageState extends State<CoachWorkoutPreviewPage> {
     );
   }
 
-  void _showExerciseDetails(WorkoutExerciseModel exercise) {
-    // Convert WorkoutExerciseModel to ExerciseModel for the modal
-    final exerciseModel = UserModels.ExerciseModel(
-      id: exercise.exerciseId,
-      name: exercise.name,
-      targetSets: exercise.sets,
-      targetReps: exercise.reps,
-      targetWeight: exercise.weight.toString(),
-      completedSets: exercise.completedSets,
-      sets: exercise.targetSets?.map((set) => UserModels.ExerciseSet(
-        reps: set.reps.toString(),
-        weight: set.weight.toString(),
-        rpe: set.rpe,
-        duration: set.notes,
-        timestamp: set.timestamp,
-      )).toList() ?? [],
-      completed: exercise.isCompleted,
-      category: exercise.category,
-      difficulty: exercise.difficulty,
-        color: '0xFF4ECDC4',
-        restTime: exercise.restTime,
-        notes: '',
-      targetMuscle: exercise.targetMuscle,
-      description: exercise.description,
-      imageUrl: exercise.imageUrl,
-    );
-    
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (context) => ExerciseDetailModal(
-        exercise: exerciseModel,
-      ),
-    );
-  }
 }

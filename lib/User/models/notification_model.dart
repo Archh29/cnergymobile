@@ -50,6 +50,8 @@ class NotificationModel {
         return 'check_circle';
       case 'error':
         return 'error';
+      case 'capacity':
+        return 'people';
       default:
         return 'notifications';
     }
@@ -66,6 +68,8 @@ class NotificationModel {
         return '#96CEB4';
       case 'error':
         return '#FF6B6B';
+      case 'capacity':
+        return '#FF6B35';
       default:
         return '#9E9E9E';
     }

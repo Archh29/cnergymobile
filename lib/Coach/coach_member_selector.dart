@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import './models/member_model.dart';
 import './services/coach_service.dart';
+import './coach_member_detail_page.dart';
 
 class CoachMemberSelector extends StatefulWidget {
   final List<MemberModel> assignedMembers;
@@ -423,7 +424,15 @@ class _CoachMemberSelectorState extends State<CoachMemberSelector>
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: isAssigned ? () => widget.onMemberSelected(member) : null,
+          onTap: isAssigned ? () {
+            widget.onMemberSelected(member);
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => CoachMemberDetailPage(member: member),
+              ),
+            );
+          } : null,
           borderRadius: BorderRadius.circular(16),
           splashColor: Color(0xFFFF6B35).withOpacity(0.1),
           highlightColor: Color(0xFFFF6B35).withOpacity(0.05),

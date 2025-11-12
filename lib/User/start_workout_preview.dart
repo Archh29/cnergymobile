@@ -3,8 +3,6 @@ import 'package:google_fonts/google_fonts.dart';
 import './models/routine.models.dart';
 import './models/workoutpreview_model.dart';
 import './services/workout_preview_service.dart';
-import './services/session_tracking_service.dart';
-import './services/auth_service.dart';
 import './widgets/exercise_detail_modal.dart';
 import 'workout_session_page.dart';
 import 'exercise_instructions_page.dart';
@@ -374,6 +372,7 @@ class _StartWorkoutPreviewPageState extends State<StartWorkoutPreviewPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Exercise name
                   Text(
                     exercise.name,
                     style: GoogleFonts.poppins(
@@ -381,15 +380,82 @@ class _StartWorkoutPreviewPageState extends State<StartWorkoutPreviewPage> {
                       fontSize: isSmallScreen ? 16 : 18,
                       fontWeight: FontWeight.w600,
                     ),
-                    maxLines: 1,
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  // Removed the sets/reps text as requested
+                  SizedBox(height: 8),
+                  // Sets and reps info
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    children: [
+                      Text(
+                        '${exercise.sets} sets',
+                        style: GoogleFonts.poppins(
+                          color: const Color(0xFF4ECDC4),
+                          fontSize: isSmallScreen ? 13 : 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      Text(
+                        '•',
+                        style: GoogleFonts.poppins(
+                          color: Colors.grey[600],
+                          fontSize: 14,
+                        ),
+                      ),
+                      Text(
+                        '${exercise.reps} reps',
+                        style: GoogleFonts.poppins(
+                          color: const Color(0xFF4ECDC4),
+                          fontSize: isSmallScreen ? 13 : 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      if (exercise.restTime > 0) ...[
+                        Text(
+                          '•',
+                          style: GoogleFonts.poppins(
+                            color: Colors.grey[600],
+                            fontSize: 14,
+                          ),
+                        ),
+                        Text(
+                          '${exercise.restTime}s rest',
+                          style: GoogleFonts.poppins(
+                            color: Colors.grey[400],
+                            fontSize: isSmallScreen ? 13 : 14,
+                          ),
+                        ),
+                      ],
+                      // Weight removed - only show sets and reps in preview
+                    ],
+                  ),
+                  // Show individual set breakdown if multiple sets with different reps
+                  // Note: Only show sets and reps, no weight in preview
+                  if (exercise.targetSets != null && exercise.targetSets!.length > 1) ...[
+                    SizedBox(height: 6),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      children: exercise.targetSets!.asMap().entries.map((entry) {
+                        final setIndex = entry.key;
+                        final set = entry.value;
+                        // Only show reps, no weight in preview
+                        return Text(
+                          'Set ${setIndex + 1}: ${set.reps} reps',
+                          style: GoogleFonts.poppins(
+                            color: Colors.grey[500],
+                            fontSize: isSmallScreen ? 11 : 12,
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ],
                 ],
               ),
             ),
           ),
-          // Removed per-exercise overflow menu
         ],
       ),
     );
@@ -613,124 +679,8 @@ class _StartWorkoutPreviewPageState extends State<StartWorkoutPreviewPage> {
   }
 
   void _startWorkout() async {
-    // Check if this routine was created by a coach
-    if (widget.routine.createdBy.isNotEmpty && 
-        widget.routine.createdBy != 'null' && 
-        widget.routine.createdBy != '0') {
-      await _checkSessionAndStartWorkout();
-    } else {
-      // User-created routine, no session check needed
-      _navigateToWorkoutSession();
-    }
-  }
-
-  Future<void> _checkSessionAndStartWorkout() async {
-    try {
-      final currentUserId = AuthService.getCurrentUserId();
-      if (currentUserId == null) {
-        _showErrorDialog('Please log in to start workout');
-        return;
-      }
-
-      // Debug: Print the createdBy value
-      print('🔍 DEBUG - Routine createdBy value: "${widget.routine.createdBy}"');
-      print('🔍 DEBUG - Routine createdBy type: ${widget.routine.createdBy.runtimeType}');
-      print('🔍 DEBUG - Routine createdBy isEmpty: ${widget.routine.createdBy.isEmpty}');
-      print('🔍 DEBUG - Routine createdBy == "null": ${widget.routine.createdBy == "null"}');
-
-      final coachId = int.tryParse(widget.routine.createdBy);
-      print('🔍 DEBUG - Parsed coachId: $coachId');
-      
-      if (coachId == null) {
-        _showErrorDialog('Invalid coach information. CreatedBy: "${widget.routine.createdBy}"');
-        return;
-      }
-
-      // Show loading dialog
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => AlertDialog(
-          content: Row(
-            children: [
-              CircularProgressIndicator(),
-              SizedBox(width: 16),
-              Text('Checking session availability...'),
-            ],
-          ),
-        ),
-      );
-
-      // Check session availability
-      final sessionStatus = await SessionTrackingService.checkSessionAvailability(
-        userId: currentUserId,
-        coachId: coachId,
-      );
-
-      // Close loading dialog
-      Navigator.of(context).pop();
-
-      if (!sessionStatus.canStartWorkout) {
-        _showSessionErrorDialog(sessionStatus.reason);
-        return;
-      }
-
-      // Deduct session if needed
-      final deductionResult = await SessionTrackingService.deductSession(
-        userId: currentUserId,
-        coachId: coachId,
-      );
-
-      if (!deductionResult.success) {
-        _showErrorDialog(deductionResult.message);
-        return;
-      }
-
-      // Show success message if session was deducted
-      if (!deductionResult.alreadyDeductedToday) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Session deducted. ${deductionResult.remainingSessions} sessions remaining.'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
-
-      // Start the workout
-      _navigateToWorkoutSession();
-
-    } catch (e) {
-      // Close loading dialog if still open
-      if (Navigator.of(context).canPop()) {
-        Navigator.of(context).pop();
-      }
-      _showErrorDialog('Error checking session: $e');
-    }
-  }
-
-  void _showSessionErrorDialog(String message) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Cannot Start Workout'),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text('OK'),
-          ),
-          if (message.contains('No sessions remaining') || message.contains('expired'))
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                // Navigate to subscription page
-                Navigator.pushNamed(context, '/manage-subscriptions');
-              },
-              child: Text('Manage Subscription'),
-            ),
-        ],
-      ),
-    );
+    // No session check needed - users can start workouts regardless of session availability
+    _navigateToWorkoutSession();
   }
 
   void _showErrorDialog(String message) {

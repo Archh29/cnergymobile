@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'models/member_model.dart';
 import '../User/models/messages_model.dart';
 import '../User/services/messages_service.dart';
+import '../User/chat_page.dart';
 import 'coach_messages_page.dart';
 
 class CoachMessagesDashboard extends StatefulWidget {
@@ -286,6 +287,24 @@ class _CoachMessagesDashboardState extends State<CoachMessagesDashboard> with Ti
                           ],
                         ),
                       ),
+                      // Special Action Cards
+                      Container(
+                        padding: EdgeInsets.symmetric(horizontal: 20),
+                        child: Column(
+                          children: [
+                            // Need Help? Chat with Admin Card
+                            _buildSpecialCard(
+                              title: 'Need Help?',
+                              subtitle: 'Chat with Admin',
+                              icon: Icons.support_agent,
+                              iconColor: Color(0xFFFF6B35),
+                              gradientColors: [Color(0xFFFF6B35), Color(0xFFFF8C5A)],
+                              onTap: () => _openAdminChat(),
+                            ),
+                            SizedBox(height: 20),
+                          ],
+                        ),
+                      ),
                       // Messages List
                       Expanded(
                         child: conversations.isEmpty
@@ -495,6 +514,157 @@ class _CoachMessagesDashboardState extends State<CoachMessagesDashboard> with Ti
       return DateFormat('MMM d').format(time);
     } else {
       return DateFormat('MMM d, y').format(time);
+    }
+  }
+
+  Widget _buildSpecialCard({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required Color iconColor,
+    required List<Color> gradientColors,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: gradientColors,
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: iconColor.withOpacity(0.3),
+              blurRadius: 15,
+              offset: Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Icon(
+                icon,
+                color: Colors.white,
+                size: 32,
+              ),
+            ),
+            SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: GoogleFonts.poppins(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    style: GoogleFonts.poppins(
+                      fontSize: 14,
+                      color: Colors.white.withOpacity(0.9),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              Icons.arrow_forward_ios,
+              color: Colors.white,
+              size: 20,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openAdminChat() async {
+    try {
+      // Show loading
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => Center(
+          child: CircularProgressIndicator(
+            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF4ECDC4)),
+          ),
+        ),
+      );
+
+      // Get or create conversation with admin
+      final response = await MessageService.getOrCreateAdminConversation(widget.currentUserId);
+      final adminConversationId = response['conversation_id'];
+      final adminUserData = response['admin_user'];
+      
+      // Get admin user info from API response
+      // Use user_type_id from API to ensure it's always an admin (user_type_id = 1)
+      final adminUser = UserInfo(
+        id: adminUserData['id'] ?? 0,
+        firstName: adminUserData['fname'] ?? 'Admin',
+        lastName: adminUserData['lname'] ?? 'Support',
+        email: adminUserData['email'] ?? 'admin@cnergy.site',
+        userTypeId: adminUserData['user_type_id'] ?? 1, // Get from API, default to 1 (Admin)
+        isOnline: false,
+      );
+
+      Navigator.pop(context); // Close loading
+
+      // Navigate to chat
+      Navigator.push(
+        context,
+        PageRouteBuilder(
+          pageBuilder: (context, animation, secondaryAnimation) => ChatPage(
+            conversationId: adminConversationId,
+            currentUserId: widget.currentUserId,
+            otherUser: adminUser,
+            avatarColor: Color(0xFFFF6B35),
+          ),
+          transitionsBuilder: (context, animation, secondaryAnimation, child) {
+            const begin = Offset(0.1, 0.0);
+            const end = Offset.zero;
+            const curve = Curves.easeOutCubic;
+            
+            var tween = Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
+            var offsetAnimation = animation.drive(tween);
+            var fadeAnimation = Tween<double>(begin: 0.0, end: 1.0)
+                .chain(CurveTween(curve: Curves.easeOutCubic))
+                .animate(animation);
+            
+            return SlideTransition(
+              position: offsetAnimation,
+              child: FadeTransition(opacity: fadeAnimation, child: child),
+            );
+          },
+          transitionDuration: Duration(milliseconds: 500),
+        ),
+      ).then((_) {
+        if (mounted) {
+          _loadConversations();
+        }
+      });
+    } catch (e) {
+      Navigator.pop(context); // Close loading
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error opening admin chat: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 }

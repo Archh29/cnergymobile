@@ -18,11 +18,9 @@ import 'first_time_setup_screen.dart';
 import 'welcome_onboarding_screen.dart';
 import 'forgot_pass.dart';
 import 'account_verification_page.dart';
-import 'account_deactivated_page.dart';
 
 // Coach Pages
 import 'Coach/coach_messages_page.dart';
-import 'Coach/session_management_page.dart';
 import 'Coach/coach_routine_page.dart';
 import 'Coach/models/member_model.dart';
 
@@ -168,13 +166,6 @@ class MyApp extends StatelessWidget {
           }
           return CoachMessagesPage();
         },
-        '/coach-session-management': (context) {
-          final args = ModalRoute.of(context)?.settings.arguments;
-          if (args is MemberModel) {
-            return SessionManagementPage(selectedMember: args);
-          }
-          return SessionManagementPage();
-        },
         '/coach-routines': (context) {
           final args = ModalRoute.of(context)?.settings.arguments;
           if (args is MemberModel) {
@@ -221,19 +212,8 @@ class _AuthWrapperState extends State<AuthWrapper> {
     } catch (e) {
       print('❌ Error checking auth status: $e');
       
-      // Check if the error is due to account deactivation
-      if (e.toString().contains('Account deactivated')) {
-        print('🚫 Account deactivated detected - redirecting to deactivation page');
-        if (mounted) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (context) => AccountDeactivatedPage(),
-            ),
-          );
-          return;
-        }
-      }
+      // Account deactivation is now handled in login screen with a dialog
+      // No need to redirect to a separate page
     } finally {
       if (mounted) {
         setState(() {

@@ -34,6 +34,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   bool isSending = false;
   String errorMessage = '';
   Timer? _messageTimer;
+  UserInfo? _actualOtherUser; // Store the actual other user from API
 
   @override
   void initState() {
@@ -53,7 +54,6 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   void _startMessagePolling() {
     _messageTimer = Timer.periodic(Duration(seconds: 1), (timer) {
       if (mounted) {
-        print('🔄 Auto-polling for new messages');
         _loadMessages(isPolling: true);
       } else {
         // Stop polling if widget is not mounted
@@ -85,10 +85,27 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
         });
       }
 
-      final loadedMessages = await MessageService.getMessages(
+      final response = await MessageService.getMessages(
         widget.conversationId, 
         widget.currentUserId
       );
+      
+      final loadedMessages = response['messages'] as List<Message>;
+      
+      // Update other user info if provided by API (fixes admin name display)
+      if (response.containsKey('other_user') && mounted) {
+        final otherUserData = response['other_user'] as Map<String, dynamic>;
+        setState(() {
+          _actualOtherUser = UserInfo(
+            id: (otherUserData['id'] as int?) ?? widget.otherUser.id,
+            firstName: (otherUserData['fname'] as String?) ?? widget.otherUser.firstName,
+            lastName: (otherUserData['lname'] as String?) ?? widget.otherUser.lastName,
+            email: (otherUserData['email'] as String?) ?? widget.otherUser.email,
+            userTypeId: (otherUserData['user_type_id'] as int?) ?? widget.otherUser.userTypeId,
+            isOnline: widget.otherUser.isOnline,
+          );
+        });
+      }
       
       if (mounted) {
         // Only update UI if messages have changed
@@ -111,7 +128,6 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
             _animationController.forward();
           }
           _scrollToBottom();
-          print('✅ Loaded ${loadedMessages.length} messages${isPolling ? ' (polling)' : ''}');
         }
       }
     } catch (e) {
@@ -147,10 +163,14 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     });
 
     try {
+      // Use conversation_id to determine receiver automatically
+      // This ensures we always use the correct receiver from the database
+      final otherUser = _actualOtherUser ?? widget.otherUser;
       final newMessage = await MessageService.sendMessage(
         widget.currentUserId,
-        widget.otherUser.id,
+        otherUser.id,
         messageText,
+        conversationId: widget.conversationId,
       );
 
       setState(() {
@@ -236,7 +256,9 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
               ),
               child: Center(
                 child: Text(
-                  widget.otherUser.initials,
+                  (_actualOtherUser ?? widget.otherUser).userTypeId == 1 
+                      ? 'A' 
+                      : (_actualOtherUser ?? widget.otherUser).initials,
                   style: GoogleFonts.poppins(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
@@ -251,7 +273,9 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    widget.otherUser.fullName,
+                    (_actualOtherUser ?? widget.otherUser).userTypeId == 1 
+                        ? 'Admin' 
+                        : (_actualOtherUser ?? widget.otherUser).fullName,
                     style: GoogleFonts.poppins(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
@@ -259,7 +283,11 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                     ),
                   ),
                   Text(
-                    widget.otherUser.isCoach ? 'Coach' : 'Member',
+                    (_actualOtherUser ?? widget.otherUser).userTypeId == 1 
+                        ? 'Admin' 
+                        : (_actualOtherUser ?? widget.otherUser).isCoach 
+                            ? 'Coach' 
+                            : 'Member',
                     style: GoogleFonts.poppins(
                       fontSize: 12,
                       color: Color(0xFF4ECDC4),
@@ -270,7 +298,22 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
             ),
           ],
         ),
-        actions: [],
+        actions: [
+          // Show submit request button only for admin conversations
+          if ((_actualOtherUser ?? widget.otherUser).userTypeId == 1)
+            IconButton(
+              icon: Container(
+                padding: EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Color(0xFF1A1A1A),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(Icons.report_problem, color: Color(0xFF4ECDC4), size: 20),
+              ),
+              onPressed: () => _showSupportRequestForm(),
+              tooltip: 'Submit Support Request',
+            ),
+        ],
       ),
       body: isLoading
           ? Center(
@@ -363,7 +406,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                                   final message = messages[index];
                                   final isCurrentUser = message.senderId == widget.currentUserId;
                                   return _buildMessage(
-                                    message.message,
+                                    message,
                                     _formatMessageTime(message.timestamp),
                                     !isCurrentUser,
                                     message.isRead,
@@ -452,7 +495,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildMessage(String message, String time, bool isOtherUser, bool isRead) {
+  Widget _buildMessage(Message message, String time, bool isOtherUser, bool isRead) {
     return Container(
       margin: EdgeInsets.only(bottom: 16),
       child: Row(
@@ -476,7 +519,9 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
               ),
               child: Center(
                 child: Text(
-                  widget.otherUser.initials,
+                  (_actualOtherUser ?? widget.otherUser).userTypeId == 1 
+                      ? 'A' 
+                      : (_actualOtherUser ?? widget.otherUser).initials,
                   style: GoogleFonts.poppins(
                     fontSize: 12,
                     fontWeight: FontWeight.bold,
@@ -510,7 +555,44 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  if (!isOtherUser) ...[
+                  if (isOtherUser) ...[
+                    // Show sender name and user type for other users
+                    Row(
+                      children: [
+                        Text(
+                          message.senderFullName,
+                          style: GoogleFonts.poppins(
+                            fontSize: 12,
+                            color: Colors.white.withOpacity(0.9),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        if (message.senderUserType != null) ...[
+                          SizedBox(width: 6),
+                          Container(
+                            padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: _getUserTypeColor(message.senderUserType).withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: _getUserTypeColor(message.senderUserType).withOpacity(0.5),
+                                width: 1,
+                              ),
+                            ),
+                            child: Text(
+                              message.senderUserType ?? 'User',
+                              style: GoogleFonts.poppins(
+                                fontSize: 9,
+                                color: _getUserTypeColor(message.senderUserType),
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    SizedBox(height: 4),
+                  ] else ...[
                     Text(
                       'You:',
                       style: GoogleFonts.poppins(
@@ -522,7 +604,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                     SizedBox(height: 2),
                   ],
                   Text(
-                    message,
+                    message.message,
                     style: GoogleFonts.poppins(
                       fontSize: 14,
                       color: Colors.white,
@@ -568,6 +650,271 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
             ),
           ],
         ],
+      ),
+    );
+  }
+
+  Color _getUserTypeColor(String? userType) {
+    switch (userType?.toLowerCase()) {
+      case 'admin':
+        return Color(0xFFFF6B35); // Orange/Red
+      case 'staff':
+        return Color(0xFF4ECDC4); // Teal
+      case 'coach':
+        return Color(0xFF9B59B6); // Purple
+      case 'user':
+      default:
+        return Color(0xFF4ECDC4); // Teal (default)
+    }
+  }
+
+  void _showSupportRequestForm() {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isSmallScreen = screenWidth < 360;
+    final subjectController = TextEditingController();
+    final messageController = TextEditingController();
+    bool isSubmitting = false;
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => Dialog(
+          backgroundColor: Colors.transparent,
+          child: Container(
+            constraints: BoxConstraints(maxWidth: 500),
+            padding: EdgeInsets.all(isSmallScreen ? 20 : 24),
+            decoration: BoxDecoration(
+              color: Color(0xFF1A1A1A),
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: Color(0xFF4ECDC4).withOpacity(0.3), width: 2),
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Color(0xFF4ECDC4).withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(
+                          Icons.report_problem,
+                          color: Color(0xFF4ECDC4),
+                          size: 24,
+                        ),
+                      ),
+                      SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Submit Support Request',
+                              style: GoogleFonts.poppins(
+                                fontSize: isSmallScreen ? 18 : 20,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                            SizedBox(height: 4),
+                            Text(
+                              'Report your concern to admin',
+                              style: GoogleFonts.poppins(
+                                fontSize: isSmallScreen ? 12 : 14,
+                                color: Colors.grey[400],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: Icon(Icons.close, color: Colors.grey[400]),
+                        onPressed: isSubmitting ? null : () => Navigator.pop(context),
+                      ),
+                    ],
+                  ),
+                  SizedBox(height: 24),
+                  Text(
+                    'Subject',
+                    style: GoogleFonts.poppins(
+                      fontSize: isSmallScreen ? 14 : 16,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
+                    ),
+                  ),
+                  SizedBox(height: 8),
+                  TextField(
+                    controller: subjectController,
+                    enabled: !isSubmitting,
+                    style: GoogleFonts.poppins(color: Colors.white),
+                    decoration: InputDecoration(
+                      filled: true,
+                      fillColor: Color(0xFF0F0F0F),
+                      hintText: 'e.g., Equipment issue, Membership question...',
+                      hintStyle: GoogleFonts.poppins(color: Colors.grey[500]),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.grey[700]!),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.grey[700]!),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Color(0xFF4ECDC4), width: 2),
+                      ),
+                      contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    ),
+                  ),
+                  SizedBox(height: 20),
+                  Text(
+                    'Message',
+                    style: GoogleFonts.poppins(
+                      fontSize: isSmallScreen ? 14 : 16,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
+                    ),
+                  ),
+                  SizedBox(height: 8),
+                  TextField(
+                    controller: messageController,
+                    enabled: !isSubmitting,
+                    maxLines: 5,
+                    style: GoogleFonts.poppins(color: Colors.white),
+                    decoration: InputDecoration(
+                      filled: true,
+                      fillColor: Color(0xFF0F0F0F),
+                      hintText: 'Describe your concern in detail...',
+                      hintStyle: GoogleFonts.poppins(color: Colors.grey[500]),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.grey[700]!),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.grey[700]!),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Color(0xFF4ECDC4), width: 2),
+                      ),
+                      contentPadding: EdgeInsets.all(16),
+                    ),
+                  ),
+                  SizedBox(height: 24),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextButton(
+                          onPressed: isSubmitting ? null : () => Navigator.pop(context),
+                          style: TextButton.styleFrom(
+                            padding: EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              side: BorderSide(color: Colors.grey[700]!),
+                            ),
+                          ),
+                          child: Text(
+                            'Cancel',
+                            style: GoogleFonts.poppins(
+                              color: Colors.grey[400],
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                      SizedBox(width: 12),
+                      Expanded(
+                        flex: 2,
+                        child: ElevatedButton(
+                          onPressed: isSubmitting ? null : () async {
+                            if (subjectController.text.trim().isEmpty) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Please enter a subject'),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                              return;
+                            }
+                            if (messageController.text.trim().isEmpty) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Please enter a message'),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                              return;
+                            }
+
+                            setDialogState(() {
+                              isSubmitting = true;
+                            });
+
+                            try {
+                              await MessageService.submitSupportRequest(
+                                widget.currentUserId,
+                                subjectController.text.trim(),
+                                messageController.text.trim(),
+                              );
+
+                              Navigator.pop(context);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Support request submitted successfully!'),
+                                  backgroundColor: Colors.green,
+                                ),
+                              );
+                            } catch (e) {
+                              setDialogState(() {
+                                isSubmitting = false;
+                              });
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Error submitting request: $e'),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            }
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Color(0xFF4ECDC4),
+                            padding: EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: isSubmitting
+                              ? SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                  ),
+                                )
+                              : Text(
+                                  'Submit',
+                                  style: GoogleFonts.poppins(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: isSmallScreen ? 14 : 16,
+                                  ),
+                                ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

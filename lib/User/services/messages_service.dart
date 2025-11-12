@@ -35,7 +35,8 @@ class MessageService {
   }
 
   // Get messages for a specific conversation
-  static Future<List<Message>> getMessages(int conversationId, int currentUserId) async {
+  // Returns messages and optionally other_user info
+  static Future<Map<String, dynamic>> getMessages(int conversationId, int currentUserId) async {
     try {
       final response = await http.get(
         Uri.parse('$baseUrl?action=messages&conversation_id=$conversationId&user_id=$currentUserId'),
@@ -51,7 +52,17 @@ class MessageService {
           for (var item in data['messages']) {
             messages.add(Message.fromJson(item));
           }
-          return messages;
+          
+          Map<String, dynamic> result = {
+            'messages': messages,
+          };
+          
+          // Include other_user info if available (for fixing admin name display)
+          if (data['other_user'] != null) {
+            result['other_user'] = data['other_user'];
+          }
+          
+          return result;
         } else {
           throw Exception(data['message'] ?? 'Failed to load messages');
         }
@@ -64,31 +75,67 @@ class MessageService {
   }
 
   // Send a new message
-  static Future<Message> sendMessage(int senderId, int receiverId, String messageText) async {
+  static Future<Message> sendMessage(
+    int senderId, 
+    int receiverId, 
+    String messageText, {
+    int? conversationId,
+  }) async {
     try {
+      // Build request body - prefer conversation_id if provided
+      final requestBody = <String, dynamic>{
+        'sender_id': senderId,
+        'message': messageText,
+      };
+      
+      if (conversationId != null && conversationId > 0) {
+        requestBody['conversation_id'] = conversationId;
+      } else {
+        requestBody['receiver_id'] = receiverId;
+      }
+      
       final response = await http.post(
         Uri.parse('$baseUrl?action=send_message'),
         headers: {
           'Content-Type': 'application/json',
         },
-        body: json.encode({
-          'sender_id': senderId,
-          'receiver_id': receiverId,
-          'message': messageText,
-        }),
+        body: json.encode(requestBody),
       );
+
+      // Always log the response for debugging
+      print('📡 Send message response status: ${response.statusCode}');
+      print('📄 Send message response body: ${response.body}');
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         if (data['success']) {
           return Message.fromJson(data['message']);
         } else {
-          throw Exception(data['message'] ?? 'Failed to send message');
+          final errorMsg = data['message'] ?? 'Failed to send message';
+          print('❌ Send message API error: $errorMsg');
+          throw Exception(errorMsg);
         }
       } else {
-        throw Exception('Failed to send message');
+        // Try to parse error message from response
+        try {
+          final errorData = json.decode(response.body);
+          final errorMsg = errorData['message'] ?? 
+                          errorData['driver_message'] ?? 
+                          'HTTP ${response.statusCode}: Failed to send message';
+          print('❌ Send message HTTP error: $errorMsg');
+          print('❌ Full error response: ${response.body}');
+          throw Exception(errorMsg);
+        } catch (_) {
+          print('❌ Send message HTTP error: ${response.statusCode}');
+          print('❌ Response body: ${response.body}');
+          throw Exception('HTTP ${response.statusCode}: Failed to send message');
+        }
       }
     } catch (e) {
+      print('❌ Send message exception: $e');
+      if (e is Exception) {
+        rethrow;
+      }
       throw Exception('Network error: $e');
     }
   }
@@ -319,4 +366,64 @@ class MessageService {
       return false;
     }
   }
+
+  // Get or create conversation with admin
+  static Future<Map<String, dynamic>> getOrCreateAdminConversation(int userId) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl?action=get_or_create_admin_conversation'),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: json.encode({
+          'user_id': userId,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data['success']) {
+          return {
+            'conversation_id': data['conversation_id'],
+            'admin_user': data['admin_user'] ?? {},
+          };
+        } else {
+          throw Exception(data['message'] ?? 'Failed to create admin conversation');
+        }
+      } else {
+        final errorData = json.decode(response.body);
+        throw Exception(errorData['message'] ?? 'Failed to create admin conversation');
+      }
+    } catch (e) {
+      throw Exception('Network error: $e');
+    }
+  }
+
+  // Submit support request
+  static Future<bool> submitSupportRequest(int userId, String subject, String message) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl?action=submit_support_request'),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: json.encode({
+          'user_id': userId,
+          'subject': subject,
+          'message': message,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return data['success'] ?? false;
+      } else {
+        final errorData = json.decode(response.body);
+        throw Exception(errorData['message'] ?? 'Failed to submit support request');
+      }
+    } catch (e) {
+      throw Exception('Network error: $e');
+    }
+  }
+
 }

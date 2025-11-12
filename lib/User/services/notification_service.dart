@@ -24,8 +24,6 @@ class NotificationService {
         },
       );
 
-      print('Get notifications response status: ${response.statusCode}');
-      print('Get notifications response body: ${response.body}');
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
@@ -61,7 +59,15 @@ class NotificationService {
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         if (data['success'] == true) {
-          return data['data']['unread_count'];
+          // Handle both string and int unread_count from API
+          final unreadCount = data['data']['unread_count'];
+          if (unreadCount is int) {
+            return unreadCount;
+          } else if (unreadCount is String) {
+            return int.tryParse(unreadCount) ?? 0;
+          } else {
+            return 0;
+          }
         } else {
           throw Exception('API returned error: ${data['error']}');
         }
@@ -69,7 +75,6 @@ class NotificationService {
         throw Exception('HTTP error: ${response.statusCode}');
       }
     } catch (e) {
-      print('Error getting unread count: $e');
       return 0; // Return 0 on error to avoid breaking the UI
     }
   }

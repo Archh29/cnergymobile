@@ -11,6 +11,7 @@ class ScheduleModel {
   final String? notes;
   final bool isActive;
   final bool isCompleted;
+  final int? programId; // Program ID for this schedule
 
   ScheduleModel({
     this.scheduleId,
@@ -23,6 +24,7 @@ class ScheduleModel {
     this.notes,
     this.isActive = true,
     this.isCompleted = false,
+    this.programId,
   });
 
   factory ScheduleModel.fromJson(Map<String, dynamic> json) {
@@ -37,6 +39,7 @@ class ScheduleModel {
       notes: json['notes'],
       isActive: json['is_active'] ?? true,
       isCompleted: json['is_completed'] ?? false,
+      programId: json['program_id'],
     );
   }
 
@@ -52,6 +55,7 @@ class ScheduleModel {
       'notes': notes,
       'is_active': isActive,
       'is_completed': isCompleted,
+      'program_id': programId,
     };
   }
 
@@ -66,6 +70,7 @@ class ScheduleModel {
     Object? notes = _undefined,
     bool? isActive,
     bool? isCompleted,
+    Object? programId = _undefined,
   }) {
     return ScheduleModel(
       scheduleId: scheduleId ?? this.scheduleId,
@@ -78,12 +83,14 @@ class ScheduleModel {
       notes: notes == _undefined ? this.notes : notes as String?,
       isActive: isActive ?? this.isActive,
       isCompleted: isCompleted ?? this.isCompleted,
+      programId: programId == _undefined ? this.programId : programId as int?,
     );
   }
 }
 
 class ProgramForScheduling {
   final int programId;
+  final String name; // Program name (from workout_details)
   final String goal;
   final String difficulty;
   final int totalWorkouts;
@@ -94,6 +101,7 @@ class ProgramForScheduling {
 
   ProgramForScheduling({
     required this.programId,
+    required this.name,
     required this.goal,
     required this.difficulty,
     required this.totalWorkouts,
@@ -106,6 +114,7 @@ class ProgramForScheduling {
   factory ProgramForScheduling.fromJson(Map<String, dynamic> json) {
     return ProgramForScheduling(
       programId: json['program_id'] ?? 0,
+      name: json['name'] ?? json['goal'] ?? 'Unnamed Program',
       goal: json['goal'] ?? 'General Fitness',
       difficulty: json['difficulty'] ?? 'Beginner',
       totalWorkouts: json['total_workouts'] ?? 0,

@@ -761,7 +761,7 @@ class _ProfilePageState extends State<ProfilePage> with TickerProviderStateMixin
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Personal Training',
+                        'Personal Coaching',
                         style: GoogleFonts.poppins(
                           fontSize: 20,
                           color: Colors.white,
@@ -771,8 +771,8 @@ class _ProfilePageState extends State<ProfilePage> with TickerProviderStateMixin
                       SizedBox(height: 4),
                       Text(
                         currentUser!.isPremium
-                           ? 'Manage your personal training sessions'
-                          : 'Upgrade to access personal training',
+                           ? 'Manage your personal coaching sessions'
+                          : 'Upgrade to access personal coaching',
                         style: GoogleFonts.poppins(
                           color: Colors.white.withOpacity(0.9),
                           fontSize: 14,

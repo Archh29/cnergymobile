@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 import '../models/schedule_model.dart';
 import 'auth_service.dart';
 
@@ -99,7 +98,7 @@ class ScheduleService {
     }
   }
 
-  // Get weekly schedule for a program
+  // Get weekly schedule for a program (legacy - for backward compatibility)
   static Future<Map<String, ScheduleModel>> getSchedule(int memberProgramId) async {
     try {
       final userId = await getCurrentUserId();
@@ -119,15 +118,31 @@ class ScheduleService {
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         if (data['success'] == true) {
-          final Map<String, dynamic> scheduleData = data['weekly_schedule'] ?? {};
+          final scheduleData = data['weekly_schedule'];
           Map<String, ScheduleModel> weeklySchedule = {};
           
-          scheduleData.forEach((day, dayData) {
-            weeklySchedule[day] = ScheduleModel.fromJson({
-              ...dayData,
-              'day_of_week': day,
+          // Handle both array and map formats
+          if (scheduleData is List) {
+            // If it's an array, convert to map by day_of_week
+            for (var item in scheduleData) {
+              if (item is Map<String, dynamic>) {
+                final day = item['day_of_week'] as String?;
+                if (day != null) {
+                  weeklySchedule[day] = ScheduleModel.fromJson(item);
+                }
+              }
+            }
+          } else if (scheduleData is Map) {
+            // If it's already a map, process normally
+            scheduleData.forEach((day, dayData) {
+              if (dayData is Map<String, dynamic>) {
+                weeklySchedule[day.toString()] = ScheduleModel.fromJson({
+                  ...dayData,
+                  'day_of_week': day.toString(),
+                });
+              }
             });
-          });
+          }
           
           return weeklySchedule;
         } else {
@@ -139,6 +154,52 @@ class ScheduleService {
     } catch (e) {
       print('❌ Error fetching schedule: $e');
       throw Exception('Failed to load schedule: $e');
+    }
+  }
+
+  // Get all schedules from all programs (like coach view)
+  static Future<Map<String, ScheduleModel>> getAllSchedules() async {
+    try {
+      final userId = await getCurrentUserId();
+      print('📅 Fetching all schedules for user: $userId');
+      
+      final url = '$baseUrl?action=get_member_schedule&user_id=$userId';
+      print('📡 API URL: $url');
+      
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {'Content-Type': 'application/json'},
+      );
+      
+      print('📊 Response status: ${response.statusCode}');
+      print('📋 Response body: ${response.body}');
+      
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data['success'] == true) {
+          final scheduleList = data['schedule'] as List? ?? [];
+          Map<String, ScheduleModel> weeklySchedule = {};
+          
+          // Convert list to map by day_of_week
+          for (var item in scheduleList) {
+            if (item is Map<String, dynamic>) {
+              final day = item['day_of_week'] as String?;
+              if (day != null) {
+                weeklySchedule[day] = ScheduleModel.fromJson(item);
+              }
+            }
+          }
+          
+          return weeklySchedule;
+        } else {
+          throw Exception(data['error'] ?? 'Failed to fetch schedule');
+        }
+      } else {
+        throw Exception('HTTP Error: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('❌ Error fetching all schedules: $e');
+      throw Exception('Failed to load schedules: $e');
     }
   }
 

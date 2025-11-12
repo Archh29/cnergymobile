@@ -40,10 +40,11 @@ class _SchedulePageState extends State<SchedulePage> {
         _programs = programs;
         _isLoading = false;
         if (programs.isNotEmpty) {
-          // Auto-select the most recent program (first in list)
+          // Auto-select the most recent program (first in list) for workout selection
           _selectedProgram = programs.first;
-          _loadScheduleForProgram(_selectedProgram!.programId);
         }
+        // Load all schedules from all programs (like coach view)
+        _loadAllSchedules();
       });
     } catch (e) {
       setState(() {
@@ -53,11 +54,19 @@ class _SchedulePageState extends State<SchedulePage> {
     }
   }
 
-  Future<void> _loadScheduleForProgram(int programId) async {
+  Future<void> _loadAllSchedules() async {
     try {
-      final schedule = await ScheduleService.getSchedule(programId);
+      final schedule = await ScheduleService.getAllSchedules();
       setState(() {
-        _currentSchedule = schedule.isNotEmpty ? schedule : ScheduleService.createEmptySchedule();
+        // Merge with empty schedule to ensure all days are present
+        final emptySchedule = ScheduleService.createEmptySchedule();
+        emptySchedule.forEach((day, emptyDaySchedule) {
+          if (schedule.containsKey(day)) {
+            _currentSchedule[day] = schedule[day]!;
+          } else {
+            _currentSchedule[day] = emptyDaySchedule;
+          }
+        });
       });
     } catch (e) {
       // If no schedule exists, create empty one
@@ -67,12 +76,16 @@ class _SchedulePageState extends State<SchedulePage> {
     }
   }
 
+
   Future<void> _saveSchedule() async {
     if (_selectedProgram == null) return;
 
     try {
       final scheduleData = ScheduleService.formatScheduleForApi(_currentSchedule);
       await ScheduleService.createSchedule(_selectedProgram!.programId, scheduleData);
+      
+      // Reload all schedules after saving to reflect any changes
+      await _loadAllSchedules();
       
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -529,12 +542,10 @@ class _SchedulePageState extends State<SchedulePage> {
                             workout.name,
                             style: GoogleFonts.poppins(color: Colors.white),
                           ),
-                          subtitle: workout.duration != null 
-                            ? Text(
-                                '${workout.duration} minutes',
-                                style: GoogleFonts.poppins(color: Colors.grey[400], fontSize: 12),
-                              )
-                            : null,
+                          subtitle: Text(
+                            '${workout.duration} minutes',
+                            style: GoogleFonts.poppins(color: Colors.grey[400], fontSize: 12),
+                          ),
                           onTap: () {
                             _assignWorkoutToDay(day, workout);
                             Navigator.pop(context);
@@ -570,12 +581,10 @@ class _SchedulePageState extends State<SchedulePage> {
                             workout.name,
                             style: GoogleFonts.poppins(color: Colors.white),
                           ),
-                          subtitle: workout.duration != null 
-                            ? Text(
-                                '${workout.duration} minutes',
-                                style: GoogleFonts.poppins(color: Colors.grey[400], fontSize: 12),
-                              )
-                            : null,
+                          subtitle: Text(
+                            '${workout.duration} minutes',
+                            style: GoogleFonts.poppins(color: Colors.grey[400], fontSize: 12),
+                          ),
                           onTap: () {
                             _assignWorkoutToDay(day, workout);
                             Navigator.pop(context);
@@ -657,7 +666,7 @@ class _SchedulePageState extends State<SchedulePage> {
           ElevatedButton(
             onPressed: () {
               // Navigate to Programs tab (index 1)
-              DefaultTabController.of(context)?.animateTo(1);
+              DefaultTabController.of(context).animateTo(1);
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: Color(0xFF4ECDC4),

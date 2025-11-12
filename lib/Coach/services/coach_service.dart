@@ -435,11 +435,22 @@ class CoachService {
             }
           }
           
-          print('✅ DEBUG: Successfully parsed ${members.length} assigned members');
-          for (int i = 0; i < members.length; i++) {
-            print('👤 DEBUG: Final member $i: ID=${members[i].id}, Name=${members[i].fullName}, Email=${members[i].email}');
+          // Remove duplicates by member ID
+          final uniqueMembers = <int, MemberModel>{};
+          for (var member in members) {
+            if (!uniqueMembers.containsKey(member.id)) {
+              uniqueMembers[member.id] = member;
+            } else {
+              print('⚠️ DEBUG: Duplicate member found and removed: ID=${member.id}, Name=${member.fullName}');
+            }
           }
-          return members;
+          
+          final finalMembers = uniqueMembers.values.toList();
+          print('✅ DEBUG: Successfully parsed ${finalMembers.length} unique assigned members (removed ${members.length - finalMembers.length} duplicates)');
+          for (int i = 0; i < finalMembers.length; i++) {
+            print('👤 DEBUG: Final member $i: ID=${finalMembers[i].id}, Name=${finalMembers[i].fullName}, Email=${finalMembers[i].email}');
+          }
+          return finalMembers;
         } else {
           print('❌ DEBUG: API returned success=false: ${data['message'] ?? 'Unknown error'}');
         }

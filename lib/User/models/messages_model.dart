@@ -5,6 +5,10 @@ class Message {
   final String message;
   final DateTime timestamp;
   final bool isRead;
+  final String? senderFname;
+  final String? senderLname;
+  final String? senderUserType;
+  final int? senderUserTypeId;
 
   Message({
     required this.id,
@@ -13,7 +17,18 @@ class Message {
     required this.message,
     required this.timestamp,
     required this.isRead,
+    this.senderFname,
+    this.senderLname,
+    this.senderUserType,
+    this.senderUserTypeId,
   });
+
+  String get senderFullName {
+    if (senderFname != null && senderLname != null) {
+      return '$senderFname $senderLname';
+    }
+    return 'Unknown';
+  }
 
   factory Message.fromJson(Map<String, dynamic> json) {
     return Message(
@@ -21,8 +36,12 @@ class Message {
       senderId: json['sender_id'],
       receiverId: json['receiver_id'],
       message: json['message'],
-      timestamp: DateTime.parse(json['timestamp']),
-      isRead: json['is_read'] == 1,
+      timestamp: json['timestamp'] != null ? DateTime.parse(json['timestamp']) : DateTime.now(),
+      isRead: json['is_read'] == 1 || json['is_read'] == true,
+      senderFname: json['sender_fname'],
+      senderLname: json['sender_lname'],
+      senderUserType: json['sender_user_type'],
+      senderUserTypeId: json['sender_user_type_id'],
     );
   }
 

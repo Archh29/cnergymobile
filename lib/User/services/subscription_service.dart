@@ -250,9 +250,28 @@ class SubscriptionService {
         if (response.statusCode == 200) {
           final data = json.decode(response.body);
           if (data['success'] == true && data['plans'] != null) {
-            return (data['plans'] as List<dynamic>)
-                .map((planJson) => SubscriptionPlan.fromJson(planJson))
+            final plans = (data['plans'] as List<dynamic>)
+                .map((planJson) {
+                  // Debug: Log features for each plan
+                  if (planJson['features'] != null) {
+                    print('Debug: Plan ${planJson['plan_name']} has ${(planJson['features'] as List).length} features');
+                    print('Debug: Features: ${planJson['features']}');
+                  } else {
+                    print('Debug: Plan ${planJson['plan_name']} has NO features in API response');
+                  }
+                  return SubscriptionPlan.fromJson(planJson);
+                })
                 .toList();
+            
+            // Debug: Log parsed features
+            for (final plan in plans) {
+              print('Debug: Parsed plan ${plan.planName} has ${plan.features.length} features');
+              for (final feature in plan.features) {
+                print('Debug:   - ${feature.featureName}: ${feature.description}');
+              }
+            }
+            
+            return plans;
           }
         }
         
@@ -344,9 +363,12 @@ class SubscriptionService {
     required int userId,
     required int planId,
     String? paymentMethod,
+    bool renewal = false,
+    bool advancePayment = false,
+    int periods = 1,
   }) async {
     try {
-      print('Debug: Requesting subscription plan for user: $userId, plan: $planId');
+      print('Debug: Requesting subscription plan for user: $userId, plan: $planId, renewal: $renewal, advancePayment: $advancePayment, periods: $periods');
       
       final response = await http.post(
         Uri.parse('$subscriptionBaseUrl?action=request-subscription'),
@@ -355,26 +377,55 @@ class SubscriptionService {
           'user_id': userId,
           'plan_id': planId,
           'payment_method': paymentMethod ?? 'cash',
+          'renewal': renewal,
+          'advance_payment': advancePayment,
+          'periods': periods,
         }),
       );
       
       print('Debug: Request subscription response status: ${response.statusCode}');
       print('Debug: Request subscription response body: ${response.body}');
       
-      if (response.statusCode == 200) {
+      // Parse response body
+      try {
         final data = json.decode(response.body);
-        return SubscriptionRequestResponse.fromJson(data);
+        
+        if (response.statusCode == 200) {
+          // Check if response has success field
+          if (data['success'] == true) {
+            return SubscriptionRequestResponse.fromJson(data);
+          } else {
+            // API returned success: false
+            final errorMessage = data['message'] ?? data['error'] ?? 'Failed to request subscription';
+            print('❌ API returned error: $errorMessage');
+            return SubscriptionRequestResponse(
+              success: false,
+              message: errorMessage,
+            );
+          }
+        } else {
+          // Non-200 status code
+          final errorMessage = data['message'] ?? data['error'] ?? 'Failed to request subscription (Status: ${response.statusCode})';
+          print('❌ API returned status ${response.statusCode}: $errorMessage');
+          return SubscriptionRequestResponse(
+            success: false,
+            message: errorMessage,
+          );
+        }
+      } catch (parseError) {
+        print('❌ Error parsing API response: $parseError');
+        print('Response body: ${response.body}');
+        return SubscriptionRequestResponse(
+          success: false,
+          message: 'Failed to parse server response. Please try again.',
+        );
       }
-      
+    } catch (e, stackTrace) {
+      print('❌ Exception in requestSubscriptionPlan: $e');
+      print('Stack trace: $stackTrace');
       return SubscriptionRequestResponse(
         success: false,
-        message: 'Failed to request subscription'
-      );
-    } catch (e) {
-      print('Error requesting subscription plan: $e');
-      return SubscriptionRequestResponse(
-        success: false,
-        message: 'Error requesting subscription: $e'
+        message: 'Network error: ${e.toString()}',
       );
     }
   }

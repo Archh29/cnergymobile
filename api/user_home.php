@@ -43,6 +43,9 @@ try {
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
     
+    // Get user ID from request (optional for today's workout)
+    $userId = $_GET['user_id'] ?? null;
+    
     // Fetch all data in parallel using prepared statements
     $announcementsStmt = $pdo->prepare("
         SELECT 
@@ -88,14 +91,70 @@ try {
         ORDER BY created_at DESC
     ");
     
-    // Execute all queries
+    // Get current gym capacity (people currently in gym TODAY - checked in today and haven't checked out)
+    $gymCapacityStmt = $pdo->prepare("
+        SELECT COUNT(*) as current_count
+        FROM attendance 
+        WHERE DATE(check_in) = CURDATE()
+        AND check_out IS NULL
+    ");
+    
+    // Execute basic queries
     $announcementsStmt->execute();
     $merchandiseStmt->execute();
     $promotionsStmt->execute();
+    $gymCapacityStmt->execute();
+    
+    // Only query today's workout if user_id is provided
+    $todayWorkout = null;
+    if ($userId) {
+        // Get today's day of the week
+        $today = date('l'); // Monday, Tuesday, etc.
+        
+        // Query for today's workout (for display only)
+        $todayWorkoutStmt = $pdo->prepare("
+            SELECT 
+                s.id as schedule_id,
+                s.day_of_week,
+                s.workout_id,
+                s.scheduled_time,
+                s.is_rest_day,
+                s.notes,
+                mpw.workout_details,
+                mph.id as program_id,
+                mph.goal as program_goal,
+                mph.difficulty as program_difficulty,
+                COALESCE(
+                    JSON_UNQUOTE(JSON_EXTRACT(mpw.workout_details, '$.name')), 
+                    mph.goal,
+                    'Workout'
+                ) as workout_name,
+                COALESCE(
+                    JSON_UNQUOTE(JSON_EXTRACT(mpw.workout_details, '$.duration')), 
+                    30
+                ) as workout_duration
+            FROM member_program_schedule s
+            LEFT JOIN member_program_workout mpw ON s.workout_id = mpw.id
+            LEFT JOIN member_programhdr mph ON s.member_program_hdr_id = mph.id
+            WHERE mph.user_id = :user_id 
+            AND s.day_of_week = :today
+            AND s.is_active = 1
+            ORDER BY mph.updated_at DESC
+            LIMIT 1
+        ");
+        
+        $todayWorkoutStmt->execute([
+            ':user_id' => $userId,
+            ':today' => $today
+        ]);
+        
+        $todayWorkout = $todayWorkoutStmt->fetch(); // Single row
+    }
     
     $announcements = $announcementsStmt->fetchAll();
     $merchandise = $merchandiseStmt->fetchAll();
     $promotions = $promotionsStmt->fetchAll();
+    $gymCapacity = $gymCapacityStmt->fetch();
     
     // Transform announcements data
     $formattedAnnouncements = array_map(function($announcement) {
@@ -204,13 +263,45 @@ try {
         ];
     }, $promotions, array_keys($promotions));
     
+    // Format today's workout data (for display only)
+    $formattedTodayWorkout = null;
+    if ($todayWorkout) {
+        $formattedTodayWorkout = [
+            'scheduleId' => (int)$todayWorkout['schedule_id'],
+            'dayOfWeek' => $todayWorkout['day_of_week'],
+            'workoutId' => $todayWorkout['workout_id'] ? (int)$todayWorkout['workout_id'] : null,
+            'programId' => (int)$todayWorkout['program_id'],
+            'scheduledTime' => $todayWorkout['scheduled_time'],
+            'isRestDay' => (bool)$todayWorkout['is_rest_day'],
+            'notes' => $todayWorkout['notes'],
+            'workoutName' => $todayWorkout['workout_name'],
+            'workoutDuration' => $todayWorkout['workout_duration'],
+            'programGoal' => $todayWorkout['program_goal'],
+            'programDifficulty' => $todayWorkout['program_difficulty']
+        ];
+    }
+    
+    // Get gym capacity data
+    $currentCount = (int)$gymCapacity['current_count'];
+    $maxCapacity = 30; // Gym capacity limit
+    $isFull = $currentCount >= $maxCapacity;
+    $availableSpots = max(0, $maxCapacity - $currentCount);
+    
     // Return all data in one response
     sendResponse([
         'success' => true,
         'data' => [
             'announcements' => $formattedAnnouncements,
             'merchandise' => $formattedMerchandise,
-            'promotions' => $formattedPromotions
+            'promotions' => $formattedPromotions,
+            'todayWorkout' => $formattedTodayWorkout,
+            'gymCapacity' => [
+                'currentCount' => $currentCount,
+                'maxCapacity' => $maxCapacity,
+                'availableSpots' => $availableSpots,
+                'isFull' => $isFull,
+                'percentage' => round(($currentCount / $maxCapacity) * 100)
+            ]
         ]
     ]);
     

@@ -567,6 +567,33 @@ class RoutineService {
     }
   }
 
+  static Future<Map<String, dynamic>> getTemplateDetails(String templateId) async {
+    try {
+      final templateIdInt = _parseId(templateId, 'Template ID');
+      if (templateIdInt == null) {
+        throw Exception('Template ID is required and must be a valid number');
+      }
+
+      final response = await http.get(
+        Uri.parse('$baseUrl?action=getTemplateDetails&template_id=$templateIdInt'),
+        headers: {'Content-Type': 'application/json'},
+      );
+
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> data = json.decode(response.body);
+        if (data['success'] == true) {
+          return data['data'] as Map<String, dynamic>;
+        } else {
+          throw Exception(data['message'] ?? 'Failed to load template details');
+        }
+      } else {
+        throw Exception('Failed to load template details - HTTP ${response.statusCode}');
+      }
+    } catch (e) {
+      throw Exception('Error fetching template details: $e');
+    }
+  }
+
   static Future<List<Map<String, dynamic>>> getCoachClients(String coachId) async {
     try {
       int? coachIdInt;

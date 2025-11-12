@@ -79,6 +79,13 @@ switch($action) {
             echo json_encode(['success' => false, 'message' => 'Function getCoachTemplates not found']);
         }
         break;
+    case 'getTemplateDetails':
+        if (function_exists('getTemplateDetails')) {
+            getTemplateDetails($pdo);
+        } else {
+            echo json_encode(['success' => false, 'message' => 'Function getTemplateDetails not found']);
+        }
+        break;
     case 'assignTemplate':
         error_log("DEBUG - Matched assignTemplate");
         assignTemplateToClient($pdo);
@@ -684,6 +691,95 @@ function getCoachTemplates($pdo) {
         
     } catch (PDOException $e) {
         echo json_encode(['success' => false, 'message' => 'Error fetching templates: ' . $e->getMessage()]);
+    }
+}
+
+function getTemplateDetails($pdo) {
+    try {
+        $templateId = $_GET['template_id'] ?? null;
+        
+        if (!$templateId) {
+            echo json_encode(['success' => false, 'message' => 'Template ID is required']);
+            return;
+        }
+        
+        $templateId = (int)$templateId;
+        
+        // Get template header
+        $stmt = $pdo->prepare("
+            SELECT 
+                ph.id,
+                ph.name,
+                ph.description,
+                ph.goal,
+                ph.difficulty,
+                ph.duration,
+                ph.color,
+                ph.tags,
+                ph.notes,
+                ph.created_by,
+                ph.created_at,
+                ph.updated_at,
+                pw.workout_details
+            FROM programhdr ph
+            LEFT JOIN program_workout pw ON ph.id = pw.program_hdr_id
+            WHERE ph.id = ? AND ph.is_active = TRUE
+            LIMIT 1
+        ");
+        $stmt->execute([$templateId]);
+        $template = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if (!$template) {
+            echo json_encode(['success' => false, 'message' => 'Template not found']);
+            return;
+        }
+        
+        // Get exercises for this template
+        $exerciseStmt = $pdo->prepare("
+            SELECT 
+                e.id,
+                e.name,
+                e.description,
+                e.image_url,
+                e.video_url,
+                pwe.reps as target_reps,
+                pwe.sets as target_sets,
+                pwe.weight as target_weight,
+                pwe.rest_time,
+                GROUP_CONCAT(DISTINCT tm.name SEPARATOR ', ') as target_muscle
+            FROM program_workout_exercise pwe
+            INNER JOIN program_workout pw ON pwe.program_workout_id = pw.id
+            INNER JOIN exercise e ON pwe.exercise_id = e.id
+            LEFT JOIN exercise_target_muscle etm ON e.id = etm.exercise_id
+            LEFT JOIN target_muscle tm ON etm.muscle_id = tm.id
+            WHERE pw.program_hdr_id = ?
+            GROUP BY e.id, e.name, e.description, e.image_url, e.video_url, 
+                     pwe.reps, pwe.sets, pwe.weight, pwe.rest_time
+            ORDER BY pwe.id ASC
+        ");
+        $exerciseStmt->execute([$templateId]);
+        $exercises = $exerciseStmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        // Process template data
+        $template['id'] = (int)$template['id'];
+        $template['created_by'] = (int)$template['created_by'];
+        $template['duration'] = (int)$template['duration'];
+        $template['exercise_count'] = count($exercises);
+        $template['tags'] = json_decode($template['tags'], true) ?? [];
+        $template['exercises'] = $exercises;
+        
+        // Parse workout details if exists
+        if ($template['workout_details']) {
+            $workoutDetails = json_decode($template['workout_details'], true);
+            if ($workoutDetails) {
+                $template['workout_name'] = $workoutDetails['name'] ?? $template['name'];
+            }
+        }
+        
+        echo json_encode(['success' => true, 'data' => $template]);
+        
+    } catch (PDOException $e) {
+        echo json_encode(['success' => false, 'message' => 'Error fetching template details: ' . $e->getMessage()]);
     }
 }
 

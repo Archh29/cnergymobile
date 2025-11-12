@@ -83,21 +83,68 @@ class CoachService {
   }
 
   /// Get user's coach request status
+  /// Returns null if no coach assigned, or a map with coach data if assigned
+  /// Note: This endpoint doesn't require premium membership
   static Future<Map<String, dynamic>?> getUserCoachRequest(int userId) async {
     try {
+      // Use get-user-coach-request endpoint (doesn't require premium)
       final response = await http.get(
-        Uri.parse('$baseUrl?action=user-coach-status&user_id=$userId'),
+        Uri.parse('$baseUrl?action=get-user-coach-request&user_id=$userId'),
         headers: {
           'Content-Type': 'application/json',
         },
       );
       if (response.statusCode == 200) {
-        return json.decode(response.body);
+        final data = json.decode(response.body);
+        // API returns {'success': true, 'request': $result} where $result can be null if no coach
+        if (data['success'] == true) {
+          return data;
+        }
+        return null;
       }
       return null;
     } catch (e) {
       print('Error fetching coach request: $e');
       return null;
+    }
+  }
+
+  /// Cancel coach request
+  static Future<Map<String, dynamic>> cancelCoachRequest(int userId) async {
+    try {
+      print('🔄 Cancelling coach request - User ID: $userId');
+      
+      final response = await http.post(
+        Uri.parse('$baseUrl?action=cancel-coach-request'),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: json.encode({
+          'user_id': userId,
+        }),
+      );
+
+      print('📡 Cancel coach request response status: ${response.statusCode}');
+      print('📄 Cancel coach request response body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final responseData = json.decode(response.body);
+        print('✅ Cancel coach request response data: $responseData');
+        
+        if (responseData['success'] == true) {
+          print('✅ Coach request cancelled successfully');
+          return {'success': true, 'message': responseData['message'] ?? 'Request cancelled successfully'};
+        } else {
+          print('❌ Cancel coach request failed: ${responseData['message'] ?? 'Unknown error'}');
+          return {'success': false, 'message': responseData['message'] ?? 'Unknown error'};
+        }
+      } else {
+        print('❌ Cancel coach request HTTP error: ${response.statusCode}');
+        return {'success': false, 'message': 'Network error. Please try again.'};
+      }
+    } catch (e) {
+      print('❌ Error cancelling coach request: $e');
+      return {'success': false, 'message': 'Error cancelling request: $e'};
     }
   }
 

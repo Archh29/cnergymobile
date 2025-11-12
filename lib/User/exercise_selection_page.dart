@@ -12,12 +12,14 @@ class ExerciseSelectionPage extends StatefulWidget {
   final MuscleGroupModel muscleGroup;
   final Color selectedColor;
   final List<SelectedExerciseWithConfig> currentSelections; // This should be the GLOBAL list of selected exercises
+  final String? difficulty; // Optional difficulty level (Beginner, Intermediate, Advanced)
 
   const ExerciseSelectionPage({
     Key? key,
     required this.muscleGroup,
     required this.selectedColor,
     this.currentSelections = const [],
+    this.difficulty,
   }) : super(key: key);
 
   @override
@@ -609,6 +611,7 @@ class _ExerciseSelectionPageState extends State<ExerciseSelectionPage> {
         builder: (context) => ExerciseConfigurationPage(
           exercises: exercisesWithConfig,
           selectedColor: widget.selectedColor,
+          difficulty: widget.difficulty,
         ),
       ),
     );

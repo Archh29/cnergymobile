@@ -241,22 +241,68 @@ function createUserConfirmationMessage($userEmail, $subject) {
 }
 
 /**
- * Log support request to database
+ * Log support request to database with proper ticket system integration
  */
 function logSupportRequest($pdo, $userEmail, $subject, $message) {
     try {
+        // First, try to find user by email to get user_id
+        $userId = null;
+        $userStmt = $pdo->prepare("SELECT id FROM user WHERE email = ? LIMIT 1");
+        $userStmt->execute([$userEmail]);
+        $user = $userStmt->fetch();
+        
+        if ($user) {
+            $userId = intval($user['id']);
+            error_log("Found user_id: $userId for email: $userEmail");
+        } else {
+            error_log("No user found for email: $userEmail - creating ticket without user_id");
+        }
+        
+        // Determine source based on subject or use default
+        $source = 'mobile_app';
+        if (stripos($subject, 'deactivation') !== false || stripos($subject, 'deactivate') !== false) {
+            $source = 'mobile_app_deactivation';
+        } elseif (stripos($subject, 'verification') !== false || stripos($subject, 'rejected') !== false) {
+            $source = 'mobile_app_rejection';
+        }
+        
+        // Insert support request with user_id, status, and source
         $stmt = $pdo->prepare("
             INSERT INTO support_requests (
+                user_id,
                 user_email, 
                 subject, 
                 message, 
-                source
-            ) VALUES (?, ?, ?, 'mobile_app_deactivation')
+                status,
+                source,
+                updated_at
+            ) VALUES (?, ?, ?, ?, 'pending', ?, NOW())
         ");
         
-        $stmt->execute([$userEmail, $subject, $message]);
+        $stmt->execute([$userId, $userEmail, $subject, $message, $source]);
+        $ticketId = $pdo->lastInsertId();
         
-        error_log("Support request logged to database for: " . $userEmail);
+        // Generate ticket number immediately after insert
+        $ticketNumber = 'REQ-' . str_pad($ticketId, 5, '0', STR_PAD_LEFT);
+        $updateStmt = $pdo->prepare("UPDATE support_requests SET ticket_number = ?, updated_at = NOW() WHERE id = ?");
+        $updateStmt->execute([$ticketNumber, $ticketId]);
+        
+        // Create initial message in support_request_messages table if user_id exists
+        if ($userId) {
+            try {
+                $messageStmt = $pdo->prepare("
+                    INSERT INTO support_request_messages (request_id, sender_id, message)
+                    VALUES (?, ?, ?)
+                ");
+                $messageStmt->execute([$ticketId, $userId, $message]);
+                error_log("Initial message created for ticket: $ticketNumber");
+            } catch (PDOException $e) {
+                // Log error but don't fail ticket creation
+                error_log("Failed to create initial message: " . $e->getMessage());
+            }
+        }
+        
+        error_log("Support request logged to database - Ticket: $ticketNumber, User ID: " . ($userId ?? 'NULL') . ", Email: $userEmail");
         
     } catch (Exception $e) {
         error_log("Failed to log support request to database: " . $e->getMessage());

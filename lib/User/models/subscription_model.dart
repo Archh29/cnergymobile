@@ -106,6 +106,10 @@ class SubscriptionPlan {
   }
 
   String getDurationText() {
+    // Day Pass (plan.id == 6) is always 1 session
+    if (id == 6 || planName.toLowerCase().contains('day pass')) {
+      return '1 Session';
+    }
     if (durationDays != null && durationDays! > 0) {
       return durationDays == 1 ? '1 Day' : '$durationDays Days';
     } else if (durationMonths == 12) {
@@ -185,6 +189,9 @@ class UserSubscription {
   final String startDate;
   final String endDate;
   final String? createdAt;
+  final int periods;
+  final int durationMonths;
+  final int? durationDays;
 
   UserSubscription({
     required this.id,
@@ -195,13 +202,55 @@ class UserSubscription {
     required this.startDate,
     required this.endDate,
     this.createdAt,
+    this.periods = 1,
+    this.durationMonths = 1,
+    this.durationDays,
   });
 
   factory UserSubscription.fromJson(Map<String, dynamic> json) {
+    // Safely parse periods
+    int periods = 1;
+    final periodsValue = json['periods'];
+    if (periodsValue != null) {
+      if (periodsValue is int) {
+        periods = periodsValue;
+      } else if (periodsValue is num) {
+        periods = periodsValue.toInt();
+      } else if (periodsValue is String) {
+        periods = int.tryParse(periodsValue) ?? 1;
+      }
+    }
+    
+    // Safely parse duration_months
+    int durationMonths = 1;
+    final durationMonthsValue = json['duration_months'];
+    if (durationMonthsValue != null) {
+      if (durationMonthsValue is int) {
+        durationMonths = durationMonthsValue;
+      } else if (durationMonthsValue is num) {
+        durationMonths = durationMonthsValue.toInt();
+      } else if (durationMonthsValue is String) {
+        durationMonths = int.tryParse(durationMonthsValue) ?? 1;
+      }
+    }
+    
+    // Safely parse duration_days
+    int? durationDays;
+    final durationDaysValue = json['duration_days'];
+    if (durationDaysValue != null) {
+      if (durationDaysValue is int) {
+        durationDays = durationDaysValue;
+      } else if (durationDaysValue is num) {
+        durationDays = durationDaysValue.toInt();
+      } else if (durationDaysValue is String) {
+        durationDays = int.tryParse(durationDaysValue);
+      }
+    }
+    
     return UserSubscription(
       id: int.parse(json['id'].toString()),
       planName: json['plan_name']?.toString() ?? 'Unnamed Plan',
-      price: double.tryParse(json['price'].toString()) ?? 0.0,
+      price: double.tryParse(json['original_price']?.toString() ?? json['price']?.toString() ?? '0') ?? 0.0,
       discountedPrice: json['discounted_price'] != null
           ? double.tryParse(json['discounted_price'].toString())
           : null,
@@ -209,6 +258,9 @@ class UserSubscription {
       startDate: json['start_date']?.toString() ?? '',
       endDate: json['end_date']?.toString() ?? '',
       createdAt: json['created_at']?.toString(),
+      periods: periods,
+      durationMonths: durationMonths,
+      durationDays: durationDays,
     );
   }
 
@@ -222,7 +274,35 @@ class UserSubscription {
       'start_date': startDate,
       'end_date': endDate,
       'created_at': createdAt,
+      'periods': periods,
+      'duration_months': durationMonths,
+      'duration_days': durationDays,
     };
+  }
+  
+  String getQuantityText() {
+    if (durationDays != null && durationDays! > 0) {
+      return periods > 1 ? '$periods periods' : '1 period';
+    } else if (durationMonths >= 12) {
+      return periods > 1 ? '$periods years' : '1 year';
+    } else {
+      return periods > 1 ? '$periods months' : '1 month';
+    }
+  }
+  
+  String getDurationText() {
+    if (durationDays != null && durationDays! > 0) {
+      final totalDays = durationDays! * periods;
+      return totalDays == 1 ? '1 Day' : '$totalDays Days';
+    } else if (durationMonths >= 12) {
+      final totalMonths = durationMonths * periods;
+      if (totalMonths == 12) return '1 Year';
+      if (totalMonths % 12 == 0) return '${totalMonths ~/ 12} Years';
+      return '$totalMonths Months';
+    } else {
+      final totalMonths = durationMonths * periods;
+      return totalMonths == 1 ? '1 Month' : '$totalMonths Months';
+    }
   }
 
   String getFormattedPrice() => '₱${price.toStringAsFixed(2)}';

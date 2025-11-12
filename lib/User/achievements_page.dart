@@ -66,35 +66,6 @@ class _AchievementsPageState extends State<AchievementsPage> with TickerProvider
     }
   }
 
-  Future<void> _forceCheckAchievements() async {
-    try {
-      setState(() {
-        _isLoading = true;
-      });
-
-      final result = await AchievementsService.forceCheckAchievements();
-      
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Force check completed. ${result['count']} new achievements awarded.'),
-          backgroundColor: Colors.green,
-        ),
-      );
-
-      // Reload achievements after force check
-      await _loadAchievements();
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error force checking achievements: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
-      setState(() {
-        _isLoading = false;
-      });
-    }
-  }
 
   List<Achievement> get _filteredAchievements {
     if (_achievementsData == null) return [];
@@ -111,9 +82,6 @@ class _AchievementsPageState extends State<AchievementsPage> with TickerProvider
     return achievements;
   }
 
-  int get _totalPoints {
-    return _achievementsData?.totalPoints ?? 0;
-  }
 
   IconData _getIconData(String iconName) {
     switch (iconName.toLowerCase()) {
@@ -309,6 +277,7 @@ class _AchievementsPageState extends State<AchievementsPage> with TickerProvider
           'Achievements',
           style: GoogleFonts.poppins(
             fontWeight: FontWeight.w600,
+            color: Colors.white,
           ),
         ),
         backgroundColor: Color(0xFF0F0F0F),
@@ -328,11 +297,6 @@ class _AchievementsPageState extends State<AchievementsPage> with TickerProvider
           IconButton(
             icon: Icon(Icons.refresh, color: Colors.white),
             onPressed: _loadAchievements,
-          ),
-          IconButton(
-            icon: Icon(Icons.auto_fix_high, color: Colors.white),
-            onPressed: _forceCheckAchievements,
-            tooltip: 'Force Check Achievements',
           ),
         ],
       ),
@@ -437,14 +401,6 @@ class _AchievementsPageState extends State<AchievementsPage> with TickerProvider
                               fontSize: 22,
                               color: Colors.white,
                               fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          SizedBox(height: 4),
-                          Text(
-                            '$_totalPoints total points earned',
-                            style: GoogleFonts.poppins(
-                              color: Colors.white.withOpacity(0.9),
-                              fontSize: 14,
                             ),
                           ),
                         ],

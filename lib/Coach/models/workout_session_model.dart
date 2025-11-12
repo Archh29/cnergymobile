@@ -273,7 +273,7 @@ class WorkoutSessionModel {
       case SessionType.group_class:
         return 'Group Class';
       case SessionType.personal_training:
-        return 'Personal Training';
+        return 'Personal Coaching';
       case SessionType.other:
         return 'Other';
     }

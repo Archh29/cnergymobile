@@ -794,12 +794,23 @@ class RoutineService {
             'message': responseData['message'],
           };
         } else if (responseData['already_exists'] == true) {
-          print('⚠️ Program already exists in user library');
-          return {
-            'success': false,
-            'already_exists': true,
-            'message': responseData['error'] ?? 'You already have this program',
-          };
+          // Check if it's a success response (program exists and is in library)
+          if (responseData['success'] == true) {
+            print('✅ Program already exists in library (success)');
+            return {
+              'success': true,
+              'already_exists': true,
+              'member_program_hdr_id': responseData['member_program_hdr_id'],
+              'message': responseData['message'] ?? 'Program is already in your library',
+            };
+          } else {
+            print('⚠️ Program already exists in user library');
+            return {
+              'success': false,
+              'already_exists': true,
+              'message': responseData['error'] ?? 'You already have this program',
+            };
+          }
         } else {
           print('❌ Clone error: ${responseData['error']}');
           return {

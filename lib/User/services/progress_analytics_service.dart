@@ -132,20 +132,64 @@ class ProgressAnalyticsService {
 
         if (response.statusCode == 200) {
           final data = json.decode(response.body);
+          print('📊 getAllProgress response: ${data.toString()}');
+          
           if (data['success'] == true) {
-            final Map<String, dynamic> progressData = data['data'] ?? {};
+            final dynamic rawData = data['data'];
             final Map<String, List<ProgressTrackerModel>> result = {};
             
-            progressData.forEach((exerciseName, liftsData) {
-              if (liftsData is List) {
-                result[exerciseName] = liftsData
-                    .map((json) => ProgressTrackerModel.fromJson(json))
-                    .toList();
+            // Handle case where data might be a List or Map
+            if (rawData is Map) {
+              // Normal case: data is a Map grouped by exercise name
+              final Map<String, dynamic> progressData = Map<String, dynamic>.from(rawData);
+              
+              progressData.forEach((exerciseName, liftsData) {
+                if (liftsData is List) {
+                  try {
+                    result[exerciseName] = liftsData
+                        .map((json) => ProgressTrackerModel.fromJson(json))
+                        .toList();
+                  } catch (e) {
+                    print('❌ Error parsing lifts for $exerciseName: $e');
+                  }
+                }
+              });
+            } else if (rawData is List) {
+              // Edge case: data is a List (shouldn't happen, but handle it)
+              print('⚠️ Warning: API returned List instead of Map, converting...');
+              final List<dynamic> liftsList = rawData;
+              
+              // Group by exercise name
+              final Map<String, List<dynamic>> grouped = {};
+              for (final lift in liftsList) {
+                if (lift is Map) {
+                  final exerciseName = lift['exercise_name']?.toString() ?? 'Unknown';
+                  grouped.putIfAbsent(exerciseName, () => []).add(lift);
+                }
               }
-            });
+              
+              // Convert to result format
+              grouped.forEach((exerciseName, liftsData) {
+                try {
+                  result[exerciseName] = liftsData
+                      .map((json) => ProgressTrackerModel.fromJson(json))
+                      .toList();
+                } catch (e) {
+                  print('❌ Error parsing lifts for $exerciseName: $e');
+                }
+              });
+            } else {
+              print('⚠️ Warning: API returned unexpected data type: ${rawData.runtimeType}');
+            }
             
+            print('✅ getAllProgress: Parsed ${result.length} exercises');
             return result;
+          } else {
+            print('❌ API returned success=false: ${data['error'] ?? 'Unknown error'}');
           }
+        } else {
+          print('❌ API returned status code: ${response.statusCode}');
+          print('Response body: ${response.body}');
         }
         return {};
       }
@@ -164,24 +208,69 @@ class ProgressAnalyticsService {
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
+        print('📊 getAllProgress response: ${data.toString()}');
+        
         if (data['success'] == true) {
-          final Map<String, dynamic> progressData = data['data'] ?? {};
+          final dynamic rawData = data['data'];
           final Map<String, List<ProgressTrackerModel>> result = {};
           
-          progressData.forEach((exerciseName, liftsData) {
-            if (liftsData is List) {
-              result[exerciseName] = liftsData
-                  .map((json) => ProgressTrackerModel.fromJson(json))
-                  .toList();
+          // Handle case where data might be a List or Map
+          if (rawData is Map) {
+            // Normal case: data is a Map grouped by exercise name
+            final Map<String, dynamic> progressData = Map<String, dynamic>.from(rawData);
+            
+            progressData.forEach((exerciseName, liftsData) {
+              if (liftsData is List) {
+                try {
+                  result[exerciseName] = liftsData
+                      .map((json) => ProgressTrackerModel.fromJson(json))
+                      .toList();
+                } catch (e) {
+                  print('❌ Error parsing lifts for $exerciseName: $e');
+                }
+              }
+            });
+          } else if (rawData is List) {
+            // Edge case: data is a List (shouldn't happen, but handle it)
+            print('⚠️ Warning: API returned List instead of Map, converting...');
+            final List<dynamic> liftsList = rawData;
+            
+            // Group by exercise name
+            final Map<String, List<dynamic>> grouped = {};
+            for (final lift in liftsList) {
+              if (lift is Map) {
+                final exerciseName = lift['exercise_name']?.toString() ?? 'Unknown';
+                grouped.putIfAbsent(exerciseName, () => []).add(lift);
+              }
             }
-          });
+            
+            // Convert to result format
+            grouped.forEach((exerciseName, liftsData) {
+              try {
+                result[exerciseName] = liftsData
+                    .map((json) => ProgressTrackerModel.fromJson(json))
+                    .toList();
+              } catch (e) {
+                print('❌ Error parsing lifts for $exerciseName: $e');
+              }
+            });
+          } else {
+            print('⚠️ Warning: API returned unexpected data type: ${rawData.runtimeType}');
+          }
           
+          print('✅ getAllProgress: Parsed ${result.length} exercises');
           return result;
+        } else {
+          print('❌ API returned success=false: ${data['error'] ?? 'Unknown error'}');
         }
+      } else {
+        print('❌ API returned status code: ${response.statusCode}');
+        print('Response body: ${response.body}');
       }
       return {};
-    } catch (e) {
-      print('Error getting all progress: $e');
+    } catch (e, stackTrace) {
+      print('❌ Error getting all progress: $e');
+      print('Stack trace: $stackTrace');
       return {};
     }
   }

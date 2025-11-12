@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../User/services/auth_service.dart';
@@ -27,6 +28,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   List<MerchItem> merchItems = [];
   List<PromotionItem> promotions = [];
   TodayWorkout? todayWorkout;
+  GymCapacity? gymCapacity;
   
   // Loading state
   bool _isLoading = true;
@@ -74,19 +76,32 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       }
       
       if (mounted) {
+        final newCapacity = data['gymCapacity'] as GymCapacity?;
+        final newState = newCapacity != null ? '${newCapacity.currentCount}_${newCapacity.isFull}' : null;
+        
         setState(() {
           announcements = data['announcements'];
           merchItems = data['merchandise'];
           promotions = data['promotions'];
           todayWorkout = scheduledWorkout; // Use scheduled workout instead of API data
+          gymCapacity = newCapacity; // Get gym capacity from API
           _isLoading = false;
           _applyAnnouncementFilter();
         });
+        
+        // Check and show capacity notification on initial load
+        if (newCapacity != null && _lastCapacityState != newState) {
+          _checkAndShowCapacityNotification(newCapacity);
+          _lastCapacityState = newState;
+        }
         
         // Start auto-scroll after data is loaded
         if (merchItems.isNotEmpty) {
           _startAutoScroll();
         }
+        
+        // Start auto-refresh for gym capacity
+        _startCapacityAutoRefresh();
       }
     } catch (e) {
       print('Error loading home data: $e');
@@ -229,10 +244,161 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     );
   }
 
+  // Timer for auto-refreshing gym capacity
+  Timer? _capacityRefreshTimer;
+  
+  // Track capacity notification state
+  bool _hasShownFullNotification = false;
+  bool _hasShownAlmostFullNotification = false;
+  String? _lastCapacityState; // Track last capacity state to detect changes
+
+  void _startCapacityAutoRefresh() {
+    // Cancel existing timer if any
+    _capacityRefreshTimer?.cancel();
+    
+    // Refresh every 30 seconds
+    _capacityRefreshTimer = Timer.periodic(Duration(seconds: 30), (timer) {
+      if (mounted) {
+        _refreshGymCapacity();
+      } else {
+        timer.cancel();
+      }
+    });
+  }
+
+  Future<void> _refreshGymCapacity() async {
+    try {
+      final data = await HomeService.getHomeData();
+      if (mounted && data['gymCapacity'] != null) {
+        final newCapacity = data['gymCapacity'] as GymCapacity;
+        final newState = '${newCapacity.currentCount}_${newCapacity.isFull}';
+        
+        setState(() {
+          gymCapacity = newCapacity;
+        });
+        
+        // Check if capacity state changed and show notification
+        if (_lastCapacityState != newState) {
+          _checkAndShowCapacityNotification(newCapacity);
+          _lastCapacityState = newState;
+        }
+      }
+    } catch (e) {
+      print('Error refreshing gym capacity: $e');
+    }
+  }
+
+  void _checkAndShowCapacityNotification(GymCapacity capacity) {
+    if (capacity.isFull) {
+      // Reset almost full notification flag when it becomes full
+      _hasShownAlmostFullNotification = false;
+      
+      // Show full notification if not already shown
+      if (!_hasShownFullNotification) {
+        _hasShownFullNotification = true;
+        _showCapacityNotification(
+          title: 'Gym Fully Occupied',
+          message: 'The gym has reached maximum capacity (${capacity.currentCount}/${capacity.maxCapacity}). Please wait or come back later.',
+          color: Color(0xFFFF6B35),
+          icon: Icons.block,
+        );
+      }
+    } else if (capacity.percentage >= 80 || capacity.currentCount >= 24) {
+      // Reset full notification flag when it's no longer full
+      _hasShownFullNotification = false;
+      
+      // Show almost full notification if not already shown
+      if (!_hasShownAlmostFullNotification) {
+        _hasShownAlmostFullNotification = true;
+        _showCapacityNotification(
+          title: 'Gym Almost Full',
+          message: 'The gym is ${capacity.percentage}% full (${capacity.currentCount}/${capacity.maxCapacity}). Only ${capacity.availableSpots} spots remaining.',
+          color: Color(0xFFFFB84D),
+          icon: Icons.warning_amber_rounded,
+        );
+      }
+    } else {
+      // Reset notification flags when capacity drops below threshold
+      _hasShownFullNotification = false;
+      _hasShownAlmostFullNotification = false;
+    }
+  }
+
+  void _showCapacityNotification({
+    required String title,
+    required String message,
+    required Color color,
+    required IconData icon,
+  }) {
+    if (!mounted) return;
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Container(
+          padding: EdgeInsets.symmetric(vertical: 8),
+          child: Row(
+            children: [
+              Container(
+                padding: EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(icon, color: Colors.white, size: 24),
+              ),
+              SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: GoogleFonts.poppins(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      message,
+                      style: GoogleFonts.poppins(
+                        fontSize: 13,
+                        color: Colors.white.withOpacity(0.9),
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        backgroundColor: color,
+        behavior: SnackBarBehavior.floating,
+        margin: EdgeInsets.all(16),
+        duration: Duration(seconds: 5),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        action: SnackBarAction(
+          label: 'Dismiss',
+          textColor: Colors.white,
+          onPressed: () {
+            ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          },
+        ),
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _animationController.dispose();
     _merchPageController.dispose();
+    _capacityRefreshTimer?.cancel();
     super.dispose();
   }
 
@@ -244,98 +410,191 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     
     showDialog(
       context: context,
+      barrierColor: Colors.black.withOpacity(0.7),
       builder: (context) => Dialog(
         backgroundColor: Colors.transparent,
+        insetPadding: EdgeInsets.symmetric(
+          horizontal: isThinScreen ? 16 : 20,
+          vertical: isSmallScreen ? 20 : 24,
+        ),
         child: Container(
-          padding: EdgeInsets.all(isSmallScreen ? 20 : 24),
-          margin: EdgeInsets.symmetric(horizontal: isThinScreen ? 12 : 16),
           constraints: BoxConstraints(
-            maxHeight: screenHeight * 0.8,
-            maxWidth: screenWidth * 0.9,
+            maxHeight: screenHeight * 0.85,
+            maxWidth: screenWidth * 0.92,
           ),
           decoration: BoxDecoration(
-            color: Color(0xFF1A1A1A),
-            borderRadius: BorderRadius.circular(20),
+            color: Color(0xFF1E1E1E),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: Color(0xFFFF6B35).withOpacity(0.2),
+              width: 1,
+            ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.3),
+                color: Colors.black.withOpacity(0.5),
+                blurRadius: 30,
+                offset: Offset(0, 15),
+                spreadRadius: 5,
+              ),
+              BoxShadow(
+                color: Color(0xFFFF6B35).withOpacity(0.1),
                 blurRadius: 20,
-                offset: Offset(0, 10),
+                offset: Offset(0, 0),
               ),
             ],
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              // Header with gradient background
               Container(
-                padding: EdgeInsets.all(isSmallScreen ? 12 : 16),
+                padding: EdgeInsets.only(
+                  top: isSmallScreen ? 24 : 28,
+                  bottom: isSmallScreen ? 16 : 20,
+                  left: isSmallScreen ? 24 : 28,
+                  right: isSmallScreen ? 24 : 28,
+                ),
                 decoration: BoxDecoration(
-                  color: Color(0xFFFF6B35).withOpacity(0.1),
-                  shape: BoxShape.circle,
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Color(0xFFFF6B35).withOpacity(0.15),
+                      Color(0xFFFF6B35).withOpacity(0.05),
+                    ],
+                  ),
+                  borderRadius: BorderRadius.only(
+                    topLeft: Radius.circular(24),
+                    topRight: Radius.circular(24),
+                  ),
                 ),
-                child: Icon(
-                  Icons.rule,
-                  color: Color(0xFFFF6B35),
-                  size: isSmallScreen ? 28 : 32,
+                child: Column(
+                  children: [
+                    // Icon with enhanced styling
+                    Container(
+                      padding: EdgeInsets.all(isSmallScreen ? 14 : 18),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            Color(0xFFFF6B35),
+                            Color(0xFFFF8C5A),
+                          ],
+                        ),
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Color(0xFFFF6B35).withOpacity(0.4),
+                            blurRadius: 15,
+                            offset: Offset(0, 5),
+                          ),
+                        ],
+                      ),
+                      child: Icon(
+                        Icons.rule,
+                        color: Colors.white,
+                        size: isSmallScreen ? 32 : 36,
+                      ),
+                    ),
+                    SizedBox(height: isSmallScreen ? 16 : 20),
+                    Text(
+                      'Gym Rules & Guidelines',
+                      style: GoogleFonts.poppins(
+                        fontSize: isSmallScreen ? 20 : 24,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                        letterSpacing: 0.5,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    SizedBox(height: isSmallScreen ? 8 : 10),
+                    Container(
+                      width: 60,
+                      height: 3,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            Color(0xFFFF6B35),
+                            Color(0xFFFF8C5A),
+                          ],
+                        ),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              SizedBox(height: isSmallScreen ? 12 : 16),
-              Text(
-                'Gym Rules & Guidelines',
-                style: GoogleFonts.poppins(
-                  fontSize: isSmallScreen ? 18 : 20,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              SizedBox(height: isSmallScreen ? 12 : 16),
+              
+              // Rules list with better padding
               Flexible(
                 child: Container(
                   constraints: BoxConstraints(
-                    maxHeight: screenHeight * 0.4,
+                    maxHeight: screenHeight * 0.45,
+                  ),
+                  padding: EdgeInsets.symmetric(
+                    horizontal: isSmallScreen ? 20 : 24,
+                    vertical: isSmallScreen ? 16 : 20,
                   ),
                   child: SingleChildScrollView(
+                    physics: BouncingScrollPhysics(),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _buildRuleItem("1. Consult coach or trainer on how to use the gym properly.", isSmallScreen),
-                        _buildRuleItem("2. Use facilities and equipment at your own risk.", isSmallScreen),
-                        _buildRuleItem("3. Return weights to rack after use.", isSmallScreen),
-                        _buildRuleItem("4. Children under the age of 16 must have parents or guardians permission.", isSmallScreen),
-                        _buildRuleItem("5. Report any damages to the management immediately DO NOT USE.", isSmallScreen),
-                        _buildRuleItem("6. Stop exercising if you feel pain, discomfort, nausea, dizziness or shortness of breath.", isSmallScreen),
-                        _buildRuleItem("7. Wear proper gym clothing. NO SLIPPERS.", isSmallScreen),
-                        _buildRuleItem("8. NO LITTERING.", isSmallScreen),
-                        _buildRuleItem("9. NO SMOKING", isSmallScreen),
-                        _buildRuleItem("10. NO LOITERING", isSmallScreen),
-                        _buildRuleItem("11. Use provided SANITZER STATIONS.", isSmallScreen),
-                        _buildRuleItem("12. Please be COURTEOUS AND RESPECTFUL of other gym users.", isSmallScreen),
-                        _buildRuleItem("13. NO SHARING OF QR CODE. If caught, account termination will be applied.", isSmallScreen),
+                        _buildRuleItem("Consult coach or trainer on how to use the gym properly.", isSmallScreen, 1),
+                        _buildRuleItem("Use facilities and equipment at your own risk.", isSmallScreen, 2),
+                        _buildRuleItem("Return weights to rack after use.", isSmallScreen, 3),
+                        _buildRuleItem("Children under the age of 16 must have parents or guardians permission.", isSmallScreen, 4),
+                        _buildRuleItem("Report any damages to the management immediately DO NOT USE.", isSmallScreen, 5),
+                        _buildRuleItem("Stop exercising if you feel pain, discomfort, nausea, dizziness or shortness of breath.", isSmallScreen, 6),
+                        _buildRuleItem("Wear proper gym clothing. NO SLIPPERS.", isSmallScreen, 7),
+                        _buildRuleItem("NO LITTERING.", isSmallScreen, 8),
+                        _buildRuleItem("NO SMOKING", isSmallScreen, 9),
+                        _buildRuleItem("NO LOITERING", isSmallScreen, 10),
+                        _buildRuleItem("Use provided SANITZER STATIONS.", isSmallScreen, 11),
+                        _buildRuleItem("Please be COURTEOUS AND RESPECTFUL of other gym users.", isSmallScreen, 12),
+                        _buildRuleItem("NO SHARING OF QR CODE. If caught, account termination will be applied.", isSmallScreen, 13),
                       ],
                     ),
                   ),
                 ),
               ),
-              SizedBox(height: isSmallScreen ? 16 : 20),
-              ElevatedButton(
-                onPressed: () => Navigator.of(context).pop(),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Color(0xFFFF6B35),
-                  foregroundColor: Colors.white,
-                  padding: EdgeInsets.symmetric(
-                    horizontal: isSmallScreen ? 28 : 32, 
-                    vertical: isSmallScreen ? 10 : 12
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+              
+              // Footer with button
+              Container(
+                padding: EdgeInsets.all(isSmallScreen ? 20 : 24),
+                decoration: BoxDecoration(
+                  color: Color(0xFF252525),
+                  borderRadius: BorderRadius.only(
+                    bottomLeft: Radius.circular(24),
+                    bottomRight: Radius.circular(24),
                   ),
                 ),
-                child: Text(
-                  'Got it!',
-                  style: GoogleFonts.poppins(
-                    fontWeight: FontWeight.w600,
-                    fontSize: isSmallScreen ? 14 : 16,
+                child: SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Color(0xFFFF6B35),
+                      foregroundColor: Colors.white,
+                      padding: EdgeInsets.symmetric(
+                        horizontal: isSmallScreen ? 32 : 40, 
+                        vertical: isSmallScreen ? 14 : 16,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      elevation: 8,
+                      shadowColor: Color(0xFFFF6B35).withOpacity(0.4),
+                    ),
+                    child: Text(
+                      'Got it!',
+                      style: GoogleFonts.poppins(
+                        fontWeight: FontWeight.w600,
+                        fontSize: isSmallScreen ? 15 : 17,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -346,31 +605,66 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildRuleItem(String rule, bool isSmallScreen) {
-    return Padding(
-      padding: EdgeInsets.symmetric(vertical: isSmallScreen ? 3 : 4),
+  Widget _buildRuleItem(String rule, bool isSmallScreen, int index) {
+    return Container(
+      margin: EdgeInsets.only(bottom: isSmallScreen ? 12 : 14),
+      padding: EdgeInsets.all(isSmallScreen ? 12 : 14),
+      decoration: BoxDecoration(
+        color: Color(0xFF252525),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: Color(0xFFFF6B35).withOpacity(0.1),
+          width: 1,
+        ),
+      ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Number badge with gradient
           Container(
-            width: isSmallScreen ? 5 : 6,
-            height: isSmallScreen ? 5 : 6,
-            margin: EdgeInsets.only(
-              top: isSmallScreen ? 6 : 8, 
-              right: isSmallScreen ? 10 : 12
-            ),
+            width: isSmallScreen ? 28 : 32,
+            height: isSmallScreen ? 28 : 32,
             decoration: BoxDecoration(
-              color: Color(0xFFFF6B35),
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Color(0xFFFF6B35),
+                  Color(0xFFFF8C5A),
+                ],
+              ),
               shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: Color(0xFFFF6B35).withOpacity(0.3),
+                  blurRadius: 4,
+                  offset: Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Center(
+              child: Text(
+                '$index',
+                style: GoogleFonts.poppins(
+                  fontSize: isSmallScreen ? 12 : 14,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
             ),
           ),
+          SizedBox(width: isSmallScreen ? 12 : 14),
           Expanded(
-            child: Text(
-              rule,
-              style: GoogleFonts.poppins(
-                fontSize: isSmallScreen ? 13 : 14,
-                color: Colors.grey[300],
-                height: 1.4,
+            child: Padding(
+              padding: EdgeInsets.only(top: isSmallScreen ? 4 : 6),
+              child: Text(
+                rule,
+                style: GoogleFonts.poppins(
+                  fontSize: isSmallScreen ? 13 : 14.5,
+                  color: Colors.grey[200],
+                  height: 1.5,
+                  fontWeight: FontWeight.w400,
+                ),
               ),
             ),
           ),
@@ -463,6 +757,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             children: [
               _buildWelcomeSection(isSmallScreen, isThinScreen),
               SizedBox(height: isSmallScreen ? 16 : 24),
+              _buildGymCapacitySection(isSmallScreen, isThinScreen),
+              SizedBox(height: isSmallScreen ? 16 : 24),
               _buildTodayWorkoutSection(isSmallScreen, isThinScreen),
               SizedBox(height: isSmallScreen ? 16 : 24),
               _buildQuickActionsSection(isSmallScreen, isThinScreen),
@@ -484,7 +780,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   Widget _buildWelcomeSection(bool isSmallScreen, bool isThinScreen) {
     String userName = AuthService.isLoggedIn() 
-        ? AuthService.getUserFullName() ?? "Member"
+        ? AuthService.getUserFullName()
         : "Day Pass User";
         
     return Container(
@@ -551,6 +847,489 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildGymCapacitySection(bool isSmallScreen, bool isThinScreen) {
+    if (gymCapacity == null) {
+      return Container(
+        padding: EdgeInsets.all(isSmallScreen ? 16 : 20),
+        decoration: BoxDecoration(
+          color: Color(0xFF1A1A1A),
+          borderRadius: BorderRadius.circular(isSmallScreen ? 16 : 20),
+          border: Border.all(color: Colors.grey[700]!, width: 1),
+        ),
+        child: Center(
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              SizedBox(
+                width: isSmallScreen ? 16 : 20,
+                height: isSmallScreen ? 16 : 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF4ECDC4)),
+                ),
+              ),
+              SizedBox(width: 12),
+              Text(
+                'Loading gym capacity...',
+                style: GoogleFonts.poppins(
+                  fontSize: isSmallScreen ? 14 : 16,
+                  color: Colors.grey[400],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final capacity = gymCapacity!;
+    final percentage = capacity.percentage / 100.0;
+    
+    // Determine color based on capacity
+    Color capacityColor;
+    Color progressColor;
+    String statusText;
+    IconData statusIcon;
+    
+    if (capacity.isFull) {
+      capacityColor = Color(0xFFFF6B35); // Red/Orange when full
+      progressColor = Color(0xFFFF6B35);
+      statusText = 'Fully Occupied';
+      statusIcon = Icons.warning;
+    } else if (percentage >= 0.8) {
+      capacityColor = Color(0xFFFFB84D); // Orange when near full
+      progressColor = Color(0xFFFFB84D);
+      statusText = 'Almost Full';
+      statusIcon = Icons.info;
+    } else {
+      capacityColor = Color(0xFF4ECDC4); // Green/Teal when available
+      progressColor = Color(0xFF96CEB4);
+      statusText = 'Available';
+      statusIcon = Icons.check_circle;
+    }
+
+    return GestureDetector(
+      onTap: () => _showCapacityWarningModal(capacity, isSmallScreen, isThinScreen),
+      child: Container(
+        padding: EdgeInsets.all(isSmallScreen ? 16 : 20),
+        decoration: BoxDecoration(
+          color: Color(0xFF1A1A1A),
+          borderRadius: BorderRadius.circular(isSmallScreen ? 16 : 20),
+          border: Border.all(
+            color: capacityColor.withOpacity(0.3),
+            width: 2,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: capacityColor.withOpacity(0.1),
+              blurRadius: 10,
+              offset: Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: EdgeInsets.all(isSmallScreen ? 8 : 10),
+                decoration: BoxDecoration(
+                  color: capacityColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(isSmallScreen ? 8 : 10),
+                ),
+                child: Icon(
+                  Icons.people,
+                  color: capacityColor,
+                  size: isSmallScreen ? 20 : 24,
+                ),
+              ),
+              SizedBox(width: isSmallScreen ? 12 : 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Gym Capacity',
+                      style: GoogleFonts.poppins(
+                        fontSize: isSmallScreen ? 16 : 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                    SizedBox(height: 2),
+                    Row(
+                      children: [
+                        Icon(
+                          statusIcon,
+                          size: isSmallScreen ? 14 : 16,
+                          color: capacityColor,
+                        ),
+                        SizedBox(width: 4),
+                        Text(
+                          statusText,
+                          style: GoogleFonts.poppins(
+                            fontSize: isSmallScreen ? 12 : 14,
+                            color: capacityColor,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: EdgeInsets.symmetric(
+                  horizontal: isSmallScreen ? 12 : 16,
+                  vertical: isSmallScreen ? 6 : 8,
+                ),
+                decoration: BoxDecoration(
+                  color: capacityColor.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(isSmallScreen ? 8 : 10),
+                  border: Border.all(
+                    color: capacityColor.withOpacity(0.5),
+                    width: 1,
+                  ),
+                ),
+                child: Column(
+                  children: [
+                    Text(
+                      '${capacity.currentCount}',
+                      style: GoogleFonts.poppins(
+                        fontSize: isSmallScreen ? 18 : 24,
+                        fontWeight: FontWeight.bold,
+                        color: capacityColor,
+                      ),
+                    ),
+                    Text(
+                      '/ ${capacity.maxCapacity}',
+                      style: GoogleFonts.poppins(
+                        fontSize: isSmallScreen ? 10 : 12,
+                        color: Colors.grey[400],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: isSmallScreen ? 12 : 16),
+          // Progress bar
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    '${capacity.availableSpots} spots available',
+                    style: GoogleFonts.poppins(
+                      fontSize: isSmallScreen ? 11 : 12,
+                      color: Colors.grey[400],
+                    ),
+                  ),
+                  Text(
+                    '${capacity.percentage}% full',
+                    style: GoogleFonts.poppins(
+                      fontSize: isSmallScreen ? 11 : 12,
+                      color: Colors.grey[400],
+                    ),
+                  ),
+                ],
+              ),
+              SizedBox(height: isSmallScreen ? 6 : 8),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(isSmallScreen ? 4 : 6),
+                child: LinearProgressIndicator(
+                  value: percentage,
+                  minHeight: isSmallScreen ? 8 : 10,
+                  backgroundColor: Colors.grey[800],
+                  valueColor: AlwaysStoppedAnimation<Color>(progressColor),
+                ),
+              ),
+            ],
+          ),
+          if (capacity.isFull) ...[
+            SizedBox(height: isSmallScreen ? 10 : 12),
+            Container(
+              padding: EdgeInsets.all(isSmallScreen ? 10 : 12),
+              decoration: BoxDecoration(
+                color: capacityColor.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(isSmallScreen ? 8 : 10),
+                border: Border.all(
+                  color: capacityColor.withOpacity(0.3),
+                  width: 1,
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.warning_amber_rounded,
+                    size: isSmallScreen ? 16 : 18,
+                    color: capacityColor,
+                  ),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Gym is currently full. Please wait or come back later.',
+                      style: GoogleFonts.poppins(
+                        fontSize: isSmallScreen ? 11 : 12,
+                        color: Colors.grey[300],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+      ),
+    );
+  }
+
+  void _showCapacityWarningModal(GymCapacity capacity, bool isSmallScreen, bool isThinScreen) {
+    final percentage = capacity.percentage / 100.0;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final screenHeight = MediaQuery.of(context).size.height;
+    
+    // Determine warning level and messages
+    Color warningColor;
+    IconData warningIcon;
+    String title;
+    String mainMessage;
+    List<String> suggestions = [];
+    
+    if (capacity.isFull) {
+      warningColor = Color(0xFFFF6B35);
+      warningIcon = Icons.block;
+      title = 'Gym Fully Occupied';
+      mainMessage = 'The gym has reached its maximum capacity of ${capacity.maxCapacity} people.';
+      suggestions = [
+        'Please wait for someone to check out before entering',
+        'Consider visiting during off-peak hours',
+        'Check back in a few minutes - capacity updates in real-time',
+        'You may experience significant wait times for equipment'
+      ];
+    } else if (percentage >= 0.8 || capacity.currentCount >= 25) {
+      // Almost full (80% or 25+ people)
+      warningColor = Color(0xFFFFB84D);
+      warningIcon = Icons.warning_amber_rounded;
+      title = 'Gym Almost Full';
+      mainMessage = 'The gym is currently at ${capacity.currentCount}/${capacity.maxCapacity} capacity (${capacity.percentage}% full).';
+      suggestions = [
+        'Your workout experience may be hindered due to crowded conditions',
+        'Equipment availability may be limited',
+        'You might experience longer wait times for machines',
+        'Consider visiting during off-peak hours for better experience',
+        'Only ${capacity.availableSpots} spots remaining'
+      ];
+    } else if (percentage >= 0.6) {
+      // Getting busy (60%+)
+      warningColor = Color(0xFF4ECDC4);
+      warningIcon = Icons.info_outline;
+      title = 'Gym Status';
+      mainMessage = 'The gym currently has ${capacity.currentCount}/${capacity.maxCapacity} people (${capacity.percentage}% full).';
+      suggestions = [
+        'Gym is moderately busy',
+        'Most equipment should be available',
+        '${capacity.availableSpots} spots still available',
+        'Consider coming earlier if you prefer less crowded conditions'
+      ];
+    } else {
+      // Normal capacity
+      warningColor = Color(0xFF4ECDC4);
+      warningIcon = Icons.check_circle_outline;
+      title = 'Gym Capacity Info';
+      mainMessage = 'The gym currently has ${capacity.currentCount}/${capacity.maxCapacity} people (${capacity.percentage}% full).';
+      suggestions = [
+        'Gym has plenty of space available',
+        'All equipment should be readily available',
+        '${capacity.availableSpots} spots available',
+        'Great time to visit for an optimal workout experience'
+      ];
+    }
+    
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: Container(
+          padding: EdgeInsets.all(isSmallScreen ? 20 : 24),
+          margin: EdgeInsets.symmetric(horizontal: isThinScreen ? 12 : 16),
+          constraints: BoxConstraints(
+            maxHeight: screenHeight * 0.75,
+            maxWidth: screenWidth * 0.9,
+          ),
+          decoration: BoxDecoration(
+            color: Color(0xFF1A1A1A),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: warningColor.withOpacity(0.5),
+              width: 2,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.3),
+                blurRadius: 20,
+                offset: Offset(0, 10),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Header with icon
+              Container(
+                padding: EdgeInsets.all(isSmallScreen ? 12 : 16),
+                decoration: BoxDecoration(
+                  color: warningColor.withOpacity(0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  warningIcon,
+                  color: warningColor,
+                  size: isSmallScreen ? 32 : 40,
+                ),
+              ),
+              SizedBox(height: isSmallScreen ? 16 : 20),
+              // Title
+              Text(
+                title,
+                style: GoogleFonts.poppins(
+                  fontSize: isSmallScreen ? 18 : 22,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              SizedBox(height: isSmallScreen ? 12 : 16),
+              // Capacity display
+              Container(
+                padding: EdgeInsets.symmetric(
+                  horizontal: isSmallScreen ? 16 : 20,
+                  vertical: isSmallScreen ? 12 : 16,
+                ),
+                decoration: BoxDecoration(
+                  color: warningColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: warningColor.withOpacity(0.3),
+                    width: 1,
+                  ),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      '${capacity.currentCount}',
+                      style: GoogleFonts.poppins(
+                        fontSize: isSmallScreen ? 32 : 40,
+                        fontWeight: FontWeight.bold,
+                        color: warningColor,
+                      ),
+                    ),
+                    Text(
+                      ' / ${capacity.maxCapacity}',
+                      style: GoogleFonts.poppins(
+                        fontSize: isSmallScreen ? 20 : 24,
+                        color: Colors.grey[400],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              SizedBox(height: isSmallScreen ? 12 : 16),
+              // Main message
+              Text(
+                mainMessage,
+                style: GoogleFonts.poppins(
+                  fontSize: isSmallScreen ? 14 : 16,
+                  color: Colors.grey[300],
+                ),
+                textAlign: TextAlign.center,
+              ),
+              SizedBox(height: isSmallScreen ? 16 : 20),
+              // Suggestions list
+              Flexible(
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Important Information:',
+                        style: GoogleFonts.poppins(
+                          fontSize: isSmallScreen ? 14 : 16,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                      ),
+                      SizedBox(height: isSmallScreen ? 8 : 12),
+                      ...suggestions.map((suggestion) => Padding(
+                        padding: EdgeInsets.only(bottom: isSmallScreen ? 8 : 10),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              margin: EdgeInsets.only(
+                                top: isSmallScreen ? 4 : 6,
+                                right: isSmallScreen ? 10 : 12,
+                              ),
+                              width: isSmallScreen ? 6 : 8,
+                              height: isSmallScreen ? 6 : 8,
+                              decoration: BoxDecoration(
+                                color: warningColor,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            Expanded(
+                              child: Text(
+                                suggestion,
+                                style: GoogleFonts.poppins(
+                                  fontSize: isSmallScreen ? 12 : 14,
+                                  color: Colors.grey[300],
+                                  height: 1.4,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      )).toList(),
+                    ],
+                  ),
+                ),
+              ),
+              SizedBox(height: isSmallScreen ? 16 : 20),
+              // Close button
+              ElevatedButton(
+                onPressed: () => Navigator.of(context).pop(),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: warningColor,
+                  foregroundColor: Colors.white,
+                  padding: EdgeInsets.symmetric(
+                    horizontal: isSmallScreen ? 32 : 40,
+                    vertical: isSmallScreen ? 12 : 14,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: Text(
+                  'Got it',
+                  style: GoogleFonts.poppins(
+                    fontWeight: FontWeight.w600,
+                    fontSize: isSmallScreen ? 14 : 16,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

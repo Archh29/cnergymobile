@@ -54,26 +54,42 @@ class _CreateRoutinePageState extends State<CreateRoutinePage> {
       selectedDifficulty = widget.existingRoutine.difficulty ?? 'Beginner';
       
       // Handle color conversion - it might be stored as int or string
-      if (widget.existingRoutine.color != null) {
+      // RoutineModel.color is always a String, so we need to parse it properly
+      if (widget.existingRoutine.color != null && widget.existingRoutine.color.toString().isNotEmpty) {
         try {
-          if (widget.existingRoutine.color is int) {
-            selectedColor = Color(widget.existingRoutine.color);
-          } else if (widget.existingRoutine.color is String) {
-            // Convert hex string to Color
-            String colorStr = widget.existingRoutine.color.toString();
-            if (colorStr.startsWith('0x')) {
-              selectedColor = Color(int.parse(colorStr));
-            } else if (colorStr.startsWith('#')) {
-              selectedColor = Color(int.parse(colorStr.substring(1), radix: 16) + 0xFF000000);
+          String colorStr = widget.existingRoutine.color.toString().trim();
+          
+          if (colorStr.startsWith('0x') || colorStr.startsWith('0X')) {
+            // Format: 0xFF96CEB4
+            selectedColor = Color(int.parse(colorStr));
+          } else if (colorStr.startsWith('#')) {
+            // Format: #3B82F6 or #FF3B82F6
+            String hexStr = colorStr.substring(1);
+            if (hexStr.length == 6) {
+              // 6-digit hex (RGB) - add alpha channel FF
+              selectedColor = Color(int.parse(hexStr, radix: 16) + 0xFF000000);
+            } else if (hexStr.length == 8) {
+              // 8-digit hex (ARGB)
+              selectedColor = Color(int.parse(hexStr, radix: 16));
             } else {
-              // Try parsing as int
-              selectedColor = Color(int.parse(colorStr));
+              throw FormatException('Invalid hex color length: $colorStr (expected 6 or 8 digits after #)');
             }
           } else {
-            selectedColor = Color(0xFF96CEB4); // Default color
+            // Try parsing as integer string (format: "4280392702")
+            try {
+              selectedColor = Color(int.parse(colorStr));
+            } catch (e) {
+              // If integer parse fails, try as hex without prefix (6 or 8 digits)
+              if (colorStr.length == 6 || colorStr.length == 8) {
+                selectedColor = Color(int.parse(colorStr, radix: 16) + (colorStr.length == 6 ? 0xFF000000 : 0));
+              } else {
+                throw FormatException('Unable to parse color: $colorStr');
+              }
+            }
           }
         } catch (e) {
-          print('Error parsing color: $e');
+          print('❌ Error parsing routine color "${widget.existingRoutine.color}": $e');
+          print('   Color string: "${widget.existingRoutine.color}"');
           selectedColor = Color(0xFF96CEB4); // Default color on error
         }
       } else {
@@ -99,7 +115,7 @@ class _CreateRoutinePageState extends State<CreateRoutinePage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              widget.isEditing ? 'Edit Routine' : 'Create New Routine',
+              widget.isEditing ? 'Edit Program' : 'Create New Program',
               style: GoogleFonts.poppins(
                 color: Colors.white,
                 fontSize: 18,
@@ -108,8 +124,8 @@ class _CreateRoutinePageState extends State<CreateRoutinePage> {
             ),
             Text(
               widget.isProMember
-                  ? '✅ Premium: Unlimited routines'
-                  : '⚠️ Basic: ${widget.currentRoutineCount}/1 routines used',
+                  ? '✅ Premium: Unlimited programs'
+                  : '⚠️ Basic: ${widget.currentRoutineCount}/1 programs used',
               style: GoogleFonts.poppins(
                 fontSize: 12,
                 color: widget.isProMember ? Color(0xFF4ECDC4) : Color(0xFFFFD700),
@@ -158,9 +174,9 @@ class _CreateRoutinePageState extends State<CreateRoutinePage> {
           SizedBox(height: 16),
                     
           _buildInputField(
-            'Routine Name *',
+            'Program Name *',
             nameController,
-            'Enter routine name',
+            'Enter program name',
           ),
           SizedBox(height: 16),
                     
@@ -210,6 +226,10 @@ class _CreateRoutinePageState extends State<CreateRoutinePage> {
             ],
           ),
           SizedBox(height: 16),
+          
+          // Exercise count guidance
+          _buildExerciseCountGuidance(),
+          SizedBox(height: 16),
                     
           if (exercises.isEmpty)
             Container(
@@ -255,7 +275,44 @@ class _CreateRoutinePageState extends State<CreateRoutinePage> {
   }
 
   Widget _buildExerciseCard(ExerciseModel exercise, int index) {
-    final exerciseColor = Color(int.parse(exercise.color));
+    // Parse exercise color safely - handle hex strings with #, 0x format, or integer strings
+    Color exerciseColor;
+    try {
+      String colorStr = exercise.color.toString().trim();
+      
+      if (colorStr.startsWith('0x') || colorStr.startsWith('0X')) {
+        // Format: 0xFF96CEB4
+        exerciseColor = Color(int.parse(colorStr));
+      } else if (colorStr.startsWith('#')) {
+        // Format: #3B82F6 or #FF3B82F6
+        String hexStr = colorStr.substring(1);
+        if (hexStr.length == 6) {
+          // 6-digit hex (RGB) - add alpha channel FF
+          exerciseColor = Color(int.parse(hexStr, radix: 16) + 0xFF000000);
+        } else if (hexStr.length == 8) {
+          // 8-digit hex (ARGB)
+          exerciseColor = Color(int.parse(hexStr, radix: 16));
+        } else {
+          throw FormatException('Invalid hex color length: $colorStr (expected 6 or 8 digits after #)');
+        }
+      } else {
+        // Try parsing as integer string (format: "4280392702" or "0xFF96CEB4" without 0x prefix)
+        try {
+          exerciseColor = Color(int.parse(colorStr));
+        } catch (e) {
+          // If integer parse fails, try as hex without prefix (6 or 8 digits)
+          if (colorStr.length == 6 || colorStr.length == 8) {
+            exerciseColor = Color(int.parse(colorStr, radix: 16) + (colorStr.length == 6 ? 0xFF000000 : 0));
+          } else {
+            throw FormatException('Unable to parse color: $colorStr');
+          }
+        }
+      }
+    } catch (e) {
+      print('❌ Error parsing exercise color "${exercise.color}": $e');
+      print('   Color string: "${exercise.color}"');
+      exerciseColor = Color(0xFF96CEB4); // Default color on error
+    }
         
     return Container(
       margin: EdgeInsets.only(bottom: 12),
@@ -516,7 +573,7 @@ class _CreateRoutinePageState extends State<CreateRoutinePage> {
                 ),
               )
             : Text(
-                'Create Routine',
+                'Create Program',
                 style: GoogleFonts.poppins(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
@@ -538,6 +595,7 @@ class _CreateRoutinePageState extends State<CreateRoutinePage> {
           builder: (context) => MuscleGroupSelectionPage(
             selectedColor: selectedColor,
             currentSelections: currentSelections,
+            difficulty: selectedDifficulty,
           ),
         ),
       );
@@ -586,7 +644,7 @@ class _CreateRoutinePageState extends State<CreateRoutinePage> {
   Future<void> _createRoutine() async {
     // Validation
     if (nameController.text.trim().isEmpty) {
-      _showError('Please enter a routine name');
+      _showError('Please enter a program name');
       return;
     }
     if (exercises.isEmpty) {
@@ -623,16 +681,16 @@ class _CreateRoutinePageState extends State<CreateRoutinePage> {
         Navigator.pop(context, true);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Routine created successfully!'),
+            content: Text('Program created successfully!'),
             backgroundColor: Color(0xFF4ECDC4),
           ),
         );
       } else {
-        throw Exception(result['error'] ?? 'Failed to create routine');
+        throw Exception(result['error'] ?? 'Failed to create program');
       }
     } catch (e) {
       if (!mounted) return;
-      _showError('Error creating routine: ${e.toString()}');
+      _showError('Error creating program: ${e.toString()}');
     } finally {
       if (mounted) {
         setState(() => isLoading = false);
@@ -645,6 +703,63 @@ class _CreateRoutinePageState extends State<CreateRoutinePage> {
       SnackBar(
         content: Text(message),
         backgroundColor: Colors.red,
+      ),
+    );
+  }
+
+  Widget _buildExerciseCountGuidance() {
+    final exerciseCount = exercises.length;
+    String guidanceText = '';
+    Color guidanceColor = Colors.grey;
+    IconData guidanceIcon = Icons.info_outline;
+    
+    if (exerciseCount == 0) {
+      return SizedBox.shrink(); // Don't show guidance when no exercises
+    } else if (exerciseCount < 2) {
+      guidanceText = 'Consider adding more exercises to cover major muscle groups. Recommended: 3-6 exercises per session.';
+      guidanceColor = Color(0xFFFFB74D); // Orange for warning
+      guidanceIcon = Icons.info;
+    } else if (exerciseCount >= 3 && exerciseCount <= 6) {
+      guidanceText = 'Recommended: 3-6 exercises per session for most users.';
+      guidanceColor = Color(0xFF4ECDC4); // Teal for good
+      guidanceIcon = Icons.check_circle_outline;
+    } else if (exerciseCount >= 8) {
+      guidanceText = 'This is a high volume workout. Make sure to allow sufficient recovery and focus on form.';
+      guidanceColor = Color(0xFFFFB74D); // Orange for warning
+      guidanceIcon = Icons.warning_amber_rounded;
+    } else {
+      return SizedBox.shrink(); // Don't show guidance for 2 or 7 exercises (border cases)
+    }
+    
+    return Container(
+      padding: EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: guidanceColor.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: guidanceColor.withOpacity(0.3),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            guidanceIcon,
+            color: guidanceColor,
+            size: 20,
+          ),
+          SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              guidanceText,
+              style: GoogleFonts.poppins(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

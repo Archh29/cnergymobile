@@ -42,6 +42,8 @@ class _FirstTimeSetupScreenState extends State<FirstTimeSetupScreen>
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _heightController = TextEditingController();
+  final TextEditingController _heightFeetController = TextEditingController();
+  final TextEditingController _heightInchesController = TextEditingController();
   final TextEditingController _weightController = TextEditingController();
   final TextEditingController _targetWeightController = TextEditingController();
   final TextEditingController _firstNameController = TextEditingController();
@@ -56,6 +58,12 @@ class _FirstTimeSetupScreenState extends State<FirstTimeSetupScreen>
   DateTime? selectedBirthdate;
   int? selectedWorkoutDays;
   
+  // Weight unit converter (display only - backend always stores in kg)
+  bool useKg = true; // true = kg, false = lbs (display only)
+  
+  // Height unit converter (display only - backend always stores in cm)
+  bool useCm = true; // true = cm, false = ft/inches (display only)
+  
   // Dynamic data from backend
   List<OnboardingGoal> fitnessGoals = [];
   List<ActivityLevelOption> activityLevels = [];
@@ -63,6 +71,26 @@ class _FirstTimeSetupScreenState extends State<FirstTimeSetupScreen>
   // Loading states
   bool isLoading = false;
   bool isDataLoaded = false;
+  
+  // Validation states
+  String? _heightError;
+  String? _weightError;
+  String? _targetWeightError;
+  String? _heightFeetError;
+  String? _heightInchesError;
+  
+  // Validation constants
+  static const double minWeightKg = 20.0; // Minimum weight in kg
+  static const double maxWeightKg = 500.0; // Maximum weight in kg
+  static const double minWeightLbs = 44.0; // Minimum weight in lbs (20 kg)
+  static const double maxWeightLbs = 1100.0; // Maximum weight in lbs (500 kg)
+  
+  static const double minHeightCm = 50.0; // Minimum height in cm
+  static const double maxHeightCm = 300.0; // Maximum height in cm
+  static const int minHeightFeet = 1; // Minimum feet (30.48 cm)
+  static const int maxHeightFeet = 10; // Maximum feet (304.8 cm)
+  static const int minHeightInches = 0; // Minimum inches
+  static const int maxHeightInches = 11; // Maximum inches
 
   @override
   void initState() {
@@ -135,10 +163,18 @@ class _FirstTimeSetupScreenState extends State<FirstTimeSetupScreen>
             selectedGender = profile.genderId == 1 ? 'Male' : 'Female';
             selectedBirthdate = profile.birthdate;
             // Prefill some workout related fields if present
-            _heightController.text = profile.heightCm.toString();
-            _weightController.text = profile.weightKg.toString();
+            // Note: Database stores weight in kg and height in cm, so we display them as default
+            // User can toggle units for display, but saving always converts back to original units
+            _heightController.text = _formatHeightDisplay(profile.heightCm);
+            _updateHeightFromCm(profile.heightCm); // Also update ft/inches fields
+            _validateHeightCm(_heightController.text); // Validate prefilled data
+            
+            _weightController.text = _formatWeightDisplay(profile.weightKg);
+            _validateWeight(_weightController.text); // Validate prefilled data
+            
             if (profile.targetWeight != null) {
-              _targetWeightController.text = profile.targetWeight!.toString();
+              _targetWeightController.text = _formatWeightDisplay(profile.targetWeight!);
+              _validateTargetWeight(_targetWeightController.text); // Validate prefilled data
             }
             selectedGoals = List<String>.from(profile.fitnessGoals);
             selectedActivityLevel = profile.activityLevel;
@@ -189,6 +225,8 @@ class _FirstTimeSetupScreenState extends State<FirstTimeSetupScreen>
     _emailController.dispose();
     _passwordController.dispose();
     _heightController.dispose();
+    _heightFeetController.dispose();
+    _heightInchesController.dispose();
     _weightController.dispose();
     _targetWeightController.dispose();
     _firstNameController.dispose();
@@ -225,7 +263,15 @@ class _FirstTimeSetupScreenState extends State<FirstTimeSetupScreen>
       // Existing users: [Physical, Goals, FitnessLevel]
       switch (currentPage) {
         case 0:
-          return _heightController.text.isNotEmpty && _weightController.text.isNotEmpty;
+          // Check if height and weight are valid (no errors and not empty)
+          final hasValidHeight = useCm 
+              ? (_heightController.text.isNotEmpty && _heightError == null)
+              : (_heightFeetController.text.isNotEmpty && 
+                 _heightInchesController.text.isNotEmpty && 
+                 _heightFeetError == null && 
+                 _heightInchesError == null);
+          final hasValidWeight = _weightController.text.isNotEmpty && _weightError == null;
+          return hasValidHeight && hasValidWeight;
         case 1:
           return selectedGoals.isNotEmpty;
         case 2:
@@ -248,7 +294,15 @@ class _FirstTimeSetupScreenState extends State<FirstTimeSetupScreen>
               _onboardingService.isValidEmail(_emailController.text) &&
               _onboardingService.isValidPassword(_passwordController.text);
         case 1:
-          return _heightController.text.isNotEmpty && _weightController.text.isNotEmpty;
+          // Check if height and weight are valid (no errors and not empty)
+          final hasValidHeight = useCm 
+              ? (_heightController.text.isNotEmpty && _heightError == null)
+              : (_heightFeetController.text.isNotEmpty && 
+                 _heightInchesController.text.isNotEmpty && 
+                 _heightFeetError == null && 
+                 _heightInchesError == null);
+          final hasValidWeight = _weightController.text.isNotEmpty && _weightError == null;
+          return hasValidHeight && hasValidWeight;
         case 2:
           return selectedGoals.isNotEmpty;
         case 3:
@@ -289,10 +343,10 @@ class _FirstTimeSetupScreenState extends State<FirstTimeSetupScreen>
           fitnessGoals: selectedGoals,
           genderId: safeGenderId,
           birthdate: safeBirthdate,
-          heightCm: double.parse(_heightController.text),
-          weightKg: double.parse(_weightController.text),
+          heightCm: _getHeightInCm(),
+          weightKg: _getWeightInKg(_weightController.text),
           targetWeight: _targetWeightController.text.isNotEmpty 
-              ? double.parse(_targetWeightController.text) 
+              ? _getWeightInKg(_targetWeightController.text) 
               : null,
           activityLevel: selectedActivityLevel,
           workoutDaysPerWeek: selectedWorkoutDays!,
@@ -327,10 +381,10 @@ class _FirstTimeSetupScreenState extends State<FirstTimeSetupScreen>
           fitnessGoals: selectedGoals,
           genderId: _onboardingService.getGenderId(selectedGender),
           birthdate: selectedBirthdate!,
-          heightCm: double.parse(_heightController.text),
-          weightKg: double.parse(_weightController.text),
+          heightCm: _getHeightInCm(),
+          weightKg: _getWeightInKg(_weightController.text),
           targetWeight: _targetWeightController.text.isNotEmpty 
-              ? double.parse(_targetWeightController.text) 
+              ? _getWeightInKg(_targetWeightController.text) 
               : null,
           activityLevel: selectedActivityLevel,
           workoutDaysPerWeek: selectedWorkoutDays!,
@@ -998,43 +1052,18 @@ class _FirstTimeSetupScreenState extends State<FirstTimeSetupScreen>
               ),
               SizedBox(height: isSmallScreen ? 24 : 40),
               
-              Row(
-                children: [
-                  Expanded(
-                    child: _buildModernTextField(
-                      controller: _heightController,
-                      hintText: "Height",
-                      icon: Icons.height,
-                      keyboardType: TextInputType.number,
-                      suffix: "cm",
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: _buildModernTextField(
-                      controller: _weightController,
-                      hintText: "Weight",
-                      icon: Icons.monitor_weight_outlined,
-                      keyboardType: TextInputType.number,
-                      suffix: "kg",
-                    ),
-                  ),
-                ],
-              ),
+              // Responsive layout: stack vertically on small screens or when height is in ft/inches
+              _buildResponsiveHeightWeightLayout(isSmallScreen),
               
-              const SizedBox(height: 16),
+              SizedBox(height: isSmallScreen ? 16 : 20),
               
-              _buildModernTextField(
-                controller: _targetWeightController,
-                hintText: "Target Weight (Optional)",
-                icon: Icons.flag_outlined,
-                keyboardType: TextInputType.number,
-                suffix: "kg",
-              ),
+              _buildTargetWeightFieldWithConverter(),
               
-              const SizedBox(height: 30),
+              SizedBox(height: isSmallScreen ? 24 : 30),
               
-              if (_heightController.text.isNotEmpty && _weightController.text.isNotEmpty)
+              if ((useCm ? _heightController.text.isNotEmpty : 
+                   (_heightFeetController.text.isNotEmpty && _heightInchesController.text.isNotEmpty)) &&
+                  _weightController.text.isNotEmpty)
                 _buildBMICard(),
             ],
           ),
@@ -1074,6 +1103,9 @@ class _FirstTimeSetupScreenState extends State<FirstTimeSetupScreen>
     TextInputType keyboardType = TextInputType.text,
     String? suffix,
     bool isPassword = false,
+    ValueChanged<String>? onChanged,
+    List<TextInputFormatter>? inputFormatters,
+    String? errorText,
   }) {
     return Container(
       decoration: BoxDecoration(
@@ -1090,6 +1122,7 @@ class _FirstTimeSetupScreenState extends State<FirstTimeSetupScreen>
         controller: controller,
         keyboardType: keyboardType,
         obscureText: isPassword,
+        inputFormatters: inputFormatters,
         style: GoogleFonts.poppins(color: Colors.white, fontSize: 16),
         decoration: InputDecoration(
           hintText: hintText,
@@ -1099,21 +1132,58 @@ class _FirstTimeSetupScreenState extends State<FirstTimeSetupScreen>
           suffixStyle: GoogleFonts.poppins(color: Colors.white.withOpacity(0.8)),
           filled: true,
           fillColor: Color(0xFF1A1A1A),
+          errorText: errorText,
+          errorStyle: GoogleFonts.poppins(
+            color: Colors.red[400],
+            fontSize: 11,
+            height: 1.2,
+          ),
+          errorMaxLines: 2,
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(16),
-            borderSide: BorderSide(color: Colors.white.withOpacity(0.1)),
+            borderSide: BorderSide(
+              color: errorText != null 
+                  ? Colors.red.withOpacity(0.5) 
+                  : Colors.white.withOpacity(0.1),
+            ),
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(16),
-            borderSide: BorderSide(color: Colors.white.withOpacity(0.1)),
+            borderSide: BorderSide(
+              color: errorText != null 
+                  ? Colors.red.withOpacity(0.5) 
+                  : Colors.white.withOpacity(0.1),
+            ),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(16),
-            borderSide: BorderSide(color: Color(0xFF4ECDC4), width: 2),
+            borderSide: BorderSide(
+              color: errorText != null 
+                  ? Colors.red 
+                  : Color(0xFF4ECDC4), 
+              width: 2,
+            ),
           ),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+          errorBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: BorderSide(color: Colors.red.withOpacity(0.5), width: 1),
+          ),
+          focusedErrorBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: BorderSide(color: Colors.red, width: 2),
+          ),
+          contentPadding: EdgeInsets.symmetric(
+            horizontal: 20, 
+            vertical: errorText != null ? 16 : 18,
+          ),
         ),
-        onChanged: (value) => setState(() {}),
+        onChanged: (value) {
+          if (onChanged != null) {
+            onChanged(value);
+          } else {
+            setState(() {});
+          }
+        },
       ),
     );
   }
@@ -1392,15 +1462,599 @@ class _FirstTimeSetupScreenState extends State<FirstTimeSetupScreen>
   }
 
   // Helper methods
+  // Calculate BMI (always uses kg and cm for calculation, regardless of display unit)
   String _calculateBMI() {
     try {
-      final height = double.parse(_heightController.text) / 100;
-      final weight = double.parse(_weightController.text);
-      final bmi = weight / (height * height);
+      // Convert displayed height to cm, then to meters for BMI calculation
+      // BMI formula requires height in meters and weight in kg
+      final heightCm = _getHeightInCm();
+      final heightM = heightCm / 100;
+      final weight = _getWeightInKg(_weightController.text);
+      final bmi = weight / (heightM * heightM);
       return bmi.toStringAsFixed(1);
     } catch (e) {
       return "0.0";
     }
+  }
+  
+  // Weight conversion helper methods
+  // Converts displayed weight to kg for database storage
+  // Database always stores weight in kg, regardless of display unit
+  double _getWeightInKg(String weightText) {
+    if (weightText.isEmpty) return 0.0;
+    try {
+      final weight = double.parse(weightText);
+      // If displayed in lbs, convert to kg for database
+      // If displayed in kg, use as-is
+      return useKg ? weight : weight / 2.20462; // Convert lbs to kg
+    } catch (e) {
+      return 0.0;
+    }
+  }
+  
+  // Helper to format weight display (removes unnecessary decimals)
+  String _formatWeightDisplay(double weight) {
+    // Check if weight is a whole number
+    if (weight == weight.roundToDouble()) {
+      return weight.toInt().toString();
+    } else {
+      // Show one decimal place
+      return weight.toStringAsFixed(1);
+    }
+  }
+  
+  // Height conversion helper methods
+  // Converts displayed height to cm for database storage
+  // Database always stores height in cm, regardless of display unit
+  double _getHeightInCm() {
+    if (useCm) {
+      // Displaying in cm, use value as-is
+      if (_heightController.text.isEmpty) return 0.0;
+      try {
+        return double.parse(_heightController.text);
+      } catch (e) {
+        return 0.0;
+      }
+    } else {
+      // Displaying in ft/inches, convert to cm
+      // 1 ft = 30.48 cm, 1 inch = 2.54 cm
+      if (_heightFeetController.text.isEmpty && _heightInchesController.text.isEmpty) {
+        return 0.0;
+      }
+      try {
+        final feet = double.tryParse(_heightFeetController.text) ?? 0.0;
+        final inches = double.tryParse(_heightInchesController.text) ?? 0.0;
+        final totalInches = (feet * 12) + inches;
+        return totalInches * 2.54; // Convert inches to cm
+      } catch (e) {
+        return 0.0;
+      }
+    }
+  }
+  
+  // Convert cm to ft/inches and update the display fields
+  void _updateHeightFromCm(double cm) {
+    // Convert cm to inches
+    final totalInches = cm / 2.54;
+    final feet = (totalInches / 12).floor();
+    final inches = (totalInches % 12).round();
+    
+    // Always update ft/inches fields so they're ready if user toggles
+    _heightFeetController.text = feet.toString();
+    _heightInchesController.text = inches.toString();
+  }
+  
+  // Helper to format height display (removes unnecessary decimals)
+  String _formatHeightDisplay(double heightCm) {
+    // Check if height is a whole number
+    if (heightCm == heightCm.roundToDouble()) {
+      return heightCm.toInt().toString();
+    } else {
+      // Show one decimal place
+      return heightCm.toStringAsFixed(1);
+    }
+  }
+  
+  // Validation methods
+  void _validateHeightCm(String value) {
+    if (value.isEmpty) {
+      _heightError = null;
+      return;
+    }
+    
+    final height = double.tryParse(value);
+    if (height == null) {
+      _heightError = 'Please enter a valid number';
+      return;
+    }
+    
+    if (height < minHeightCm) {
+      _heightError = 'Height must be at least ${minHeightCm.toInt()} cm';
+    } else if (height > maxHeightCm) {
+      _heightError = 'Height must be at most ${maxHeightCm.toInt()} cm';
+    } else {
+      _heightError = null;
+    }
+  }
+  
+  void _validateHeightFeet(String value) {
+    if (value.isEmpty) {
+      _heightFeetError = null;
+      return;
+    }
+    
+    final feet = int.tryParse(value);
+    if (feet == null) {
+      _heightFeetError = 'Please enter a valid number';
+      return;
+    }
+    
+    if (feet < minHeightFeet) {
+      _heightFeetError = 'Must be at least $minHeightFeet ft';
+    } else if (feet > maxHeightFeet) {
+      _heightFeetError = 'Must be at most $maxHeightFeet ft';
+    } else {
+      _heightFeetError = null;
+    }
+    
+    // Also validate total height when inches are present
+    if (_heightInchesController.text.isNotEmpty) {
+      _validateHeightInches(_heightInchesController.text);
+    }
+  }
+  
+  void _validateHeightInches(String value) {
+    if (value.isEmpty) {
+      _heightInchesError = null;
+      return;
+    }
+    
+    final inches = int.tryParse(value);
+    if (inches == null) {
+      _heightInchesError = 'Please enter a valid number';
+      return;
+    }
+    
+    final feet = int.tryParse(_heightFeetController.text) ?? 0;
+    final totalInches = (feet * 12) + inches;
+    final totalCm = totalInches * 2.54;
+    
+    if (inches < minHeightInches) {
+      _heightInchesError = 'Must be at least $minHeightInches in';
+    } else if (inches > maxHeightInches) {
+      // Auto-convert if > 11
+      final feetToAdd = inches ~/ 12;
+      final remainingInches = inches % 12;
+      if (feetToAdd > 0) {
+        final currentFeet = int.tryParse(_heightFeetController.text) ?? 0;
+        _heightFeetController.text = (currentFeet + feetToAdd).toString();
+        Future.microtask(() {
+          _heightInchesController.text = remainingInches.toString();
+          _validateHeightInches(remainingInches.toString());
+          setState(() {});
+        });
+      }
+      _heightInchesError = null;
+    } else if (totalCm < minHeightCm) {
+      _heightInchesError = 'Total height must be at least ${(minHeightCm / 2.54 / 12).toStringAsFixed(1)} ft';
+    } else if (totalCm > maxHeightCm) {
+      _heightInchesError = 'Total height must be at most ${(maxHeightCm / 2.54 / 12).toStringAsFixed(1)} ft';
+    } else {
+      _heightInchesError = null;
+    }
+  }
+  
+  void _validateWeight(String value) {
+    if (value.isEmpty) {
+      _weightError = null;
+      return;
+    }
+    
+    final weight = double.tryParse(value);
+    if (weight == null) {
+      _weightError = 'Please enter a valid number';
+      return;
+    }
+    
+    if (useKg) {
+      if (weight < minWeightKg) {
+        _weightError = 'Weight must be at least ${minWeightKg.toInt()} kg';
+      } else if (weight > maxWeightKg) {
+        _weightError = 'Weight must be at most ${maxWeightKg.toInt()} kg';
+      } else {
+        _weightError = null;
+      }
+    } else {
+      if (weight < minWeightLbs) {
+        _weightError = 'Weight must be at least ${minWeightLbs.toInt()} lbs';
+      } else if (weight > maxWeightLbs) {
+        _weightError = 'Weight must be at most ${maxWeightLbs.toInt()} lbs';
+      } else {
+        _weightError = null;
+      }
+    }
+  }
+  
+  void _validateTargetWeight(String value) {
+    if (value.isEmpty) {
+      _targetWeightError = null;
+      return;
+    }
+    
+    final weight = double.tryParse(value);
+    if (weight == null) {
+      _targetWeightError = 'Please enter a valid number';
+      return;
+    }
+    
+    if (useKg) {
+      if (weight < minWeightKg) {
+        _targetWeightError = 'Weight must be at least ${minWeightKg.toInt()} kg';
+      } else if (weight > maxWeightKg) {
+        _targetWeightError = 'Weight must be at most ${maxWeightKg.toInt()} kg';
+      } else {
+        _targetWeightError = null;
+      }
+    } else {
+      if (weight < minWeightLbs) {
+        _targetWeightError = 'Weight must be at least ${minWeightLbs.toInt()} lbs';
+      } else if (weight > maxWeightLbs) {
+        _targetWeightError = 'Weight must be at most ${maxWeightLbs.toInt()} lbs';
+      } else {
+        _targetWeightError = null;
+      }
+    }
+  }
+  
+  // Toggle height unit (display only - database always stores in cm)
+  void _toggleHeightUnit() {
+    HapticFeedback.selectionClick();
+    setState(() {
+      // Clear errors when toggling
+      _heightError = null;
+      _heightFeetError = null;
+      _heightInchesError = null;
+      
+      if (useCm) {
+        // Currently displaying cm, convert to ft/inches
+        if (_heightController.text.isNotEmpty) {
+          try {
+            final cm = double.parse(_heightController.text);
+            _updateHeightFromCm(cm);
+            // Validate the converted values
+            _validateHeightFeet(_heightFeetController.text);
+            _validateHeightInches(_heightInchesController.text);
+          } catch (e) {
+            // If conversion fails, clear ft/inches fields
+            _heightFeetController.text = '';
+            _heightInchesController.text = '';
+          }
+        }
+      } else {
+        // Currently displaying ft/inches, convert to cm
+        final cm = _getHeightInCm();
+        if (cm > 0) {
+          _heightController.text = _formatHeightDisplay(cm);
+          _validateHeightCm(_heightController.text);
+        }
+      }
+      
+      // Toggle display unit
+      useCm = !useCm;
+    });
+  }
+  
+  // Responsive layout for height and weight fields
+  Widget _buildResponsiveHeightWeightLayout(bool isSmallScreen) {
+    // On small screens or when using ft/inches, stack vertically for better UX
+    if (isSmallScreen || !useCm) {
+      return Column(
+        children: [
+          _buildHeightFieldWithConverter(isSmallScreen),
+          SizedBox(height: isSmallScreen ? 12 : 16),
+          _buildWeightFieldWithConverter(),
+        ],
+      );
+    } else {
+      // On larger screens with cm, display side by side
+      return Row(
+        children: [
+          Expanded(
+            child: _buildHeightFieldWithConverter(isSmallScreen),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: _buildWeightFieldWithConverter(),
+          ),
+        ],
+      );
+    }
+  }
+  
+  Widget _buildHeightFieldWithConverter(bool isSmallScreen) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (useCm)
+          _buildModernTextField(
+            controller: _heightController,
+            hintText: "Height",
+            icon: Icons.height,
+            keyboardType: TextInputType.numberWithOptions(decimal: true),
+            suffix: "cm",
+            inputFormatters: [
+              FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}')),
+            ],
+            errorText: _heightError,
+            onChanged: (value) {
+              _validateHeightCm(value);
+              setState(() {});
+            },
+          )
+        else
+          // Responsive ft/inches layout
+          isSmallScreen
+              ? Column(
+                  children: [
+                    _buildModernTextField(
+                      controller: _heightFeetController,
+                      hintText: "Feet",
+                      icon: Icons.height,
+                      keyboardType: TextInputType.number,
+                      suffix: "ft",
+                      inputFormatters: [
+                        FilteringTextInputFormatter.digitsOnly,
+                        LengthLimitingTextInputFormatter(2),
+                      ],
+                      errorText: _heightFeetError,
+                      onChanged: (value) {
+                        _validateHeightFeet(value);
+                        setState(() {});
+                      },
+                    ),
+                    SizedBox(height: isSmallScreen ? 12 : 16),
+                    _buildModernTextField(
+                      controller: _heightInchesController,
+                      hintText: "Inches",
+                      icon: Icons.height,
+                      keyboardType: TextInputType.number,
+                      suffix: "in",
+                      inputFormatters: [
+                        FilteringTextInputFormatter.digitsOnly,
+                        LengthLimitingTextInputFormatter(2),
+                      ],
+                      errorText: _heightInchesError,
+                      onChanged: (value) {
+                        _validateHeightInches(value);
+                        setState(() {});
+                      },
+                    ),
+                  ],
+                )
+              : Row(
+                  children: [
+                    Expanded(
+                      child: _buildModernTextField(
+                        controller: _heightFeetController,
+                        hintText: "Feet",
+                        icon: Icons.height,
+                        keyboardType: TextInputType.number,
+                        suffix: "ft",
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                          LengthLimitingTextInputFormatter(2),
+                        ],
+                        errorText: _heightFeetError,
+                        onChanged: (value) {
+                          _validateHeightFeet(value);
+                          setState(() {});
+                        },
+                      ),
+                    ),
+                    SizedBox(width: isSmallScreen ? 8 : 12),
+                    Expanded(
+                      child: _buildModernTextField(
+                        controller: _heightInchesController,
+                        hintText: "Inches",
+                        icon: Icons.height,
+                        keyboardType: TextInputType.number,
+                        suffix: "in",
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                          LengthLimitingTextInputFormatter(2),
+                        ],
+                        errorText: _heightInchesError,
+                        onChanged: (value) {
+                          _validateHeightInches(value);
+                          setState(() {});
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+        SizedBox(height: isSmallScreen ? 8 : 12),
+        _buildHeightUnitToggleButton(),
+      ],
+    );
+  }
+  
+  Widget _buildHeightUnitToggleButton() {
+    return GestureDetector(
+      onTap: _toggleHeightUnit,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: Color(0xFF4ECDC4).withOpacity(0.1),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: Color(0xFF4ECDC4).withOpacity(0.3),
+            width: 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              useCm ? "cm" : "ft/in",
+              style: GoogleFonts.poppins(
+                color: Color(0xFF4ECDC4),
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(width: 6),
+            Icon(
+              Icons.swap_horiz,
+              color: Color(0xFF4ECDC4),
+              size: 16,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              useCm ? "ft/in" : "cm",
+              style: GoogleFonts.poppins(
+                color: Colors.white.withOpacity(0.6),
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+  
+  // Toggle weight unit (display only - database always stores in kg)
+  void _toggleWeightUnit() {
+    HapticFeedback.selectionClick();
+    setState(() {
+      // Clear errors when toggling
+      _weightError = null;
+      _targetWeightError = null;
+      
+      // Convert displayed weight values when toggling unit
+      // This is for display only - when saving, we convert to kg
+      if (_weightController.text.isNotEmpty) {
+        final currentValue = double.tryParse(_weightController.text) ?? 0.0;
+        if (useKg) {
+          // Currently displaying kg, convert to lbs for display
+          _weightController.text = _formatWeightDisplay(currentValue * 2.20462);
+        } else {
+          // Currently displaying lbs, convert to kg for display
+          _weightController.text = _formatWeightDisplay(currentValue / 2.20462);
+        }
+        // Re-validate with new unit
+        _validateWeight(_weightController.text);
+      }
+      
+      if (_targetWeightController.text.isNotEmpty) {
+        final currentValue = double.tryParse(_targetWeightController.text) ?? 0.0;
+        if (useKg) {
+          // Currently displaying kg, convert to lbs for display
+          _targetWeightController.text = _formatWeightDisplay(currentValue * 2.20462);
+        } else {
+          // Currently displaying lbs, convert to kg for display
+          _targetWeightController.text = _formatWeightDisplay(currentValue / 2.20462);
+        }
+        // Re-validate with new unit
+        _validateTargetWeight(_targetWeightController.text);
+      }
+      
+      // Toggle display unit
+      useKg = !useKg;
+    });
+  }
+  
+  Widget _buildWeightFieldWithConverter() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildModernTextField(
+          controller: _weightController,
+          hintText: "Weight",
+          icon: Icons.monitor_weight_outlined,
+          keyboardType: TextInputType.numberWithOptions(decimal: true),
+          suffix: useKg ? "kg" : "lbs",
+          inputFormatters: [
+            FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}')),
+          ],
+          errorText: _weightError,
+          onChanged: (value) {
+            _validateWeight(value);
+            setState(() {});
+          },
+        ),
+        const SizedBox(height: 8),
+        _buildUnitToggleButton(),
+      ],
+    );
+  }
+  
+  Widget _buildTargetWeightFieldWithConverter() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildModernTextField(
+          controller: _targetWeightController,
+          hintText: "Target Weight (Optional)",
+          icon: Icons.flag_outlined,
+          keyboardType: TextInputType.numberWithOptions(decimal: true),
+          suffix: useKg ? "kg" : "lbs",
+          inputFormatters: [
+            FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}')),
+          ],
+          errorText: _targetWeightError,
+          onChanged: (value) {
+            _validateTargetWeight(value);
+            setState(() {});
+          },
+        ),
+      ],
+    );
+  }
+  
+  Widget _buildUnitToggleButton() {
+    return GestureDetector(
+      onTap: _toggleWeightUnit,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: Color(0xFF4ECDC4).withOpacity(0.1),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: Color(0xFF4ECDC4).withOpacity(0.3),
+            width: 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              useKg ? "kg" : "lbs",
+              style: GoogleFonts.poppins(
+                color: Color(0xFF4ECDC4),
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(width: 6),
+            Icon(
+              Icons.swap_horiz,
+              color: Color(0xFF4ECDC4),
+              size: 16,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              useKg ? "lbs" : "kg",
+              style: GoogleFonts.poppins(
+                color: Colors.white.withOpacity(0.6),
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Map<String, dynamic> _getBMICategory(double bmi) {
