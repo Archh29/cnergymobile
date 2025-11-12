@@ -129,18 +129,65 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       final subscriptionData = await SubscriptionService.getCurrentSubscription(userId);
       print('🔍 Home Page - Subscription data received: $subscriptionData');
       
-      if (subscriptionData != null && subscriptionData['subscription'] != null) {
-        final subscription = subscriptionData['subscription'];
-        final planId = subscription['plan_id'];
+      _hasAnnualMembership = false;
+      
+      if (subscriptionData != null) {
+        // First, check if user has active_membership (Plan ID 1) - this is returned separately by the API
+        // even if they have Day Pass or Monthly as their current subscription
+        if (subscriptionData['active_membership'] != null) {
+          final activeMembership = subscriptionData['active_membership'];
+          final status = activeMembership['status']?.toString().toLowerCase() ?? '';
+          if (status == 'active') {
+            _hasAnnualMembership = true;
+            print('✅ Home Page - Found active membership (Plan ID 1) in active_membership field');
+          }
+        }
         
-        // Check if user has premium access (Plan ID 1 or Plan ID 5 - Package Plan)
-        _hasAnnualMembership = planId == 1 || planId == 5;
+        // Also check the current subscription (might be Plan ID 5 - Package Plan)
+        if (!_hasAnnualMembership && subscriptionData['subscription'] != null) {
+          final subscription = subscriptionData['subscription'];
+          final planId = subscription['plan_id'];
+          
+          // Convert to int for comparison (handles both string and int)
+          final planIdInt = planId is int ? planId : int.tryParse(planId.toString()) ?? 0;
+          
+          // Check if current subscription is Plan ID 5 (Package Plan)
+          if (planIdInt == 5) {
+            _hasAnnualMembership = true;
+            print('✅ Home Page - Found package plan (Plan ID 5) in current subscription');
+          }
+        }
+        
+        // Also check subscription history for Plan ID 5 if not found yet
+        if (!_hasAnnualMembership) {
+          try {
+            if (subscriptionData['subscription_history'] != null) {
+              final history = subscriptionData['subscription_history'] as List?;
+              if (history != null) {
+                for (var sub in history) {
+                  final planId = sub['plan_id'];
+                  final planIdInt = planId is int ? planId : int.tryParse(planId.toString()) ?? 0;
+                  final status = sub['display_status']?.toString().toLowerCase() ?? '';
+                  
+                  // Check if it's active and has plan ID 5
+                  if (planIdInt == 5 && status == 'active') {
+                    _hasAnnualMembership = true;
+                    print('✅ Home Page - Found active package plan (Plan ID 5) in subscription history');
+                    break;
+                  }
+                }
+              }
+            }
+          } catch (e) {
+            print('⚠️ Home Page - Error checking subscription history: $e');
+          }
+        }
         
         if (mounted) {
           setState(() {});
         }
         
-        print('✅ Home Page - Annual membership check: $_hasAnnualMembership (Plan ID: $planId)');
+        print('✅ Home Page - Annual membership check result: $_hasAnnualMembership');
       } else {
         print('❌ Home Page - No subscription data found, setting _hasAnnualMembership to false');
         _hasAnnualMembership = false;

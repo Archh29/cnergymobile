@@ -429,37 +429,84 @@ class _ComprehensiveDashboardState extends State<ComprehensiveDashboard>
     // Check annual membership
     try {
       final userId = AuthService.getCurrentUserId();
-      // Checking annual membership for user ID: $userId
+      print('🔍 Progress Page - Checking annual membership for user ID: $userId');
       
       if (userId == null) {
-        // User ID is null
+        print('❌ Progress Page - User ID is null, setting _hasAnnualMembership to false');
         _hasAnnualMembership = false;
         if (mounted) setState(() {});
         return;
       }
 
       final subscriptionData = await SubscriptionService.getCurrentSubscription(userId);
-      // Subscription data received
+      print('🔍 Progress Page - Subscription data received: $subscriptionData');
       
-      if (subscriptionData != null && subscriptionData['subscription'] != null) {
-        final subscription = subscriptionData['subscription'];
-        final planId = subscription['plan_id'];
+      _hasAnnualMembership = false;
+      
+      if (subscriptionData != null) {
+        // First, check if user has active_membership (Plan ID 1) - this is returned separately by the API
+        // even if they have Day Pass or Monthly as their current subscription
+        if (subscriptionData['active_membership'] != null) {
+          final activeMembership = subscriptionData['active_membership'];
+          final status = activeMembership['status']?.toString().toLowerCase() ?? '';
+          if (status == 'active') {
+            _hasAnnualMembership = true;
+            print('✅ Progress Page - Found active membership (Plan ID 1) in active_membership field');
+          }
+        }
         
-        // Check if user has premium access (Plan ID 1 or Plan ID 5)
-        _hasAnnualMembership = planId == 1 || planId == 5;
+        // Also check the current subscription (might be Plan ID 5 - Package Plan)
+        if (!_hasAnnualMembership && subscriptionData['subscription'] != null) {
+          final subscription = subscriptionData['subscription'];
+          final planId = subscription['plan_id'];
+          
+          // Convert to int for comparison (handles both string and int)
+          final planIdInt = planId is int ? planId : int.tryParse(planId.toString()) ?? 0;
+          
+          // Check if current subscription is Plan ID 5 (Package Plan)
+          if (planIdInt == 5) {
+            _hasAnnualMembership = true;
+            print('✅ Progress Page - Found package plan (Plan ID 5) in current subscription');
+          }
+        }
+        
+        // Also check subscription history for Plan ID 5 if not found yet
+        if (!_hasAnnualMembership) {
+          try {
+            if (subscriptionData['subscription_history'] != null) {
+              final history = subscriptionData['subscription_history'] as List?;
+              if (history != null) {
+                for (var sub in history) {
+                  final planId = sub['plan_id'];
+                  final planIdInt = planId is int ? planId : int.tryParse(planId.toString()) ?? 0;
+                  final status = sub['display_status']?.toString().toLowerCase() ?? '';
+                  
+                  // Check if it's active and has plan ID 5
+                  if (planIdInt == 5 && status == 'active') {
+                    _hasAnnualMembership = true;
+                    print('✅ Progress Page - Found active package plan (Plan ID 5) in subscription history');
+                    break;
+                  }
+                }
+              }
+            }
+          } catch (e) {
+            print('⚠️ Progress Page - Error checking subscription history: $e');
+          }
+        }
         
         if (mounted) {
           setState(() {});
         }
         
-        // Annual membership: $_hasAnnualMembership
+        print('✅ Progress Page - Annual membership check result: $_hasAnnualMembership');
       } else {
-        // No subscription data
+        print('❌ Progress Page - No subscription data found, setting _hasAnnualMembership to false');
         _hasAnnualMembership = false;
         if (mounted) setState(() {});
       }
     } catch (e) {
-      // Error checking membership: $e
+      print('❌ Progress Page - Error checking annual membership: $e');
       _hasAnnualMembership = false;
       if (mounted) setState(() {});
     }
