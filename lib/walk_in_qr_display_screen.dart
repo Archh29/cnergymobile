@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:get/get.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:convert';
 import './User/services/guest_session_service.dart';
 import 'walk_in_session_status_screen.dart';
 
@@ -26,6 +24,24 @@ class _WalkInQRDisplayScreenState extends State<WalkInQRDisplayScreen> {
   void initState() {
     super.initState();
     _currentSessionData = widget.sessionData;
+    _initializeSessionData();
+  }
+
+  Future<void> _initializeSessionData() async {
+    // If session data is not provided (e.g., after refresh), load from local storage
+    if (_currentSessionData == null) {
+      final savedData = await GuestSessionService.getGuestSessionData();
+      if (savedData != null) {
+        setState(() {
+          _currentSessionData = savedData;
+        });
+      }
+    } else {
+      // Save session data to local storage when first loaded
+      await GuestSessionService.saveGuestSessionData(_currentSessionData!);
+    }
+    
+    // Check session status
     _checkSessionStatus();
   }
 
@@ -150,17 +166,244 @@ class _WalkInQRDisplayScreenState extends State<WalkInQRDisplayScreen> {
     return status == 'approved' && paid;
   }
 
+  Future<void> _cancelSession() async {
+    if (_currentSessionData == null) return;
+
+    // Show confirmation dialog
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A1A),
+        title: Text(
+          'Cancel Request',
+          style: GoogleFonts.poppins(
+            color: Colors.white,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        content: Text(
+          'Are you sure you want to cancel this walk-in request? You will need to register again if you want to access the gym.',
+          style: GoogleFonts.poppins(
+            color: Colors.grey[300],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(
+              'No',
+              style: GoogleFonts.poppins(
+                color: Colors.grey[400],
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(
+              'Yes, Cancel',
+              style: GoogleFonts.poppins(
+                color: Colors.red,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final result = await GuestSessionService.cancelGuestSession(
+        _currentSessionData!['id'],
+      );
+
+      if (result['success'] == true) {
+        // Clear device-specific flag first
+        if (_currentSessionData != null && _currentSessionData!['id'] != null) {
+          await GuestSessionService.clearActiveWalkInRequest(_currentSessionData!['id']);
+        }
+        
+        // Clear local session data
+        await GuestSessionService.clearGuestSessionData();
+        
+        // Navigate back to previous screen
+        if (mounted) {
+          Navigator.pop(context);
+        }
+      } else {
+        if (mounted) {
+          Get.snackbar(
+            'Error',
+            result['message'] ?? 'Failed to cancel session',
+            backgroundColor: Colors.red,
+            colorText: Colors.white,
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        Get.snackbar(
+          'Error',
+          'Failed to cancel session: $e',
+          backgroundColor: Colors.red,
+          colorText: Colors.white,
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<bool> _canCancelSession() async {
+    if (_currentSessionData == null) return false;
+    
+    final sessionId = _currentSessionData!['id'];
+    if (sessionId == null) return false;
+    
+    // Check if this device has an active request
+    final hasActiveRequest = await GuestSessionService.hasActiveWalkInRequest(sessionId);
+    if (!hasActiveRequest) return false;
+    
+    final status = _currentSessionData!['status'];
+    final paidValue = _currentSessionData!['paid'];
+    
+    bool paid = false;
+    if (paidValue == 1 || paidValue == '1' || paidValue == true) {
+      paid = true;
+    }
+    
+    // Can cancel if status is pending or approved but not paid
+    return status == 'pending' || (status == 'approved' && !paid);
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF0F0F0F),
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Color(0xFFFF6B35)),
-          onPressed: () => Navigator.pop(context),
-        ),
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (didPop) async {
+        if (didPop) return;
+        
+        // If session can be cancelled, show cancel dialog
+        final canCancel = await _canCancelSession();
+        if (canCancel) {
+          final shouldCancel = await showDialog<bool>(
+            context: context,
+            builder: (context) => AlertDialog(
+              backgroundColor: const Color(0xFF1A1A1A),
+              title: Text(
+                'Cancel Request',
+                style: GoogleFonts.poppins(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              content: Text(
+                'You have a pending walk-in request. You need to cancel the request to go back. Do you want to cancel?',
+                style: GoogleFonts.poppins(
+                  color: Colors.grey[300],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: Text(
+                    'No',
+                    style: GoogleFonts.poppins(
+                      color: Colors.grey[400],
+                    ),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: Text(
+                    'Yes, Cancel',
+                    style: GoogleFonts.poppins(
+                      color: Colors.red,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+
+          if (shouldCancel == true) {
+            _cancelSession();
+          }
+        } else {
+          // If session cannot be cancelled, allow normal back navigation
+          Navigator.pop(context);
+        }
+      },
+      child: Scaffold(
+        backgroundColor: const Color(0xFF0F0F0F),
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: Color(0xFFFF6B35)),
+            onPressed: () async {
+              // If session can be cancelled, show cancel dialog
+              final canCancel = await _canCancelSession();
+              if (canCancel) {
+                final shouldCancel = await showDialog<bool>(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    backgroundColor: const Color(0xFF1A1A1A),
+                    title: Text(
+                      'Cancel Request',
+                      style: GoogleFonts.poppins(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    content: Text(
+                      'You have a pending walk-in request. You need to cancel the request to go back. Do you want to cancel?',
+                      style: GoogleFonts.poppins(
+                        color: Colors.grey[300],
+                      ),
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context, false),
+                        child: Text(
+                          'No',
+                          style: GoogleFonts.poppins(
+                            color: Colors.grey[400],
+                          ),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.pop(context, true),
+                        child: Text(
+                          'Yes, Cancel',
+                          style: GoogleFonts.poppins(
+                            color: Colors.red,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+
+                if (shouldCancel == true) {
+                  _cancelSession();
+                }
+              } else {
+                Navigator.pop(context);
+              }
+            },
+          ),
         title: Text(
           'Walk-in Session',
           style: GoogleFonts.poppins(
@@ -407,6 +650,66 @@ class _WalkInQRDisplayScreenState extends State<WalkInQRDisplayScreen> {
               const SizedBox(height: 32),
               
               // Action Buttons
+              FutureBuilder<bool>(
+                future: _canCancelSession(),
+                builder: (context, snapshot) {
+                  final canCancel = snapshot.data ?? false;
+                  if (!canCancel) return const SizedBox.shrink();
+                  
+                  return Column(
+                    children: [
+                      // Cancel Button (shown when session can be cancelled)
+                      Container(
+                        width: double.infinity,
+                        decoration: BoxDecoration(
+                          color: Colors.transparent,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: Colors.red,
+                            width: 2,
+                          ),
+                        ),
+                        child: ElevatedButton(
+                          onPressed: _isLoading ? null : _cancelSession,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.transparent,
+                            foregroundColor: Colors.red,
+                            elevation: 0,
+                            minimumSize: const Size(double.infinity, 56),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                          ),
+                          child: _isLoading
+                              ? const SizedBox(
+                                  height: 20,
+                                  width: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(Colors.red),
+                                  ),
+                                )
+                              : Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const Icon(Icons.cancel_outlined, size: 20),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'CANCEL REQUEST',
+                                      style: GoogleFonts.poppins(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                  );
+                },
+              ),
               Row(
                 children: [
                   Expanded(
@@ -502,6 +805,7 @@ class _WalkInQRDisplayScreenState extends State<WalkInQRDisplayScreen> {
             ],
           ),
         ),
+      ),
       ),
     );
   }

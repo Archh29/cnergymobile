@@ -95,6 +95,9 @@ function handlePostRequest($pdo, $action, $input) {
         case 'mark_paid':
             markGuestSessionPaid($pdo, $input);
             break;
+        case 'cancel_session':
+            cancelGuestSession($pdo, $input);
+            break;
         default:
             http_response_code(400);
             echo json_encode(['success' => false, 'message' => 'Invalid action']);
@@ -387,6 +390,59 @@ function markGuestSessionPaid($pdo, $data) {
         echo json_encode([
             'success' => true,
             'message' => 'Payment confirmed successfully',
+            'data' => $session
+        ]);
+        
+    } catch (Exception $e) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+    }
+}
+
+function cancelGuestSession($pdo, $data) {
+    try {
+        $sessionId = $data['session_id'] ?? '';
+        
+        if (empty($sessionId)) {
+            throw new Exception('Session ID is required');
+        }
+        
+        // Check if session exists and is in a cancellable state
+        $stmt = $pdo->prepare("SELECT * FROM guest_session WHERE id = ?");
+        $stmt->execute([$sessionId]);
+        $session = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if (!$session) {
+            throw new Exception('Session not found');
+        }
+        
+        // Only allow cancellation if status is pending or approved but not paid
+        $status = $session['status'];
+        $paid = $session['paid'];
+        
+        if ($status === 'rejected' || ($status === 'approved' && $paid == 1)) {
+            throw new Exception('Cannot cancel this session. Session is already processed.');
+        }
+        
+        // Update session status to cancelled
+        $stmt = $pdo->prepare("
+            UPDATE guest_session 
+            SET status = 'cancelled' 
+            WHERE id = ?
+        ");
+        $stmt->execute([$sessionId]);
+        
+        // Get updated session
+        $stmt = $pdo->prepare("SELECT * FROM guest_session WHERE id = ?");
+        $stmt->execute([$sessionId]);
+        $session = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        // Log activity
+        logActivity($pdo, null, "Guest session cancelled: {$session['guest_name']} (ID: $sessionId)");
+        
+        echo json_encode([
+            'success' => true,
+            'message' => 'Guest session cancelled successfully',
             'data' => $session
         ]);
         

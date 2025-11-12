@@ -102,6 +102,8 @@ class GuestSessionService {
   static Future<void> saveGuestSessionData(Map<String, dynamic> sessionData) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('guest_session_data', jsonEncode(sessionData));
+    // Set device-specific flag to track that this device has a pending request
+    await prefs.setBool('walkin_request_active_${sessionData['id']}', true);
   }
 
   // Get guest session data from local storage
@@ -117,7 +119,34 @@ class GuestSessionService {
   // Clear guest session data
   static Future<void> clearGuestSessionData() async {
     final prefs = await SharedPreferences.getInstance();
+    final sessionDataString = prefs.getString('guest_session_data');
+    if (sessionDataString != null) {
+      try {
+        final sessionData = jsonDecode(sessionDataString);
+        final sessionId = sessionData['id'];
+        // Clear device-specific flag
+        if (sessionId != null) {
+          await prefs.remove('walkin_request_active_$sessionId');
+        }
+      } catch (e) {
+        // Ignore errors
+      }
+    }
     await prefs.remove('guest_session_data');
+  }
+
+  // Check if this device has an active walk-in request
+  static Future<bool> hasActiveWalkInRequest(dynamic sessionId) async {
+    if (sessionId == null) return false;
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool('walkin_request_active_$sessionId') ?? false;
+  }
+
+  // Clear device-specific flag for a session
+  static Future<void> clearActiveWalkInRequest(dynamic sessionId) async {
+    if (sessionId == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('walkin_request_active_$sessionId');
   }
 
   // Check if guest session is still valid (not expired)
@@ -128,6 +157,38 @@ class GuestSessionService {
       return now.isBefore(validUntil);
     } catch (e) {
       return false;
+    }
+  }
+
+  // Cancel guest session
+  static Future<Map<String, dynamic>> cancelGuestSession(dynamic sessionId) async {
+    try {
+      final sessionIdStr = sessionId.toString();
+      final response = await http.post(
+        Uri.parse('$baseUrl/guest_session_api.php'),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'action': 'cancel_session',
+          'session_id': sessionIdStr,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data;
+      } else {
+        return {
+          'success': false,
+          'message': 'Server error: ${response.statusCode}',
+        };
+      }
+    } catch (e) {
+      return {
+        'success': false,
+        'message': 'Connection error: $e',
+      };
     }
   }
 
